@@ -27,8 +27,6 @@ export function Runtimes({ sundayId }: RuntimesProps) {
   const [editField, setEditField] = useState<RuntimeField | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<RuntimeField | null>(null)
 
-  const todayDow = new Date().getDay()
-
   const loadFields = useCallback(async () => {
     const { data } = await supabase
       .from('runtime_fields')
@@ -65,8 +63,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
 
   const save = async () => {
     setSaving(true)
-    const todayFields = allFields.filter(f => f.pull_day === todayDow)
-    const upserts = todayFields
+    const upserts = allFields
       .filter(f => values[f.id] !== undefined)
       .map(f => ({
         sunday_id: sundayId,
@@ -88,8 +85,6 @@ export function Runtimes({ sundayId }: RuntimesProps) {
     setConfirmDelete(null)
   }
 
-  const todayFields = allFields.filter(f => f.pull_day === todayDow)
-
   if (loading) return (
     <div className="flex items-center justify-center h-32">
       <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -100,7 +95,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
     <div className="space-y-4 fade-in">
 
       {/* Today's runtime values */}
-      {todayFields.length === 0 ? (
+      {allFields.length === 0 ? (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
           <p className="text-gray-500 text-sm">No runtime fields configured for today.</p>
           {isAdmin && (
@@ -109,7 +104,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
         </div>
       ) : (
         <div className="space-y-2">
-          {todayFields.map(field => (
+          {allFields.map(field => (
             <div key={field.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
               <div className="flex-1 min-w-0">
                 <p className="text-gray-900 text-sm font-medium">{field.label}</p>
@@ -135,7 +130,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
         </div>
       )}
 
-      {todayFields.length > 0 && (
+      {allFields.length > 0 && (
         <button onClick={save} disabled={saving}
           className={`px-8 py-2.5 rounded-lg font-semibold text-sm transition-all ${saved ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 disabled:opacity-60'}`}>
           {saving ? 'Saving...' : saved ? 'Saved' : 'Save Runtimes'}
@@ -143,7 +138,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
       )}
 
       {/* Relay script note */}
-      {!isAdmin && todayFields.length > 0 && (
+      {!isAdmin && allFields.length > 0 && (
         <p className="text-gray-400 text-xs">
           Values auto-populate when the relay script runs. Manual entries above will override.
         </p>
