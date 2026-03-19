@@ -232,106 +232,111 @@ export function Checklist({ sundayId }: ChecklistProps) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
-          {displaySections.length === 0 && (
-            <div className="xl:col-span-2 bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
-              <p className="text-gray-600 text-sm font-medium">No checklist items are configured yet.</p>
-              <p className="text-gray-400 text-xs mt-1">
-                {isAdmin ? 'Use admin mode to add the first checklist item.' : 'Ask an admin to add checklist items.'}
-              </p>
-              {isAdmin && (
-                <button
-                  onClick={() => { setAddSection(null); setEditItem(null); setShowItemForm(true) }}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
-                  <Plus className="w-4 h-4" />
-                  Add First Item
-                </button>
-              )}
-            </div>
-          )}
-          {displaySections.map(({ section, items: sectionItems }) => {
-            const secDone = sectionItems.filter(i => completions[i.id]).length
-            const isOpen = expanded[section] !== false
-            return (
-              <div key={section} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                <button onClick={() => setExpanded(p => ({ ...p, [section]: !p[section] }))}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-gray-900 font-semibold text-sm">{section}</span>
-                    {!isAdmin && secDone === sectionItems.length && sectionItems.length > 0 && (
-                      <span className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full font-semibold border border-emerald-200">
-                        <CheckCircle2 className="w-3 h-3" />Done
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-xs">{secDone}/{sectionItems.length}</span>
-                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                  </div>
-                </button>
+        {displaySections.length === 0 && (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
+            <p className="text-gray-600 text-sm font-medium">No checklist items are configured yet.</p>
+            <p className="text-gray-400 text-xs mt-1">
+              {isAdmin ? 'Use admin mode to add the first checklist item.' : 'Ask an admin to add checklist items.'}
+            </p>
+            {isAdmin && (
+              <button
+                onClick={() => { setAddSection(null); setEditItem(null); setShowItemForm(true) }}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                <Plus className="w-4 h-4" />
+                Add First Item
+              </button>
+            )}
+          </div>
+        )}
 
-                {isOpen && (
-                  <div className="border-t border-gray-100">
-                    {sectionItems.map((item, idx) => {
-                      const chk = completions[item.id]
-                      const prevSubsection = idx > 0 ? sectionItems[idx - 1].subsection : null
-                      const showSubsection = item.subsection && item.subsection !== prevSubsection
-                      return (
-                        <div key={item.id}>
-                          {showSubsection && (
-                            <div className="px-4 py-1.5 bg-gray-50 border-t border-b border-gray-100">
-                              <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">{item.subsection}</p>
-                            </div>
-                          )}
-                          <div className={`flex items-start gap-3 px-4 py-2.5 ${idx < sectionItems.length - 1 ? 'border-b border-gray-50' : ''} ${chk && !isAdmin ? 'opacity-50' : ''} hover:bg-gray-50/50 transition-colors`}>
-                            {!isAdmin && (
-                              <button onClick={() => toggleItem(item.id)}
-                                className={`flex-shrink-0 mt-0.5 w-[18px] h-[18px] rounded border-2 flex items-center justify-center transition-all ${chk ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-gray-400'}`}>
-                                {chk && <CheckCircle2 className="w-3 h-3 text-white" strokeWidth={3} />}
-                              </button>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.task}</p>
-                              {item.note && <p className="text-gray-400 text-[11px] mt-0.5 leading-snug">{item.note}</p>}
-                              {chk && !isAdmin && <p className="text-emerald-600 text-[10px] mt-0.5 font-medium">{chk.initials} · {chk.time}</p>}
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-                                style={{ background: ROLE_COLORS[item.role] + '20', color: ROLE_COLORS[item.role] }}>
-                                {item.role}
-                              </span>
-                              {isAdmin && (
-                                <>
-                                  <button onClick={() => { setEditItem(item); setAddSection(null); setShowItemForm(true) }}
-                                    className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button onClick={() => setConfirmDelete(item)}
-                                    className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
+        {displaySections.length > 0 && (
+          <div className="space-y-3 xl:space-y-0 xl:columns-2 xl:[column-gap:0.75rem]">
+            {displaySections.map(({ section, items: sectionItems }) => {
+              const secDone = sectionItems.filter(i => completions[i.id]).length
+              const isOpen = expanded[section] !== false
+              return (
+                <div key={section} className="xl:inline-block xl:w-full xl:break-inside-avoid xl:mb-3">
+                  <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                    <button onClick={() => setExpanded(p => ({ ...p, [section]: !p[section] }))}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-gray-900 font-semibold text-sm">{section}</span>
+                        {!isAdmin && secDone === sectionItems.length && sectionItems.length > 0 && (
+                          <span className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full font-semibold border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3" />Done
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 text-xs">{secDone}/{sectionItems.length}</span>
+                        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                      </div>
+                    </button>
+
+                    {isOpen && (
+                      <div className="border-t border-gray-100">
+                        {sectionItems.map((item, idx) => {
+                          const chk = completions[item.id]
+                          const prevSubsection = idx > 0 ? sectionItems[idx - 1].subsection : null
+                          const showSubsection = item.subsection && item.subsection !== prevSubsection
+                          return (
+                            <div key={item.id}>
+                              {showSubsection && (
+                                <div className="px-4 py-1.5 bg-gray-50 border-t border-b border-gray-100">
+                                  <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">{item.subsection}</p>
+                                </div>
                               )}
+                              <div className={`flex items-start gap-3 px-4 py-2.5 ${idx < sectionItems.length - 1 ? 'border-b border-gray-50' : ''} ${chk && !isAdmin ? 'opacity-50' : ''} hover:bg-gray-50/50 transition-colors`}>
+                                {!isAdmin && (
+                                  <button onClick={() => toggleItem(item.id)}
+                                    className={`flex-shrink-0 mt-0.5 w-[18px] h-[18px] rounded border-2 flex items-center justify-center transition-all ${chk ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-gray-400'}`}>
+                                    {chk && <CheckCircle2 className="w-3 h-3 text-white" strokeWidth={3} />}
+                                  </button>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.task}</p>
+                                  {item.note && <p className="text-gray-400 text-[11px] mt-0.5 leading-snug">{item.note}</p>}
+                                  {chk && !isAdmin && <p className="text-emerald-600 text-[10px] mt-0.5 font-medium">{chk.initials} · {chk.time}</p>}
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                                    style={{ background: ROLE_COLORS[item.role] + '20', color: ROLE_COLORS[item.role] }}>
+                                    {item.role}
+                                  </span>
+                                  {isAdmin && (
+                                    <>
+                                      <button onClick={() => { setEditItem(item); setAddSection(null); setShowItemForm(true) }}
+                                        className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button onClick={() => setConfirmDelete(item)}
+                                        className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      )
-                    })}
+                          )
+                        })}
 
-                    {isAdmin && (
-                      <button
-                        onClick={() => { setAddSection(section); setEditItem(null); setShowItemForm(true) }}
-                        className="w-full flex items-center gap-2 px-4 py-2.5 text-blue-600 hover:bg-blue-50 transition-colors border-t border-gray-100 text-xs font-medium">
-                        <Plus className="w-3.5 h-3.5" />
-                        Add item to {section}
-                      </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => { setAddSection(section); setEditItem(null); setShowItemForm(true) }}
+                            className="w-full flex items-center gap-2 px-4 py-2.5 text-blue-600 hover:bg-blue-50 transition-colors border-t border-gray-100 text-xs font-medium">
+                            <Plus className="w-3.5 h-3.5" />
+                            Add item to {section}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Initials modal */}
