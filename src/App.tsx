@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react'
+import { AdminProvider } from './context/AdminContext'
 import { getOrCreateSunday } from './lib/supabase'
 import { SiteHeader } from './components/layout/SiteHeader'
 import { Sidebar } from './components/layout/Sidebar'
@@ -65,6 +66,7 @@ export default function App() {
   )
 
   return (
+    <AdminProvider>
     <SundayContext.Provider value={{ sundayId, sundayDate }}>
       <div className="min-h-screen flex flex-col" style={{ background: '#111827' }}>
         <SiteHeader />
@@ -81,5 +83,6 @@ export default function App() {
         <MobileTabs active={screen} setActive={setScreen} issueCount={issueCount} />
       </div>
     </SundayContext.Provider>
+    </AdminProvider>
   )
 }

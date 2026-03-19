@@ -1,7 +1,11 @@
+import { useState } from 'react'
 import {
   LayoutDashboard, ClipboardCheck, AlertTriangle,
   BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
+  Lock, LockOpen,
 } from 'lucide-react'
+import { useAdmin } from '../../context/AdminContext'
+import { AdminPasswordModal } from '../admin/AdminPasswordModal'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
 
@@ -21,6 +25,8 @@ const navItems = [
 ]
 
 export function Sidebar({ active, setActive, issueCount, sundayDate }: SidebarProps) {
+  const { isAdmin, logout } = useAdmin()
+  const [showAdminModal, setShowAdminModal] = useState(false)
   const dateFormatted = new Date(sundayDate + 'T12:00:00').toLocaleDateString('en-US', {
     month: 'long', day: 'numeric', year: 'numeric',
   })
@@ -66,7 +72,7 @@ export function Sidebar({ active, setActive, issueCount, sundayDate }: SidebarPr
           )
         })}
 
-        <div className="mt-auto pt-4 border-t border-white/[0.05]">
+        <div className="mt-auto pt-4 border-t border-white/[0.05] space-y-0.5">
           <a
             href="https://bfcproduction.github.io/bfc-production-support/"
             target="_blank"
@@ -77,7 +83,23 @@ export function Sidebar({ active, setActive, issueCount, sundayDate }: SidebarPr
             <span className="flex-1 leading-tight">Production Support</span>
             <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-50" />
           </a>
+
+          {isAdmin ? (
+            <button onClick={logout}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-amber-500 hover:text-amber-400 hover:bg-white/[0.04] transition-all">
+              <LockOpen className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.8} />
+              <span className="flex-1 leading-tight">Exit Admin</span>
+            </button>
+          ) : (
+            <button onClick={() => setShowAdminModal(true)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:text-gray-400 hover:bg-white/[0.04] transition-all">
+              <Lock className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.8} />
+              <span className="flex-1 leading-tight">Admin</span>
+            </button>
+          )}
         </div>
+
+        {showAdminModal && <AdminPasswordModal onClose={() => setShowAdminModal(false)} />}
       </nav>
     </aside>
   )
