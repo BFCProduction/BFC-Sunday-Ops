@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Plus, X } from 'lucide-react'
+import { AlertTriangle, Plus, Trash2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
+import { useAdmin } from '../context/adminState'
 import type { Issue } from '../types'
 
 interface IssueLogProps {
@@ -18,11 +19,13 @@ const SEV_STYLE: Record<string, string> = {
 }
 
 export function IssueLog({ sundayId }: IssueLogProps) {
+  const { isAdmin } = useAdmin()
   const [issues, setIssues] = useState<Issue[]>([])
   const [showForm, setShowForm] = useState(false)
   const [desc, setDesc] = useState('')
   const [severity, setSeverity] = useState<Issue['severity']>('Medium')
   const [confirmIssue, setConfirmIssue] = useState<Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday'> | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Issue | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -87,6 +90,21 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     }
 
     setSaving(false)
+  }
+
+  const deleteIssue = async (issue: Issue) => {
+    setSaving(true)
+    const { error } = await supabase.from('issues').delete().eq('id', issue.id)
+    setSaving(false)
+
+    if (error) {
+      setNotice(error.message)
+      return
+    }
+
+    setIssues(prev => prev.filter(entry => entry.id !== issue.id))
+    setConfirmDelete(null)
+    setNotice('Issue deleted.')
   }
 
   if (loading) return (
@@ -162,9 +180,19 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             {issues.map(issue => (
               <Card key={issue.id} className="p-4">
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SEV_STYLE[issue.severity]}`}>
-                    {issue.severity}
-                  </span>
+                  <div className="flex items-start gap-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SEV_STYLE[issue.severity]}`}>
+                      {issue.severity}
+                    </span>
+                    {isAdmin && (
+                      <button
+                        onClick={() => setConfirmDelete(issue)}
+                        className="p-1 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        aria-label="Delete issue">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                   <span className="text-gray-400 text-[11px]">
                     {new Date(issue.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                   </span>
@@ -203,6 +231,33 @@ export function IssueLog({ sundayId }: IssueLogProps) {
               <button onClick={() => saveIssue(confirmIssue, true)} disabled={saving}
                 className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700">
                 {saving ? 'Saving...' : 'Push to Monday'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-gray-900 font-bold mb-2">Delete Issue</h3>
+            <p className="text-gray-500 text-sm mb-4">
+              Delete this issue from Sunday Ops?
+            </p>
+            <p className="text-gray-500 text-xs bg-gray-50 rounded-xl p-3 leading-relaxed mb-4">
+              "{confirmDelete.description}"
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteIssue(confirmDelete)}
+                disabled={saving}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60">
+                {saving ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

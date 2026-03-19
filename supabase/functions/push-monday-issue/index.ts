@@ -19,7 +19,7 @@ interface MondayGraphqlResponse<T> {
 function buildMondayItemName(description: string, severity: PushIssuePayload['severity']) {
   const trimmed = description.trim().replace(/\s+/g, ' ')
   const snippet = trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed
-  return `[${severity}] ${snippet}`
+  return snippet || severity
 }
 
 function buildMondayUpdateBody(description: string, severity: PushIssuePayload['severity'], issueId: string) {
