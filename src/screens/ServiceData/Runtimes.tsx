@@ -1,221 +1,255 @@
-import { useState, useEffect } from 'react'
-import { Server, Clock } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Pencil, Trash2, Server, Clock, CheckCircle2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { Card } from '../../components/ui/Card'
 import { useAdmin } from '../../context/AdminContext'
+import { RuntimeFieldModal } from '../../components/admin/RuntimeFieldModal'
+import type { RuntimeField } from '../../components/admin/RuntimeFieldModal'
 
 interface RuntimesProps { sundayId: string }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-interface PPConfig {
-  host: string
-  port: number
-  clock_service1_runtime: number | null
-  clock_service1_message: number | null
-  clock_service2_runtime: number | null
-  clock_service2_message: number | null
-  clock_flip_time: number | null
-  pull_day: number
-  pull_time: string
-}
-
-const DEFAULT_PP: PPConfig = {
-  host: '', port: 1025,
-  clock_service1_runtime: null, clock_service1_message: null,
-  clock_service2_runtime: null, clock_service2_message: null,
-  clock_flip_time: null,
-  pull_day: 0, pull_time: '12:30',
+interface RuntimeValue {
+  field_id: number
+  value: string | null
+  captured_at: string | null
 }
 
 export function Runtimes({ sundayId }: RuntimesProps) {
   const { isAdmin } = useAdmin()
-  const [rt, setRt] = useState({ s1Svc: '', s1Msg: '', s2Svc: '', s2Msg: '', flip: '' })
-  const [saved, setSaved] = useState(false)
+  const [allFields, setAllFields] = useState<RuntimeField[]>([])
+  const [values, setValues] = useState<Record<number, string>>({})
+  const [captured, setCaptured] = useState<Record<number, string>>({})
   const [saving, setSaving] = useState(false)
-  const [pp, setPP] = useState<PPConfig>(DEFAULT_PP)
-  const [ppSaved, setPPSaved] = useState(false)
-  const [ppSaving, setPPSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [editField, setEditField] = useState<RuntimeField | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<RuntimeField | null>(null)
+
+  const todayDow = new Date().getDay()
+
+  const loadFields = useCallback(async () => {
+    const { data } = await supabase
+      .from('runtime_fields')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('pull_time', { ascending: true })
+    setAllFields(data || [])
+  }, [])
+
+  const loadValues = useCallback(async () => {
+    const { data } = await supabase
+      .from('runtime_values')
+      .select('field_id, value, captured_at')
+      .eq('sunday_id', sundayId)
+    if (data) {
+      const vals: Record<number, string> = {}
+      const caps: Record<number, string> = {}
+      data.forEach((r: RuntimeValue) => {
+        vals[r.field_id] = r.value || ''
+        if (r.captured_at) {
+          caps[r.field_id] = new Date(r.captured_at).toLocaleTimeString('en-US', {
+            hour: 'numeric', minute: '2-digit'
+          })
+        }
+      })
+      setValues(vals)
+      setCaptured(caps)
+    }
+  }, [sundayId])
 
   useEffect(() => {
-    supabase.from('service_runtimes').select('*').eq('sunday_id', sundayId).single()
-      .then(({ data }) => {
-        if (data) setRt({
-          s1Svc: data.service_1_runtime || '', s1Msg: data.service_1_message_runtime || '',
-          s2Svc: data.service_2_runtime || '', s2Msg: data.service_2_message_runtime || '',
-          flip: data.flip_time || '',
-        })
-      })
-    supabase.from('propresenter_config').select('*').eq('id', 1).single()
-      .then(({ data }) => { if (data) setPP(data) })
-  }, [sundayId])
+    Promise.all([loadFields(), loadValues()]).then(() => setLoading(false))
+  }, [loadFields, loadValues])
 
   const save = async () => {
     setSaving(true)
-    await supabase.from('service_runtimes').upsert({
-      sunday_id: sundayId,
-      service_1_runtime: rt.s1Svc || null,
-      service_1_message_runtime: rt.s1Msg || null,
-      service_2_runtime: rt.s2Svc || null,
-      service_2_message_runtime: rt.s2Msg || null,
-      flip_time: rt.flip || null,
-      saved_at: new Date().toISOString(),
-    })
+    const todayFields = allFields.filter(f => f.pull_day === todayDow)
+    const upserts = todayFields
+      .filter(f => values[f.id] !== undefined)
+      .map(f => ({
+        sunday_id: sundayId,
+        field_id: f.id,
+        value: values[f.id] || null,
+        captured_at: new Date().toISOString(),
+      }))
+    if (upserts.length > 0) {
+      await supabase.from('runtime_values').upsert(upserts, { onConflict: 'sunday_id,field_id' })
+    }
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
-  const savePP = async () => {
-    setPPSaving(true)
-    await supabase.from('propresenter_config').upsert({
-      id: 1,
-      ...pp,
-      updated_at: new Date().toISOString(),
-    })
-    setPPSaving(false)
-    setPPSaved(true)
-    setTimeout(() => setPPSaved(false), 2500)
+  const deleteField = async (field: RuntimeField) => {
+    await supabase.from('runtime_fields').delete().eq('id', field.id)
+    setAllFields(prev => prev.filter(f => f.id !== field.id))
+    setConfirmDelete(null)
   }
 
-  const Field = ({ label, k, hint }: { label: string; k: keyof typeof rt; hint?: string }) => (
-    <div>
-      <label className="block text-gray-500 text-xs font-medium mb-1.5">{label}</label>
-      <input type="text" placeholder="H:MM:SS" value={rt[k]}
-        onChange={e => setRt(p => ({ ...p, [k]: e.target.value }))}
-        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500" />
-      {hint && <p className="text-gray-400 text-[10px] mt-1">{hint}</p>}
-    </div>
-  )
+  const todayFields = allFields.filter(f => f.pull_day === todayDow)
 
-  const ClockField = ({ label, field }: { label: string; field: keyof PPConfig }) => (
-    <div>
-      <label className="block text-gray-500 text-xs font-medium mb-1.5">{label}</label>
-      <input
-        type="number" min="1" placeholder="—"
-        value={pp[field] ?? ''}
-        onChange={e => setPP(p => ({ ...p, [field]: e.target.value ? parseInt(e.target.value) : null }))}
-        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm text-center font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500"
-      />
+  if (loading) return (
+    <div className="flex items-center justify-center h-32">
+      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
     </div>
   )
 
   return (
     <div className="space-y-4 fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="p-4 space-y-3">
-          <p className="text-gray-900 text-sm font-semibold">9:00 AM Service</p>
-          <Field label="Service Runtime" k="s1Svc" hint="Opening to benediction" />
-          <Field label="Message Runtime" k="s1Msg" />
-        </Card>
-        <Card className="p-4 space-y-3">
-          <p className="text-gray-900 text-sm font-semibold">11:00 AM Service</p>
-          <Field label="Service Runtime" k="s2Svc" />
-          <Field label="Message Runtime" k="s2Msg" />
-        </Card>
-      </div>
-      <Card className="p-4">
-        <label className="block text-gray-500 text-xs font-medium mb-1.5">Flip Time</label>
-        <input type="text" placeholder="MM:SS" value={rt.flip}
-          onChange={e => setRt(p => ({ ...p, flip: e.target.value }))}
-          className="w-full md:w-48 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500" />
-        <p className="text-gray-400 text-[10px] mt-1">End of 1st service to start of 2nd</p>
-      </Card>
-      <button onClick={save} disabled={saving}
-        className={`px-8 py-2.5 rounded-lg font-semibold text-sm transition-all ${saved ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 disabled:opacity-60'}`}>
-        {saving ? 'Saving...' : saved ? 'Saved' : 'Save Runtimes'}
-      </button>
 
-      {/* ProPresenter Integration — admin only */}
+      {/* Today's runtime values */}
+      {todayFields.length === 0 ? (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
+          <p className="text-gray-500 text-sm">No runtime fields configured for today.</p>
+          {isAdmin && (
+            <p className="text-gray-400 text-xs mt-1">Use the admin panel below to add runtime fields.</p>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {todayFields.map(field => (
+            <div key={field.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-gray-900 text-sm font-medium">{field.label}</p>
+                <p className="text-gray-400 text-[10px] mt-0.5">
+                  Pull at {field.pull_time} · {field.host}:{field.port} · clock {field.clock_number}
+                </p>
+                {captured[field.id] && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    <p className="text-emerald-600 text-[10px] font-medium">Auto-captured at {captured[field.id]}</p>
+                  </div>
+                )}
+              </div>
+              <input
+                type="text"
+                placeholder="H:MM:SS"
+                value={values[field.id] ?? ''}
+                onChange={e => setValues(p => ({ ...p, [field.id]: e.target.value }))}
+                className="w-28 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500 text-center"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {todayFields.length > 0 && (
+        <button onClick={save} disabled={saving}
+          className={`px-8 py-2.5 rounded-lg font-semibold text-sm transition-all ${saved ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 disabled:opacity-60'}`}>
+          {saving ? 'Saving...' : saved ? 'Saved' : 'Save Runtimes'}
+        </button>
+      )}
+
+      {/* Relay script note */}
+      {!isAdmin && todayFields.length > 0 && (
+        <p className="text-gray-400 text-xs">
+          Values auto-populate when the relay script runs. Manual entries above will override.
+        </p>
+      )}
+
+      {/* Admin panel */}
       {isAdmin && (
-        <Card className="p-4 space-y-4 border-amber-200">
-          <div className="flex items-center gap-2 pb-1 border-b border-gray-100">
-            <Server className="w-4 h-4 text-amber-600" />
-            <p className="text-gray-900 text-sm font-semibold">ProPresenter Integration</p>
-            <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ml-1">Admin</span>
+        <div className="border border-amber-200 rounded-xl overflow-hidden">
+          <div className="bg-amber-50 px-4 py-3 flex items-center justify-between border-b border-amber-200">
+            <div className="flex items-center gap-2">
+              <Server className="w-4 h-4 text-amber-600" />
+              <p className="text-gray-900 text-sm font-semibold">Runtime Field Definitions</p>
+              <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">Admin</span>
+            </div>
+            <button
+              onClick={() => { setEditField(null); setShowModal(true) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors">
+              <Plus className="w-3.5 h-3.5" />
+              Add Field
+            </button>
           </div>
 
-          {/* Connection */}
-          <div>
-            <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide mb-2">Connection</p>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <label className="block text-gray-500 text-xs font-medium mb-1.5">ProPresenter IP Address</label>
-                <input type="text" placeholder="192.168.1.100" value={pp.host}
-                  onChange={e => setPP(p => ({ ...p, host: e.target.value }))}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-gray-500 text-xs font-medium mb-1.5">Port</label>
-                <input type="number" placeholder="1025" value={pp.port}
-                  onChange={e => setPP(p => ({ ...p, port: parseInt(e.target.value) || 1025 }))}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500" />
-              </div>
+          {allFields.length === 0 ? (
+            <div className="p-6 text-center">
+              <p className="text-gray-400 text-sm">No runtime fields yet. Add one to get started.</p>
             </div>
-            <p className="text-gray-400 text-[10px] mt-1.5">
-              Find in ProPresenter: Preferences → Network → Enable Network → note the port shown
-            </p>
-          </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {allFields.map(field => (
+                <div key={field.id} className="px-4 py-3 flex items-start gap-3 bg-white hover:bg-gray-50 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-gray-900 text-sm font-medium">{field.label}</p>
+                      <span className="bg-gray-100 text-gray-500 text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                        {DAYS[field.pull_day]}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                      <span className="flex items-center gap-1 text-gray-400 text-[11px]">
+                        <Clock className="w-3 h-3" />{field.pull_time}
+                      </span>
+                      <span className="text-gray-400 text-[11px] font-mono">
+                        {field.host}:{field.port} · clock {field.clock_number}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => { setEditField(field); setShowModal(true) }}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setConfirmDelete(field)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
-          {/* Clock assignments */}
-          <div>
-            <div className="flex items-center gap-1.5 mb-2">
-              <Clock className="w-3.5 h-3.5 text-gray-400" />
-              <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Clock Assignments</p>
-            </div>
-            <p className="text-gray-400 text-[10px] mb-3">
-              Enter the clock number (1, 2, 3…) as listed in ProPresenter's Clock module for each field.
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <ClockField label="9am Service Runtime" field="clock_service1_runtime" />
-              <ClockField label="9am Message Runtime" field="clock_service1_message" />
-              <ClockField label="11am Service Runtime" field="clock_service2_runtime" />
-              <ClockField label="11am Message Runtime" field="clock_service2_message" />
-              <ClockField label="Flip Time" field="clock_flip_time" />
-            </div>
-          </div>
-
-          {/* Pull schedule */}
-          <div>
-            <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide mb-2">Pull Schedule</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-gray-500 text-xs font-medium mb-1.5">Day of Week</label>
-                <select value={pp.pull_day}
-                  onChange={e => setPP(p => ({ ...p, pull_day: parseInt(e.target.value) }))}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500">
-                  {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-gray-500 text-xs font-medium mb-1.5">Pull Time</label>
-                <input type="time" value={pp.pull_time}
-                  onChange={e => setPP(p => ({ ...p, pull_time: e.target.value }))}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500" />
-              </div>
-            </div>
-            <p className="text-gray-400 text-[10px] mt-1.5">
-              The relay script will capture clock values at this time — set it after both services are complete.
-            </p>
-          </div>
-
-          {/* Relay script instructions */}
-          <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-            <p className="text-gray-700 text-xs font-semibold mb-1.5">Running the relay script</p>
-            <p className="text-gray-500 text-[11px] leading-relaxed mb-2">
-              Run this once on any Mac on the same network as ProPresenter. It will wait until the pull time, read the clock values, and write them here automatically.
+          <div className="bg-gray-50 border-t border-gray-200 px-4 py-3">
+            <p className="text-gray-500 text-xs font-semibold mb-1">Running the relay script</p>
+            <p className="text-gray-400 text-[11px] leading-relaxed mb-2">
+              Run on any Mac on the same network. It will wait and pull each field at its configured time.
             </p>
             <code className="block bg-gray-900 text-green-400 text-[11px] rounded px-3 py-2 font-mono">
               node scripts/propresenter-relay.js
             </code>
-            <p className="text-gray-400 text-[10px] mt-1.5">Add <span className="font-mono">--now</span> to pull immediately (for testing)</p>
+            <p className="text-gray-400 text-[10px] mt-1.5">
+              Add <span className="font-mono">--now</span> to pull all fields immediately for testing
+            </p>
           </div>
+        </div>
+      )}
 
-          <button onClick={savePP} disabled={ppSaving}
-            className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${ppSaved ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-white hover:bg-gray-700 active:scale-95 disabled:opacity-60'}`}>
-            {ppSaving ? 'Saving...' : ppSaved ? 'Settings Saved' : 'Save ProPresenter Settings'}
-          </button>
-        </Card>
+      {/* Add/Edit modal */}
+      {showModal && (
+        <RuntimeFieldModal
+          field={editField || undefined}
+          onClose={() => { setShowModal(false); setEditField(null) }}
+          onSaved={loadFields}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-gray-900 font-bold mb-2">Delete Field</h3>
+            <p className="text-gray-500 text-sm mb-4">
+              Delete "<span className="font-medium text-gray-700">{confirmDelete.label}</span>"?
+              Captured values for this field will also be removed.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmDelete(null)}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => deleteField(confirmDelete)}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
