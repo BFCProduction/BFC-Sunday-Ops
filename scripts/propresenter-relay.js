@@ -95,11 +95,10 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 async function probeProPresenter(host, port) {
   const base = `http://${host}:${port}`
   const paths = [
+    '/v1/timers/current',
+    '/v1/timers',
+    '/v1/timer',
     '/v1/clocks',
-    '/v1/clock',
-    '/clocks',
-    '/clock',
-    '/api/v1/clocks',
     '/v1/',
     '/',
   ]
@@ -107,7 +106,7 @@ async function probeProPresenter(host, port) {
   for (const p of paths) {
     try {
       const result = await fetchRaw(`${base}${p}`)
-      console.log(`  ${p} → HTTP ${result.status}: ${result.body.slice(0, 120)}`)
+      console.log(`  ${p} → HTTP ${result.status}: ${result.body.slice(0, 200)}`)
     } catch (err) {
       console.log(`  ${p} → Error: ${err.message}`)
     }
@@ -141,14 +140,23 @@ async function pullFields(fields, sundayId) {
     const ppBase = `http://${host}:${port}/v1`
     console.log(`\n  Connecting to ${ppBase}...`)
 
-    let clocks
+    let timers
     try {
-      clocks = await fetchJSON(`${ppBase}/clocks`)
-      if (!Array.isArray(clocks)) throw new Error('Unexpected response format')
-      console.log(`  Found ${clocks.length} clock${clocks.length !== 1 ? 's' : ''}`)
-      clocks.forEach((c, i) => {
-        const t = formatSeconds(c.current_time ?? c.time?.seconds)
-        console.log(`    [${i + 1}] ${c.name ?? 'Unnamed'} — ${t ?? 'no time'}`)
+      // Try /v1/timers/current first (gives current elapsed time for all timers)
+      // Fall back to /v1/timers (gives timer definitions, may include current time)
+      let raw
+      try {
+        raw = await fetchJSON(`${ppBase}/v1/timers/current`)
+      } catch {
+        raw = await fetchJSON(`${ppBase}/v1/timers`)
+      }
+      timers = Array.isArray(raw) ? raw : raw?.timers ?? raw?.data ?? []
+      if (!Array.isArray(timers)) throw new Error('Unexpected response format')
+      console.log(`  Found ${timers.length} timer${timers.length !== 1 ? 's' : ''}`)
+      timers.forEach((t, i) => {
+        const name = t.name ?? t.id?.name ?? t.timer_id?.name ?? 'Unnamed'
+        const secs = t.time ?? t.current_time ?? t.elapsed ?? t.seconds
+        console.log(`    [${i + 1}] ${name} — ${formatSeconds(secs) ?? 'no time'} (raw: ${JSON.stringify(t).slice(0, 80)})`)
       })
     } catch (err) {
       console.error(`  Could not reach ProPresenter at ${host}:${port}: ${err.message}`)
@@ -158,14 +166,15 @@ async function pullFields(fields, sundayId) {
 
     const upserts = []
     for (const field of hostFields) {
-      const clock = clocks[field.clock_number - 1]
-      if (!clock) {
-        console.warn(`  Warning: clock ${field.clock_number} not found for "${field.label}" (only ${clocks.length} available)`)
+      const timer = timers[field.clock_number - 1]
+      if (!timer) {
+        console.warn(`  Warning: timer ${field.clock_number} not found for "${field.label}" (only ${timers.length} available)`)
         continue
       }
-      const secs = clock.current_time ?? clock.time?.seconds
+      const secs = timer.time ?? timer.current_time ?? timer.elapsed ?? timer.seconds
       const value = formatSeconds(secs)
-      console.log(`  "${field.label}" → clock ${field.clock_number} (${clock.name ?? 'Unnamed'}) = ${value ?? 'no time'}`)
+      const timerName = timer.name ?? timer.id?.name ?? timer.timer_id?.name ?? 'Unnamed'
+      console.log(`  "${field.label}" → timer ${field.clock_number} (${timerName}) = ${value ?? 'no time'}`)
       upserts.push({
         sunday_id: sundayId,
         field_id: field.id,
