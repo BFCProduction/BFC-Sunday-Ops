@@ -121,7 +121,6 @@ export function Weather({ sundayId }: WeatherProps) {
           <div className="py-6">
             <Cloud className="w-12 h-12 text-gray-200 mx-auto mb-4" />
             <p className="text-gray-700 text-sm font-medium">No weather data has been imported yet.</p>
-            <p className="text-gray-400 text-xs mt-1">This tab stays available, but it does not use mock data anymore.</p>
           </div>
         )}
       </Card>

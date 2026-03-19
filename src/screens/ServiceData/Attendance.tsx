@@ -38,9 +38,6 @@ export function Attendance({ sundayId }: AttendanceProps) {
 
   return (
     <div className="space-y-4 fade-in">
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex gap-2">
-        <p className="text-blue-700 text-xs leading-relaxed">Replaces the attendance text sent after each service. Submit counts after each service wraps.</p>
-      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-4 space-y-3">
           <p className="text-gray-900 text-sm font-semibold flex items-center gap-2">

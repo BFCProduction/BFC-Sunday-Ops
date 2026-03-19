@@ -170,9 +170,6 @@ export function Evaluation({ sundayId }: EvaluationProps) {
                 </div>
               ))}
             </div>
-            {!analytics && (
-              <p className="text-gray-400 text-[10px] mt-3 text-center">Analytics appear here after they are imported into Supabase.</p>
-            )}
           </Card>
         </div>
 
