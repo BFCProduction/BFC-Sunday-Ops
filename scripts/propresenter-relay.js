@@ -15,6 +15,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { get as httpGet } from 'http'
 import { get as httpsGet } from 'https'
+import net from 'net'
 import { existsSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -42,6 +43,16 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 const pullNow = process.argv.includes('--now')
+const REQUEST_TIMEOUT_MS = 3500
+const PROBE_HTTP_PATHS = [
+  '/v1/timers/current',
+  '/v1/timers',
+  '/v1/timer',
+  '/v1/clocks',
+  '/v1/',
+  '/',
+]
+const TIMER_ENDPOINTS = ['v1/timers/current', 'v1/timers']
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -67,10 +78,14 @@ function extractTime(timerObj) {
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
     const get = url.startsWith('https') ? httpsGet : httpGet
-    const req = get(url, { timeout: 5000 }, res => {
+    const req = get(url, { timeout: REQUEST_TIMEOUT_MS }, res => {
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP ${res.statusCode}`))
+          return
+        }
         try { resolve(JSON.parse(data)) }
         catch {
           console.error(`  Raw response from ${url} (status ${res.statusCode}):`)
@@ -82,6 +97,177 @@ function fetchJSON(url) {
     req.on('error', reject)
     req.on('timeout', () => { req.destroy(); reject(new Error('Connection timed out')) })
   })
+}
+
+function summarizeError(error) {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return String(error)
+}
+
+function extractTimers(payload) {
+  if (Array.isArray(payload)) {
+    return payload
+  }
+
+  const candidates = [
+    payload?.timers,
+    payload?.data,
+    payload?.data?.timers,
+    payload?.response,
+    payload?.response?.timers,
+  ]
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+function connectSocket(host, port, timeoutMs = REQUEST_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now()
+    const socket = net.createConnection({ host, port })
+    let settled = false
+
+    const finish = (callback) => value => {
+      if (settled) return
+      settled = true
+      socket.setTimeout(0)
+      callback(value)
+    }
+
+    socket.setTimeout(timeoutMs)
+    socket.once('connect', finish(() => resolve({ socket, latencyMs: Date.now() - startedAt })))
+    socket.once('timeout', finish(() => {
+      socket.destroy()
+      reject(new Error(`TCP connect timed out after ${timeoutMs}ms`))
+    }))
+    socket.once('error', finish(error => {
+      socket.destroy()
+      reject(error)
+    }))
+  })
+}
+
+async function testTcpConnectivity(host, port, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const { socket, latencyMs } = await connectSocket(host, port, timeoutMs)
+  socket.end()
+  socket.destroy()
+  return latencyMs
+}
+
+function sendTcpApiRequest(host, port, url, timeoutMs = REQUEST_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port })
+    let settled = false
+    let buffer = ''
+
+    const finish = (callback) => value => {
+      if (settled) return
+      settled = true
+      socket.setTimeout(0)
+      socket.end()
+      socket.destroy()
+      callback(value)
+    }
+
+    socket.setTimeout(timeoutMs)
+
+    socket.once('connect', () => {
+      socket.write(`${JSON.stringify({ url })}\r\n`)
+    })
+
+    socket.on('data', chunk => {
+      buffer += chunk.toString('utf8')
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+
+        try {
+          const payload = JSON.parse(trimmed)
+          finish(resolve)(payload)
+          return
+        } catch {
+          finish(reject)(new Error(`Invalid TCP/IP API JSON for ${url}`))
+          return
+        }
+      }
+    })
+
+    socket.once('timeout', finish(() => reject(new Error(`TCP/IP API timed out after ${timeoutMs}ms for ${url}`))))
+    socket.once('error', finish(error => reject(error)))
+    socket.once('end', finish(() => reject(new Error(`TCP/IP API closed without data for ${url}`))))
+  })
+}
+
+async function tryHttpTimerEndpoints(host, port) {
+  const errors = []
+
+  for (const endpoint of TIMER_ENDPOINTS) {
+    try {
+      const payload = await fetchJSON(`http://${host}:${port}/${endpoint}`)
+      const timers = extractTimers(payload)
+      if (timers) {
+        return { transport: 'http', endpoint, timers }
+      }
+      errors.push(`${endpoint}: response did not contain a timer list`)
+    } catch (error) {
+      errors.push(`${endpoint}: ${summarizeError(error)}`)
+    }
+  }
+
+  throw new Error(`HTTP timer fetch failed (${errors.join('; ')})`)
+}
+
+async function tryTcpTimerEndpoints(host, port) {
+  const errors = []
+
+  for (const endpoint of TIMER_ENDPOINTS) {
+    try {
+      const payload = await sendTcpApiRequest(host, port, endpoint)
+      if (payload?.error) {
+        errors.push(`${endpoint}: ${payload.error}`)
+        continue
+      }
+
+      const timers = extractTimers(payload)
+      if (timers) {
+        return { transport: 'tcp', endpoint, timers }
+      }
+      errors.push(`${endpoint}: response did not contain a timer list`)
+    } catch (error) {
+      errors.push(`${endpoint}: ${summarizeError(error)}`)
+    }
+  }
+
+  throw new Error(`TCP/IP timer fetch failed (${errors.join('; ')})`)
+}
+
+async function loadTimers(host, port) {
+  const failures = []
+
+  try {
+    return await tryHttpTimerEndpoints(host, port)
+  } catch (error) {
+    failures.push(summarizeError(error))
+  }
+
+  try {
+    return await tryTcpTimerEndpoints(host, port)
+  } catch (error) {
+    failures.push(summarizeError(error))
+  }
+
+  throw new Error(failures.join(' | '))
 }
 
 function msUntil(hhmm) {
@@ -127,20 +313,58 @@ function getChurchDayOfWeek(date = new Date()) {
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+function addDaysToDateString(dateString, daysToAdd) {
+  const [year, month, day] = dateString.split('-').map(Number)
+  const base = new Date(Date.UTC(year, month - 1, day))
+  base.setUTCDate(base.getUTCDate() + daysToAdd)
+  return base.toISOString().slice(0, 10)
+}
+
+function getOperationalSundayDateString(date = new Date()) {
+  const dayOfWeek = getChurchDayOfWeek(date)
+
+  if (dayOfWeek === 0) {
+    return getChurchDateString(date)
+  }
+
+  const daysUntilSunday = (7 - dayOfWeek) % 7
+  return addDaysToDateString(getChurchDateString(date), daysUntilSunday)
+}
+
+async function getOrCreateSunday(dateString) {
+  const { data: existing, error: existingError } = await supabase
+    .from('sundays')
+    .select('id, date')
+    .eq('date', dateString)
+    .maybeSingle()
+
+  if (existingError) throw existingError
+  if (existing) return existing
+
+  const { data: created, error: createError } = await supabase
+    .from('sundays')
+    .insert({ date: dateString })
+    .select('id, date')
+    .single()
+
+  if (createError) throw createError
+  return created
+}
+
 // ─── Probe ProPresenter to find working API path ─────────────────────────────
 
 async function probeProPresenter(host, port) {
   const base = `http://${host}:${port}`
-  const paths = [
-    '/v1/timers/current',
-    '/v1/timers',
-    '/v1/timer',
-    '/v1/clocks',
-    '/v1/',
-    '/',
-  ]
   console.log(`\nProbing ${base} for ProPresenter API...`)
-  for (const p of paths) {
+
+  try {
+    const latencyMs = await testTcpConnectivity(host, port)
+    console.log(`  TCP socket connect → OK (${latencyMs}ms)`)
+  } catch (err) {
+    console.log(`  TCP socket connect → Error: ${err.message}`)
+  }
+
+  for (const p of PROBE_HTTP_PATHS) {
     try {
       const result = await fetchRaw(`${base}${p}`)
       console.log(`  ${p} → HTTP ${result.status}: ${result.body.slice(0, 200)}`)
@@ -148,12 +372,28 @@ async function probeProPresenter(host, port) {
       console.log(`  ${p} → Error: ${err.message}`)
     }
   }
+
+  for (const endpoint of TIMER_ENDPOINTS) {
+    try {
+      const payload = await sendTcpApiRequest(host, port, endpoint)
+      const timers = extractTimers(payload)
+      if (payload?.error) {
+        console.log(`  TCP ${endpoint} → API error: ${payload.error}`)
+      } else if (timers) {
+        console.log(`  TCP ${endpoint} → OK (${timers.length} timer${timers.length !== 1 ? 's' : ''})`)
+      } else {
+        console.log(`  TCP ${endpoint} → Response received, but no timer list found`)
+      }
+    } catch (err) {
+      console.log(`  TCP ${endpoint} → Error: ${err.message}`)
+    }
+  }
 }
 
 function fetchRaw(url) {
   return new Promise((resolve, reject) => {
     const get = url.startsWith('https') ? httpsGet : httpGet
-    const req = get(url, { timeout: 3000 }, res => {
+    const req = get(url, { timeout: REQUEST_TIMEOUT_MS }, res => {
       let body = ''
       res.on('data', chunk => body += chunk)
       res.on('end', () => resolve({ status: res.statusCode, body }))
@@ -179,16 +419,15 @@ async function pullFields(fields, sundayId) {
     console.log(`\n  Connecting to ${ppBase}...`)
 
     let timers
+    let transport
+    let endpoint
     try {
-      let raw
-      try {
-        raw = await fetchJSON(`${ppBase}/v1/timers/current`)
-      } catch {
-        raw = await fetchJSON(`${ppBase}/v1/timers`)
-      }
-      timers = Array.isArray(raw) ? raw : raw?.timers ?? raw?.data ?? []
-      if (!Array.isArray(timers)) throw new Error('Unexpected response format')
+      const result = await loadTimers(host, port)
+      timers = result.timers
+      transport = result.transport
+      endpoint = result.endpoint
       console.log(`  Found ${timers.length} timer${timers.length !== 1 ? 's' : ''}`)
+      console.log(`  Loaded via ${transport.toUpperCase()} ${endpoint}`)
       timers.forEach((t, i) => {
         const name = t.id?.name ?? t.name ?? 'Unnamed'
         const time = extractTime(t)
@@ -235,7 +474,7 @@ async function run() {
   console.log('====================================')
 
   const todayDow = getChurchDayOfWeek()
-  const today = getChurchDateString()
+  const targetSundayDate = getOperationalSundayDateString()
 
   const { data: allFields, error: fieldsErr } = await supabase
     .from('runtime_fields')
@@ -280,17 +519,7 @@ async function run() {
     process.exit(0)
   }
 
-  const { data: sunday } = await supabase
-    .from('sundays')
-    .select('id')
-    .eq('date', today)
-    .single()
-
-  if (!sunday) {
-    console.error(`\nNo Sunday record found for ${today}.`)
-    console.error('Make sure the Sunday Ops Hub has been opened today to create the daily record.')
-    process.exit(1)
-  }
+  const sunday = await getOrCreateSunday(targetSundayDate)
 
   if (process.argv.includes('--probe')) {
     const hosts = [...new Set(autoFields.map(f => `${f.host}:${f.port}`))]

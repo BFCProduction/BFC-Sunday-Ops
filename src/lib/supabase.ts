@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { getChurchDateString } from './churchTime'
+import { getOperationalSundayDateString } from './churchTime'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -7,7 +7,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export async function getOrCreateSunday() {
-  const today = getChurchDateString()
+  const today = getOperationalSundayDateString()
   const { data: existing } = await supabase
     .from('sundays')
     .select('*')
