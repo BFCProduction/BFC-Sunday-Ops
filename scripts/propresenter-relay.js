@@ -12,17 +12,20 @@
  * Requires VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local
  */
 
-const { createClient } = require('@supabase/supabase-js')
-const http = require('http')
-const https = require('https')
+import { createClient } from '@supabase/supabase-js'
+import { get as httpGet } from 'http'
+import { get as httpsGet } from 'https'
+import { existsSync, readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Load .env.local
 try {
-  const fs = require('fs')
-  const path = require('path')
-  const envPath = path.join(__dirname, '..', '.env.local')
-  if (fs.existsSync(envPath)) {
-    fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
+  const envPath = join(__dirname, '..', '.env.local')
+  if (existsSync(envPath)) {
+    readFileSync(envPath, 'utf8').split('\n').forEach(line => {
       const [key, ...rest] = line.split('=')
       if (key && rest.length) process.env[key.trim()] = rest.join('=').trim()
     })
@@ -54,8 +57,8 @@ function formatSeconds(totalSeconds) {
 
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
-    const lib = url.startsWith('https') ? https : http
-    const req = lib.get(url, { timeout: 5000 }, res => {
+    const get = url.startsWith('https') ? httpsGet : httpGet
+    const req = get(url, { timeout: 5000 }, res => {
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
@@ -86,7 +89,6 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 // ─── Pull a group of fields that share the same pull_time ────────────────────
 
 async function pullFields(fields, sundayId) {
-  // Group by host:port so we only call each PP instance once per batch
   const byHost = {}
   for (const field of fields) {
     const key = `${field.host}:${field.port}`
@@ -150,7 +152,6 @@ async function run() {
   const todayDow = new Date().getDay()
   const today = new Date().toISOString().split('T')[0]
 
-  // Load runtime field definitions
   const { data: allFields, error: fieldsErr } = await supabase
     .from('runtime_fields')
     .select('*')
@@ -179,7 +180,6 @@ async function run() {
     console.log(`  ${pullNow ? '' : f.pull_time + ' · '}"${f.label}" · ${f.host}:${f.port} clock ${f.clock_number}`)
   })
 
-  // Get today's sunday_id
   const { data: sunday } = await supabase
     .from('sundays')
     .select('id')
@@ -199,7 +199,6 @@ async function run() {
     return
   }
 
-  // Group fields by pull_time and schedule each group
   const byTime = {}
   for (const field of todayFields) {
     if (!byTime[field.pull_time]) byTime[field.pull_time] = []
