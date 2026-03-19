@@ -90,7 +90,44 @@ function sleep(ms) {
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-// ─── Pull a group of fields that share the same pull_time ────────────────────
+// ─── Probe ProPresenter to find working API path ─────────────────────────────
+
+async function probeProPresenter(host, port) {
+  const base = `http://${host}:${port}`
+  const paths = [
+    '/v1/clocks',
+    '/v1/clock',
+    '/clocks',
+    '/clock',
+    '/api/v1/clocks',
+    '/v1/',
+    '/',
+  ]
+  console.log(`\nProbing ${base} for ProPresenter API...`)
+  for (const p of paths) {
+    try {
+      const result = await fetchRaw(`${base}${p}`)
+      console.log(`  ${p} → HTTP ${result.status}: ${result.body.slice(0, 120)}`)
+    } catch (err) {
+      console.log(`  ${p} → Error: ${err.message}`)
+    }
+  }
+}
+
+function fetchRaw(url) {
+  return new Promise((resolve, reject) => {
+    const get = url.startsWith('https') ? httpsGet : httpGet
+    const req = get(url, { timeout: 3000 }, res => {
+      let body = ''
+      res.on('data', chunk => body += chunk)
+      res.on('end', () => resolve({ status: res.statusCode, body }))
+    })
+    req.on('error', reject)
+    req.on('timeout', () => { req.destroy(); reject(new Error('timed out')) })
+  })
+}
+
+// ─── Pull a group of fields that share the same pull_time ─────────────────────
 
 async function pullFields(fields, sundayId) {
   const byHost = {}
@@ -194,6 +231,15 @@ async function run() {
     console.error(`\nNo Sunday record found for ${today}.`)
     console.error('Make sure the Sunday Ops Hub has been opened today to create the daily record.')
     process.exit(1)
+  }
+
+  if (process.argv.includes('--probe')) {
+    const hosts = [...new Set(todayFields.map(f => `${f.host}:${f.port}`))]
+    for (const h of hosts) {
+      const [host, port] = h.split(':')
+      await probeProPresenter(host, parseInt(port))
+    }
+    return
   }
 
   if (pullNow) {
