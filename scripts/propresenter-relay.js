@@ -63,7 +63,11 @@ function fetchJSON(url) {
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
         try { resolve(JSON.parse(data)) }
-        catch { reject(new Error(`Invalid JSON from ${url}`)) }
+        catch {
+          console.error(`  Raw response from ${url} (status ${res.statusCode}):`)
+          console.error(`  ${data.slice(0, 500)}`)
+          reject(new Error(`Invalid JSON from ${url}`))
+        }
       })
     })
     req.on('error', reject)
