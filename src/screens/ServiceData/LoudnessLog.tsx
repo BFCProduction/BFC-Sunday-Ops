@@ -7,6 +7,36 @@ interface LoudnessProps { sundayId: string }
 const GOAL_9AM = 88
 const GOAL_11AM = 94
 
+interface NumFieldProps {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  goal?: number
+  accent: string
+}
+
+function NumField({ label, value, onChange, goal, accent }: NumFieldProps) {
+  const over = goal && parseFloat(value) > goal
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-gray-500 text-xs font-medium">{label}</label>
+        {goal && <span className="text-[10px] text-gray-400">goal ≤ {goal}</span>}
+      </div>
+      <input type="number" step="0.1" placeholder="e.g. 85.8" value={value} onChange={e => onChange(e.target.value)}
+        className={`w-full rounded-lg px-3 py-2.5 text-sm font-mono border focus:outline-none transition-colors ${
+          over ? 'bg-red-50 border-red-300 text-red-700 focus:border-red-400' :
+          value ? 'bg-gray-50 border-gray-200 text-gray-900 focus:border-blue-500' :
+          'bg-gray-50 border-gray-200 text-gray-900 focus:border-blue-500'
+        }`}
+        style={value && !over ? { borderColor: accent + '60' } : {}}
+      />
+      {over && <p className="text-red-500 text-[10px] mt-1 font-medium">Exceeds {goal} goal</p>}
+    </div>
+  )
+}
+
 export function LoudnessLog({ sundayId }: LoudnessProps) {
   const [s1Max, setS1Max] = useState('')
   const [s1LAeq, setS1LAeq] = useState('')
@@ -62,27 +92,6 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
   const avg = (vals: number[]) => vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—'
   const avg9LAeq = avg(history.filter(r => r.s1LAeq).map(r => r.s1LAeq))
   const avg11LAeq = avg(history.filter(r => r.s2LAeq).map(r => r.s2LAeq))
-
-  const NumField = ({ label, value, onChange, goal, accent }: { label: string; value: string; onChange: (v: string) => void; goal?: number; accent: string }) => {
-    const over = goal && parseFloat(value) > goal
-    return (
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-gray-500 text-xs font-medium">{label}</label>
-          {goal && <span className="text-[10px] text-gray-400">goal ≤ {goal}</span>}
-        </div>
-        <input type="number" step="0.1" placeholder="e.g. 85.8" value={value} onChange={e => onChange(e.target.value)}
-          className={`w-full rounded-lg px-3 py-2.5 text-sm font-mono border focus:outline-none transition-colors ${
-            over ? 'bg-red-50 border-red-300 text-red-700 focus:border-red-400' :
-            value ? 'bg-gray-50 border-gray-200 text-gray-900 focus:border-blue-500' :
-            'bg-gray-50 border-gray-200 text-gray-900 focus:border-blue-500'
-          }`}
-          style={value && !over ? { borderColor: accent + '60' } : {}}
-        />
-        {over && <p className="text-red-500 text-[10px] mt-1 font-medium">Exceeds {goal} goal</p>}
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-5 fade-in">

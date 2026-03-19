@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { CheckCircle2, ChevronDown, X, Pencil, Trash2, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { CHECKLIST_ITEMS, SECTIONS, ROLE_COLORS, ROLES } from '../data/checklist'
-import { useAdmin } from '../context/AdminContext'
+import { ROLE_COLORS, ROLES } from '../data/checklist'
+import { loadOrSeedChecklistItems } from '../lib/checklist'
+import { useAdmin } from '../context/adminState'
 import { ItemFormModal } from '../components/admin/ItemFormModal'
-import type { DbItem } from '../components/admin/ItemFormModal'
+import type { ChecklistItemRecord } from '../lib/checklist'
 import type { Role } from '../types'
 
 interface ChecklistProps {
@@ -17,46 +18,29 @@ interface CompletionMap {
 
 export function Checklist({ sundayId }: ChecklistProps) {
   const { isAdmin } = useAdmin()
-  const [items, setItems] = useState<DbItem[]>([])
+  const [items, setItems] = useState<ChecklistItemRecord[]>([])
   const [completions, setCompletions] = useState<CompletionMap>({})
   const [role, setRole] = useState<Role>('All')
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(
-    Object.fromEntries(SECTIONS.map(s => [s, true]))
-  )
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [modal, setModal] = useState<number | null>(null)
   const [initials, setInitials] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [editItem, setEditItem] = useState<DbItem | null>(null)
+  const [editItem, setEditItem] = useState<ChecklistItemRecord | null>(null)
   const [addSection, setAddSection] = useState<string | null>(null)
   const [showItemForm, setShowItemForm] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState<DbItem | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<ChecklistItemRecord | null>(null)
 
   const loadItems = useCallback(async () => {
-    const { data } = await supabase
-      .from('checklist_items')
-      .select('*')
-      .order('sort_order', { ascending: true })
-      .order('id', { ascending: true })
-
-    if (!data || data.length === 0) {
-      // First run — seed from static data
-      const seedData = CHECKLIST_ITEMS.map((item, idx) => ({
-        task: item.task,
-        role: item.role,
-        section: item.section,
-        subsection: item.subsection || null,
-        note: item.note || null,
-        sort_order: idx,
-      }))
-      const { data: seeded } = await supabase
-        .from('checklist_items')
-        .insert(seedData)
-        .select()
-      setItems(seeded || [])
-    } else {
-      setItems(data)
-    }
+    const data = await loadOrSeedChecklistItems()
+    setItems(data)
+    setExpanded(prev => {
+      const updated = { ...prev }
+      Array.from(new Set(data.map(item => item.section))).forEach(section => {
+        if (!(section in updated)) updated[section] = true
+      })
+      return updated
+    })
   }, [])
 
   const loadCompletions = useCallback(async () => {
@@ -77,18 +61,19 @@ export function Checklist({ sundayId }: ChecklistProps) {
   }, [sundayId])
 
   useEffect(() => {
-    Promise.all([loadItems(), loadCompletions()]).then(() => setLoading(false))
-  }, [loadItems, loadCompletions])
+    let active = true
 
-  // Keep expanded state in sync as sections change
-  useEffect(() => {
-    const allSections = Array.from(new Set(items.map(i => i.section)))
-    setExpanded(prev => {
-      const updated = { ...prev }
-      allSections.forEach(s => { if (!(s in updated)) updated[s] = true })
-      return updated
-    })
-  }, [items])
+    async function hydrate() {
+      await Promise.all([loadItems(), loadCompletions()])
+      if (active) setLoading(false)
+    }
+
+    hydrate()
+
+    return () => {
+      active = false
+    }
+  }, [loadItems, loadCompletions])
 
   const toggleItem = async (id: number) => {
     if (completions[id]) {
@@ -117,13 +102,14 @@ export function Checklist({ sundayId }: ChecklistProps) {
     setInitials('')
   }
 
-  const deleteItem = async (item: DbItem) => {
+  const deleteItem = async (item: ChecklistItemRecord) => {
     await supabase.from('checklist_items').delete().eq('id', item.id)
     setItems(prev => prev.filter(i => i.id !== item.id))
     setConfirmDelete(null)
   }
 
   const allSections = Array.from(new Set(items.map(i => i.section)))
+  const sectionOptions = [...allSections]
 
   const sectionedItems = allSections.map(section => ({
     section,
@@ -205,6 +191,22 @@ export function Checklist({ sundayId }: ChecklistProps) {
         )}
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
+          {displaySections.length === 0 && (
+            <div className="xl:col-span-2 bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
+              <p className="text-gray-600 text-sm font-medium">No checklist items are configured yet.</p>
+              <p className="text-gray-400 text-xs mt-1">
+                {isAdmin ? 'Use admin mode to add the first checklist item.' : 'Ask an admin to add checklist items.'}
+              </p>
+              {isAdmin && (
+                <button
+                  onClick={() => { setAddSection(null); setEditItem(null); setShowItemForm(true) }}
+                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                  <Plus className="w-4 h-4" />
+                  Add First Item
+                </button>
+              )}
+            </div>
+          )}
           {displaySections.map(({ section, items: sectionItems }) => {
             const secDone = sectionItems.filter(i => completions[i.id]).length
             const isOpen = expanded[section] !== false
@@ -325,6 +327,7 @@ export function Checklist({ sundayId }: ChecklistProps) {
         <ItemFormModal
           item={editItem || undefined}
           defaultSection={addSection || undefined}
+          sectionOptions={sectionOptions}
           onClose={() => { setShowItemForm(false); setEditItem(null); setAddSection(null) }}
           onSaved={loadItems}
         />

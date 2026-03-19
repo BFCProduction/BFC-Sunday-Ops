@@ -4,7 +4,7 @@ import {
   BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
   Lock, LockOpen,
 } from 'lucide-react'
-import { useAdmin } from '../../context/AdminContext'
+import { useAdmin } from '../../context/adminState'
 import { AdminPasswordModal } from '../admin/AdminPasswordModal'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'

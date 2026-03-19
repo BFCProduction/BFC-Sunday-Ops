@@ -25,7 +25,7 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
   const [label, setLabel] = useState(field?.label || '')
   const [host, setHost] = useState(field?.host || '')
   const [port, setPort] = useState(field?.port ?? 1025)
-  const [clockNumber, setClockNumber] = useState(field?.clock_number ?? 1)
+  const [clockNumber, setClockNumber] = useState(field?.clock_number ?? 0)
   const [pullTime, setPullTime] = useState(field?.pull_time || '10:20')
   const [pullDay, setPullDay] = useState(field?.pull_day ?? 0)
   const [sortOrder, setSortOrder] = useState(field?.sort_order ?? 0)
@@ -35,6 +35,7 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
   const handleSave = async () => {
     if (!label.trim()) { setError('Label is required'); return }
     if (!host.trim()) { setError('ProPresenter host IP is required'); return }
+    if (clockNumber < 0) { setError('Clock number must be 0 or greater'); return }
     setSaving(true)
     const payload = {
       label: label.trim(),
@@ -104,11 +105,15 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Clock Number</label>
             <input
-              type="number" min="1"
+              type="number" min="0"
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm font-mono focus:outline-none focus:border-blue-500"
-              value={clockNumber} onChange={e => setClockNumber(parseInt(e.target.value) || 1)}
+              value={clockNumber}
+              onChange={e => {
+                const nextValue = parseInt(e.target.value, 10)
+                setClockNumber(Number.isNaN(nextValue) ? 0 : nextValue)
+              }}
             />
-            <p className="text-gray-400 text-[10px] mt-1">Position in ProPresenter's Clock module (1 = first clock)</p>
+            <p className="text-gray-400 text-[10px] mt-1">Zero-based index in ProPresenter&apos;s Clock module (0 = first clock)</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

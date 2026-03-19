@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Lock, X } from 'lucide-react'
-import { useAdmin } from '../../context/AdminContext'
+import { useAdmin } from '../../context/adminState'
 
 interface Props {
   onClose: () => void

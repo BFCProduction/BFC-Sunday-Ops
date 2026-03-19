@@ -1,7 +1,5 @@
-name: Sunday Analytics Pull
+name: Manual Analytics Pull
 on:
-  schedule:
-    - cron: '30 20 * * 0'
   workflow_dispatch:
 
 jobs:

@@ -34,7 +34,7 @@ export function ServiceData({ sundayId }: ServiceDataProps) {
       <div className="p-5">
         {tab === 'attendance' && <Attendance sundayId={sundayId} />}
         {tab === 'runtimes'   && <Runtimes sundayId={sundayId} />}
-        {tab === 'weather'    && <Weather />}
+        {tab === 'weather'    && <Weather sundayId={sundayId} />}
         {tab === 'loudness'   && <LoudnessLog sundayId={sundayId} />}
       </div>
     </div>

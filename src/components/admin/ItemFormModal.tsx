@@ -1,31 +1,23 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { SECTIONS, ROLE_COLORS } from '../../data/checklist'
-
-export interface DbItem {
-  id: number
-  task: string
-  role: string
-  section: string
-  subsection: string | null
-  note: string | null
-  sort_order: number
-}
+import { ROLE_COLORS } from '../../data/checklist'
+import type { ChecklistItemRecord } from '../../lib/checklist'
 
 interface Props {
-  item?: DbItem
+  item?: ChecklistItemRecord
   defaultSection?: string
+  sectionOptions?: string[]
   onClose: () => void
   onSaved: () => void
 }
 
 const ROLES_LIST = ['A1', 'Video', 'Graphics', 'Lighting', 'Stage']
 
-export function ItemFormModal({ item, defaultSection, onClose, onSaved }: Props) {
+export function ItemFormModal({ item, defaultSection, sectionOptions = [], onClose, onSaved }: Props) {
   const [task, setTask] = useState(item?.task || '')
   const [role, setRole] = useState(item?.role || 'A1')
-  const [section, setSection] = useState(item?.section || defaultSection || SECTIONS[0])
+  const [section, setSection] = useState(item?.section || defaultSection || sectionOptions[0] || '')
   const [subsection, setSubsection] = useState(item?.subsection || '')
   const [note, setNote] = useState(item?.note || '')
   const [saving, setSaving] = useState(false)
@@ -100,7 +92,7 @@ export function ItemFormModal({ item, defaultSection, onClose, onSaved }: Props)
               value={section} onChange={e => setSection(e.target.value)} placeholder="Choose or type a section name"
             />
             <datalist id="section-options">
-              {SECTIONS.map(s => <option key={s} value={s} />)}
+              {sectionOptions.map(s => <option key={s} value={s} />)}
             </datalist>
           </div>
 

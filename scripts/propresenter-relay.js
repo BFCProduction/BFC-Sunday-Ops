@@ -97,6 +97,34 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+function getChurchDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+
+  const year = parts.find(part => part.type === 'year')?.value
+  const month = parts.find(part => part.type === 'month')?.value
+  const day = parts.find(part => part.type === 'day')?.value
+
+  if (!year || !month || !day) {
+    throw new Error('Unable to format church date')
+  }
+
+  return `${year}-${month}-${day}`
+}
+
+function getChurchDayOfWeek(date = new Date()) {
+  const dayName = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    weekday: 'long',
+  }).format(date)
+
+  return DAY_NAMES.indexOf(dayName)
+}
+
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 // ─── Probe ProPresenter to find working API path ─────────────────────────────
@@ -163,7 +191,7 @@ async function pullFields(fields, sundayId) {
       timers.forEach((t, i) => {
         const name = t.id?.name ?? t.name ?? 'Unnamed'
         const time = extractTime(t)
-        console.log(`    [${i + 1}] ${name} — ${time ?? 'no time'} (${t.state ?? ''})`)
+        console.log(`    [${i}] ${name} — ${time ?? 'no time'} (${t.state ?? ''})`)
       })
     } catch (err) {
       console.error(`  Could not reach ProPresenter at ${host}:${port}: ${err.message}`)
@@ -173,14 +201,14 @@ async function pullFields(fields, sundayId) {
 
     const upserts = []
     for (const field of hostFields) {
-      const timer = timers[field.clock_number - 1]
+      const timer = timers[field.clock_number]
       if (!timer) {
-        console.warn(`  Warning: timer ${field.clock_number} not found for "${field.label}" (only ${timers.length} available)`)
+        console.warn(`  Warning: timer index ${field.clock_number} not found for "${field.label}" (only ${timers.length} available)`)
         continue
       }
       const value = extractTime(timer)
       const timerName = timer.id?.name ?? timer.name ?? 'Unnamed'
-      console.log(`  "${field.label}" → timer ${field.clock_number} (${timerName}) = ${value ?? 'no time'}`)
+      console.log(`  "${field.label}" → timer index ${field.clock_number} (${timerName}) = ${value ?? 'no time'}`)
       upserts.push({
         sunday_id: sundayId,
         field_id: field.id,
@@ -205,8 +233,8 @@ async function run() {
   console.log('BFC Sunday Ops — ProPresenter Relay')
   console.log('====================================')
 
-  const todayDow = new Date().getDay()
-  const today = new Date().toISOString().split('T')[0]
+  const todayDow = getChurchDayOfWeek()
+  const today = getChurchDateString()
 
   const { data: allFields, error: fieldsErr } = await supabase
     .from('runtime_fields')
@@ -233,7 +261,7 @@ async function run() {
 
   console.log(`\nFields to capture (${pullNow ? 'all' : DAY_NAMES[todayDow]}):`)
   todayFields.forEach(f => {
-    console.log(`  ${pullNow ? '' : f.pull_time + ' · '}"${f.label}" · ${f.host}:${f.port} clock ${f.clock_number}`)
+    console.log(`  ${pullNow ? '' : f.pull_time + ' · '}"${f.label}" · ${f.host}:${f.port} clock index ${f.clock_number}`)
   })
 
   const { data: sunday } = await supabase

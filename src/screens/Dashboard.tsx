@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, ChevronRight, ClipboardCheck, BarChart2, Star } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { CHECKLIST_ITEMS, ROLE_COLORS } from '../data/checklist'
+import { ROLE_COLORS } from '../data/checklist'
+import { loadOrSeedChecklistItems } from '../lib/checklist'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import type { Issue } from '../types'
+import type { ChecklistItemRecord } from '../lib/checklist'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
 
@@ -40,16 +42,19 @@ function getScheduleStatus(key: string): 'done' | 'active' | 'upcoming' {
 }
 
 export function Dashboard({ sundayId, setScreen }: DashboardProps) {
+  const [items, setItems] = useState<ChecklistItemRecord[]>([])
   const [completedIds, setCompletedIds] = useState<number[]>([])
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
-      const [completions, issueData] = await Promise.all([
+      const [itemData, completions, issueData] = await Promise.all([
+        loadOrSeedChecklistItems(),
         supabase.from('checklist_completions').select('item_id').eq('sunday_id', sundayId),
         supabase.from('issues').select('*').eq('sunday_id', sundayId).order('created_at', { ascending: false }),
       ])
+      setItems(itemData)
       setCompletedIds((completions.data || []).map((r: { item_id: number }) => r.item_id))
       setIssues((issueData.data || []) as Issue[])
       setLoading(false)
@@ -57,16 +62,21 @@ export function Dashboard({ sundayId, setScreen }: DashboardProps) {
     load()
   }, [sundayId])
 
-  const total = CHECKLIST_ITEMS.length
+  const total = items.length
   const done = completedIds.length
-  const pct = Math.round((done / total) * 100)
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0
   const circ = 2 * Math.PI * 32
   const ringColor = pct === 100 ? '#10b981' : pct > 60 ? '#3b82f6' : '#f59e0b'
 
   const roleStats = ['A1', 'Video', 'Graphics', 'Lighting', 'Stage'].map(r => {
-    const roleItems = CHECKLIST_ITEMS.filter(i => i.role === r)
+    const roleItems = items.filter(i => i.role === r)
     const roleDone = roleItems.filter(i => completedIds.includes(i.id)).length
-    return { r, done: roleDone, total: roleItems.length, pct: Math.round((roleDone / roleItems.length) * 100) }
+    return {
+      r,
+      done: roleDone,
+      total: roleItems.length,
+      pct: roleItems.length > 0 ? Math.round((roleDone / roleItems.length) * 100) : 0,
+    }
   })
 
   const highIssues = issues.filter(i => i.severity === 'High' || i.severity === 'Critical')
@@ -113,7 +123,7 @@ export function Dashboard({ sundayId, setScreen }: DashboardProps) {
                   {roleStats.map(({ r, done, total }) => (
                     <div key={r} className="text-center">
                       <div className="h-1 rounded-full mb-1 bg-gray-100">
-                        <div className="h-1 rounded-full" style={{ width: `${Math.round(done / total * 100)}%`, background: ROLE_COLORS[r] }} />
+                        <div className="h-1 rounded-full" style={{ width: `${total > 0 ? Math.round(done / total * 100) : 0}%`, background: ROLE_COLORS[r] }} />
                       </div>
                       <span className="text-[9px] text-gray-400 font-medium">{r}</span>
                     </div>

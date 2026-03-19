@@ -8,6 +8,8 @@ interface IssueLogProps {
   sundayId: string
 }
 
+const MONDAY_PUSH_ENABLED = import.meta.env.VITE_ENABLE_MONDAY_PUSH === 'true'
+
 const SEV_STYLE: Record<string, string> = {
   Low:      'bg-emerald-50 text-emerald-700 border-emerald-200',
   Medium:   'bg-amber-50 text-amber-700 border-amber-200',
@@ -23,6 +25,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
   const [confirmIssue, setConfirmIssue] = useState<Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday'> | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     supabase.from('issues').select('*').eq('sunday_id', sundayId)
@@ -33,7 +36,8 @@ export function IssueLog({ sundayId }: IssueLogProps) {
   const handleSubmit = () => {
     if (!desc.trim()) return
     const newIssue = { sunday_id: sundayId, description: desc.trim(), severity, created_at: new Date().toISOString() }
-    if (severity === 'Low') {
+    setNotice('')
+    if (severity === 'Low' || !MONDAY_PUSH_ENABLED) {
       saveIssue(newIssue, false)
     } else {
       setConfirmIssue(newIssue)
@@ -43,23 +47,46 @@ export function IssueLog({ sundayId }: IssueLogProps) {
   const saveIssue = async (issue: Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday'>, pushToMonday: boolean) => {
     setSaving(true)
     const { data } = await supabase.from('issues').insert({
-      ...issue, pushed_to_monday: pushToMonday,
+      ...issue, pushed_to_monday: false,
     }).select().single()
     if (data) setIssues(p => [data as Issue, ...p])
     setDesc(''); setSeverity('Medium'); setShowForm(false); setConfirmIssue(null)
-    setSaving(false)
 
-    if (pushToMonday) {
-      // Monday.com push via Supabase Edge Function (to be implemented)
-      await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/push-monday-issue`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ issue_id: data?.id, description: issue.description, severity: issue.severity }),
-      }).catch(console.error)
+    if (pushToMonday && data) {
+      try {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/push-monday-issue`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ issue_id: data.id, description: issue.description, severity: issue.severity }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Monday push failed with ${response.status}`)
+        }
+
+        const result = await response.json().catch(() => ({}))
+        const mondayItemId = typeof result?.itemId === 'string' ? result.itemId : null
+
+        await supabase.from('issues').update({
+          pushed_to_monday: true,
+          monday_item_id: mondayItemId,
+        }).eq('id', data.id)
+
+        setIssues(prev => prev.map(entry => (
+          entry.id === data.id
+            ? { ...entry, pushed_to_monday: true, monday_item_id: mondayItemId }
+            : entry
+        )))
+      } catch (error) {
+        console.error(error)
+        setNotice('Issue saved, but Monday.com push is unavailable in this environment.')
+      }
     }
+
+    setSaving(false)
   }
 
   if (loading) return (
@@ -82,6 +109,11 @@ export function IssueLog({ sundayId }: IssueLogProps) {
       </div>
 
       <div className="p-5 space-y-4">
+        {notice && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <p className="text-amber-700 text-xs font-medium">{notice}</p>
+          </div>
+        )}
         <div className="grid grid-cols-1 xl:grid-cols-[400px_1fr] gap-5 items-start">
           {showForm && (
             <Card className="p-5 space-y-4 slide-up">
@@ -111,7 +143,10 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                   {saving ? 'Saving...' : 'Submit'}
                 </button>
               </div>
-              {severity !== 'Low' && (
+              {!MONDAY_PUSH_ENABLED && severity !== 'Low' && (
+                <p className="text-amber-600 text-[10px] text-center">Monday.com push is disabled in this environment.</p>
+              )}
+              {MONDAY_PUSH_ENABLED && severity !== 'Low' && (
                 <p className="text-gray-400 text-[10px] text-center">You will be asked whether to push this to Monday.com</p>
               )}
             </Card>

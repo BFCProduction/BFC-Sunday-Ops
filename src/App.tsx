@@ -1,5 +1,6 @@
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect } from 'react'
 import { AdminProvider } from './context/AdminContext'
+import { SundayContext } from './context/SundayContext'
 import { getOrCreateSunday } from './lib/supabase'
 import { SiteHeader } from './components/layout/SiteHeader'
 import { Sidebar } from './components/layout/Sidebar'
@@ -12,15 +13,6 @@ import { Evaluation } from './screens/Evaluation'
 import { supabase } from './lib/supabase'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
-
-interface SundayContextType {
-  sundayId: string
-  sundayDate: string
-}
-
-export const SundayContext = createContext<SundayContextType>({ sundayId: '', sundayDate: '' })
-export const useSunday = () => useContext(SundayContext)
-
 export default function App() {
   const [screen, setScreen] = useState<Screen>('dashboard')
   const [sundayId, setSundayId] = useState('')

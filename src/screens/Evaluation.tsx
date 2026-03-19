@@ -71,7 +71,7 @@ export function Evaluation({ sundayId }: EvaluationProps) {
       </div>
       <h2 className="text-gray-900 text-xl font-bold mb-2">Evaluation Submitted</h2>
       <p className="text-gray-500 text-sm leading-relaxed mb-6 max-w-xs">
-        Saved and queued for the Sunday summary email, going out approximately 2:30 PM with PDF attached.
+        Saved successfully. Analytics and any follow-up reporting depend on whichever imports are configured for this environment.
       </p>
       <Card className="p-4 text-left max-w-xs w-full">
         <p className="text-gray-400 text-[10px] uppercase font-semibold mb-2.5">Summary Email</p>
@@ -81,7 +81,7 @@ export function Evaluation({ sundayId }: EvaluationProps) {
           </div>
           <div>
             <p className="text-gray-900 text-xs font-medium">Sunday Ops Report</p>
-            <p className="text-gray-400 text-[10px]">Sending ~2:30 PM · PDF attached</p>
+            <p className="text-gray-400 text-[10px]">Reporting pipeline configured separately</p>
           </div>
         </div>
       </Card>
@@ -171,7 +171,7 @@ export function Evaluation({ sundayId }: EvaluationProps) {
               ))}
             </div>
             {!analytics && (
-              <p className="text-gray-400 text-[10px] mt-3 text-center">Pulled via GitHub Actions after services end</p>
+              <p className="text-gray-400 text-[10px] mt-3 text-center">Analytics appear here after they are imported into Supabase.</p>
             )}
           </Card>
         </div>

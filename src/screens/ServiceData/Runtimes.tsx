@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Server, Clock, CheckCircle2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { useAdmin } from '../../context/AdminContext'
+import { useAdmin } from '../../context/adminState'
 import { RuntimeFieldModal } from '../../components/admin/RuntimeFieldModal'
 import type { RuntimeField } from '../../components/admin/RuntimeFieldModal'
 
@@ -58,7 +58,18 @@ export function Runtimes({ sundayId }: RuntimesProps) {
   }, [sundayId])
 
   useEffect(() => {
-    Promise.all([loadFields(), loadValues()]).then(() => setLoading(false))
+    let active = true
+
+    async function hydrate() {
+      await Promise.all([loadFields(), loadValues()])
+      if (active) setLoading(false)
+    }
+
+    hydrate()
+
+    return () => {
+      active = false
+    }
   }, [loadFields, loadValues])
 
   const save = async () => {
@@ -110,7 +121,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
                 <p className="text-gray-900 text-sm font-medium">{field.label}</p>
                 {isAdmin && (
                   <p className="text-gray-400 text-[10px] mt-0.5">
-                    Pull at {field.pull_time} · {field.host}:{field.port} · clock {field.clock_number}
+                    Pull at {field.pull_time} · {field.host}:{field.port} · clock index {field.clock_number}
                   </p>
                 )}
                 {captured[field.id] && (
@@ -183,7 +194,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
                         <Clock className="w-3 h-3" />{field.pull_time}
                       </span>
                       <span className="text-gray-400 text-[11px] font-mono">
-                        {field.host}:{field.port} · clock {field.clock_number}
+                        {field.host}:{field.port} · clock index {field.clock_number}
                       </span>
                     </div>
                   </div>
@@ -211,7 +222,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
               node scripts/propresenter-relay.js
             </code>
             <p className="text-gray-400 text-[10px] mt-1.5">
-              Add <span className="font-mono">--now</span> to pull all fields immediately for testing
+              Add <span className="font-mono">--now</span> to pull all fields immediately for testing. ProPresenter timer indexes are zero-based.
             </p>
           </div>
         </div>
