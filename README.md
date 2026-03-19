@@ -23,12 +23,12 @@ Live now:
 - Runtime fields support ProPresenter's native zero-based timer index. `0` is the first clock.
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
 - Weather location and pull schedule can be configured in the admin UI.
+- Weather can be imported automatically from the configured ZIP code and pull schedule via the weather workflow.
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
 - Monday.com push is disabled by default unless `VITE_ENABLE_MONDAY_PUSH=true`.
 
 Still pending:
 - Real Monday.com edge function implementation
-- Real weather importer that uses the configured location and pull schedule
 - Real YouTube / RESI analytics importers
 - Any downstream reporting or summary-email automation
 
@@ -109,10 +109,32 @@ Runtime field notes:
 - Leave the host blank for a manual-entry-only runtime field.
 - Runtime values are stored in `runtime_values`.
 
+## Weather Import
+
+Weather settings are managed in the app under `Service Data -> Weather` while in admin mode.
+
+Automatic import is handled by:
+
+```bash
+node scripts/fetch-weather.js
+```
+
+Useful flag:
+
+```bash
+node scripts/fetch-weather.js --now
+```
+
+Notes:
+- The importer reads the ZIP code, pull day, and pull time from `weather_config`.
+- It uses [Open-Meteo](https://open-meteo.com/en/docs) for geocoding and weather data.
+- It writes the imported weather into the `weather` table for the current or upcoming Sunday.
+
 ## GitHub Workflows
 
 - `deploy.yml`: builds and deploys to GitHub Pages on push to `main`
 - `sunday-analytics.yml`: manual-only placeholder workflow until real analytics importers are added
+- `weather-import.yml`: runs every 5 minutes and imports weather once the configured day/time has passed
 
 ## Notes
 
