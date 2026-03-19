@@ -25,10 +25,9 @@ Live now:
 - Weather location and pull schedule can be configured in the admin UI.
 - Weather can be imported automatically from the configured ZIP code and pull schedule via the weather workflow.
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
-- Monday.com push is disabled by default unless `VITE_ENABLE_MONDAY_PUSH=true`.
+- Monday.com push can be enabled with the edge function and related secrets.
 
 Still pending:
-- Real Monday.com edge function implementation
 - Real YouTube / RESI analytics importers
 - Any downstream reporting or summary-email automation
 
@@ -80,12 +79,11 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key_here
 VITE_ADMIN_PASSWORD=choose_a_shared_admin_password
 VITE_ENABLE_MONDAY_PUSH=false
-```
-
-Relay / server-side scripts can also use:
-
-```bash
 SUPABASE_SERVICE_KEY=your_service_role_key
+MONDAY_API_TOKEN=your_monday_api_token
+MONDAY_BOARD_ID=your_board_id
+MONDAY_GROUP_ID=optional_group_id
+MONDAY_STATUS_COLUMN_ID=optional_status_column_id
 ```
 
 ## ProPresenter Relay
@@ -136,8 +134,31 @@ Notes:
 - `sunday-analytics.yml`: manual-only placeholder workflow until real analytics importers are added
 - `weather-import.yml`: runs every 5 minutes and imports weather once the configured day/time has passed
 
+## Monday.com Push
+
+The issue log can push Medium, High, and Critical issues to Monday.com through:
+
+- `supabase/functions/push-monday-issue`
+
+Setup notes:
+- Set `VITE_ENABLE_MONDAY_PUSH=true` before building the frontend.
+- Add the Monday and Supabase service secrets shown above to your Supabase project for the edge function.
+- Deploy the edge function after adding secrets.
+- Add `VITE_ENABLE_MONDAY_PUSH` as a GitHub Actions secret so the Pages build can enable the UI.
+- If `MONDAY_STATUS_COLUMN_ID` is provided, the function will try to set that status column to the issue severity label.
+
+The function creates:
+- a Monday item whose name begins with the severity
+- a Monday update containing the full issue description and internal issue ID
+
+Example function deploy command:
+
+```bash
+supabase functions deploy push-monday-issue
+```
+
 ## Notes
 
 - Admin mode is a shared-password convenience layer in the frontend.
 - The repo now matches the current checklist/runtime data model better than the original generated README did.
-- Scheduled analytics and Monday.com integration should stay disabled until their backing code exists.
+- Scheduled analytics should stay disabled until their backing code exists.
