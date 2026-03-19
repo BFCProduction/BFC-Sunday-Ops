@@ -108,9 +108,11 @@ export function Runtimes({ sundayId }: RuntimesProps) {
             <div key={field.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
               <div className="flex-1 min-w-0">
                 <p className="text-gray-900 text-sm font-medium">{field.label}</p>
-                <p className="text-gray-400 text-[10px] mt-0.5">
-                  Pull at {field.pull_time} · {field.host}:{field.port} · clock {field.clock_number}
-                </p>
+                {isAdmin && (
+                  <p className="text-gray-400 text-[10px] mt-0.5">
+                    Pull at {field.pull_time} · {field.host}:{field.port} · clock {field.clock_number}
+                  </p>
+                )}
                 {captured[field.id] && (
                   <div className="flex items-center gap-1 mt-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-500" />
