@@ -55,6 +55,15 @@ function formatSeconds(totalSeconds) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+// ProPresenter returns time as a pre-formatted string e.g. "1:15:32" or "45:30"
+// Fall back to converting seconds if it's a number
+function extractTime(timerObj) {
+  const t = timerObj.time
+  if (typeof t === 'string' && t.length > 0) return t
+  const secs = timerObj.current_time ?? timerObj.elapsed ?? timerObj.seconds
+  return formatSeconds(secs)
+}
+
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
     const get = url.startsWith('https') ? httpsGet : httpGet
@@ -154,9 +163,9 @@ async function pullFields(fields, sundayId) {
       if (!Array.isArray(timers)) throw new Error('Unexpected response format')
       console.log(`  Found ${timers.length} timer${timers.length !== 1 ? 's' : ''}`)
       timers.forEach((t, i) => {
-        const name = t.name ?? t.id?.name ?? t.timer_id?.name ?? 'Unnamed'
-        const secs = t.time ?? t.current_time ?? t.elapsed ?? t.seconds
-        console.log(`    [${i + 1}] ${name} — ${formatSeconds(secs) ?? 'no time'} (raw: ${JSON.stringify(t).slice(0, 80)})`)
+        const name = t.id?.name ?? t.name ?? 'Unnamed'
+        const time = extractTime(t)
+        console.log(`    [${i + 1}] ${name} — ${time ?? 'no time'} (${t.state ?? ''})`)
       })
     } catch (err) {
       console.error(`  Could not reach ProPresenter at ${host}:${port}: ${err.message}`)
@@ -171,9 +180,8 @@ async function pullFields(fields, sundayId) {
         console.warn(`  Warning: timer ${field.clock_number} not found for "${field.label}" (only ${timers.length} available)`)
         continue
       }
-      const secs = timer.time ?? timer.current_time ?? timer.elapsed ?? timer.seconds
-      const value = formatSeconds(secs)
-      const timerName = timer.name ?? timer.id?.name ?? timer.timer_id?.name ?? 'Unnamed'
+      const value = extractTime(timer)
+      const timerName = timer.id?.name ?? timer.name ?? 'Unnamed'
       console.log(`  "${field.label}" → timer ${field.clock_number} (${timerName}) = ${value ?? 'no time'}`)
       upserts.push({
         sunday_id: sundayId,
