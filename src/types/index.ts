@@ -16,6 +16,7 @@ export interface ChecklistCompletion {
 export interface Issue {
   id: string
   sunday_id: string
+  title: string
   description: string
   severity: 'Low' | 'Medium' | 'High' | 'Critical'
   monday_item_id: string | null

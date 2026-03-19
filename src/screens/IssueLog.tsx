@@ -22,6 +22,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
   const { isAdmin } = useAdmin()
   const [issues, setIssues] = useState<Issue[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
   const [severity, setSeverity] = useState<Issue['severity']>('Medium')
   const [confirmIssue, setConfirmIssue] = useState<Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday'> | null>(null)
@@ -36,9 +37,26 @@ export function IssueLog({ sundayId }: IssueLogProps) {
       .then(({ data }) => { setIssues((data || []) as Issue[]); setLoading(false) })
   }, [sundayId])
 
+  const resetForm = () => {
+    setTitle('')
+    setDesc('')
+    setSeverity('Medium')
+    setShowForm(false)
+    setConfirmIssue(null)
+  }
+
   const handleSubmit = () => {
-    if (!desc.trim()) return
-    const newIssue = { sunday_id: sundayId, description: desc.trim(), severity, created_at: new Date().toISOString() }
+    if (!title.trim() || !desc.trim()) {
+      setNotice('Issue title and description are required.')
+      return
+    }
+    const newIssue = {
+      sunday_id: sundayId,
+      title: title.trim(),
+      description: desc.trim(),
+      severity,
+      created_at: new Date().toISOString(),
+    }
     setNotice('')
     if (severity === 'Low' || !MONDAY_PUSH_ENABLED) {
       saveIssue(newIssue, false)
@@ -49,11 +67,16 @@ export function IssueLog({ sundayId }: IssueLogProps) {
 
   const saveIssue = async (issue: Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday'>, pushToMonday: boolean) => {
     setSaving(true)
-    const { data } = await supabase.from('issues').insert({
+    const { data, error } = await supabase.from('issues').insert({
       ...issue, pushed_to_monday: false,
     }).select().single()
+    if (error) {
+      setSaving(false)
+      setNotice(error.message)
+      return
+    }
     if (data) setIssues(p => [data as Issue, ...p])
-    setDesc(''); setSeverity('Medium'); setShowForm(false); setConfirmIssue(null)
+    resetForm()
 
     if (pushToMonday && data) {
       try {
@@ -63,7 +86,12 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ issue_id: data.id, description: issue.description, severity: issue.severity }),
+          body: JSON.stringify({
+            issue_id: data.id,
+            title: issue.title,
+            description: issue.description,
+            severity: issue.severity,
+          }),
         })
 
         if (!response.ok) {
@@ -137,8 +165,15 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             <Card className="p-5 space-y-4 slide-up">
               <div className="flex items-center justify-between">
                 <h3 className="text-gray-900 font-semibold">New Issue</h3>
-                <button onClick={() => { setShowForm(false); setDesc('') }} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
               </div>
+              <input
+                type="text"
+                placeholder="Issue title..."
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+              />
               <textarea rows={3} placeholder="Describe the issue…"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500 resize-none"
                 value={desc} onChange={e => setDesc(e.target.value)} />
@@ -154,7 +189,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => { setShowForm(false); setDesc('') }}
+                <button onClick={resetForm}
                   className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">Cancel</button>
                 <button onClick={handleSubmit} disabled={saving}
                   className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60">
@@ -197,7 +232,8 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                     {new Date(issue.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                   </span>
                 </div>
-                <p className="text-gray-800 text-sm leading-snug">{issue.description}</p>
+                <p className="text-gray-900 text-sm font-semibold leading-snug">{issue.title || issue.description}</p>
+                <p className="mt-1 text-gray-600 text-sm leading-snug">{issue.description}</p>
                 <div className="mt-2.5">
                   {issue.pushed_to_monday ? (
                     <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 text-[10px] text-blue-700 font-medium">
@@ -224,7 +260,8 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             <p className="text-gray-500 text-sm mb-3">
               This is a <span className={`font-semibold ${confirmIssue.severity === 'Critical' ? 'text-red-600' : 'text-amber-600'}`}>{confirmIssue.severity}</span> severity issue.
             </p>
-            <p className="text-gray-500 text-xs bg-gray-50 rounded-xl p-3 leading-relaxed mb-4">"{confirmIssue.description}"</p>
+            <p className="text-gray-900 text-sm font-semibold mb-2">{confirmIssue.title}</p>
+            <p className="text-gray-500 text-xs bg-gray-50 rounded-xl p-3 leading-relaxed mb-4">{confirmIssue.description}</p>
             <div className="flex gap-3">
               <button onClick={() => saveIssue(confirmIssue, false)} disabled={saving}
                 className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">Log Only</button>
@@ -244,8 +281,11 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             <p className="text-gray-500 text-sm mb-4">
               Delete this issue from Sunday Ops?
             </p>
+            <p className="text-gray-900 text-sm font-semibold mb-2">
+              {confirmDelete.title || confirmDelete.description}
+            </p>
             <p className="text-gray-500 text-xs bg-gray-50 rounded-xl p-3 leading-relaxed mb-4">
-              "{confirmDelete.description}"
+              {confirmDelete.description}
             </p>
             <div className="flex gap-3">
               <button

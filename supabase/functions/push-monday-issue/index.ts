@@ -7,6 +7,7 @@ const corsHeaders = {
 
 interface PushIssuePayload {
   issue_id: string
+  title: string
   description: string
   severity: 'Low' | 'Medium' | 'High' | 'Critical'
 }
@@ -16,8 +17,8 @@ interface MondayGraphqlResponse<T> {
   errors?: Array<{ message?: string }>
 }
 
-function buildMondayItemName(description: string, severity: PushIssuePayload['severity']) {
-  const trimmed = description.trim().replace(/\s+/g, ' ')
+function buildMondayItemName(title: string, severity: PushIssuePayload['severity']) {
+  const trimmed = title.trim().replace(/\s+/g, ' ')
   const snippet = trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed
   return snippet || severity
 }
@@ -90,8 +91,8 @@ Deno.serve(async request => {
     const statusColumnId = Deno.env.get('MONDAY_STATUS_COLUMN_ID') || undefined
 
     const body = await request.json() as PushIssuePayload
-    if (!body.issue_id || !body.description?.trim() || !body.severity) {
-      return new Response(JSON.stringify({ error: 'issue_id, description, and severity are required' }), {
+    if (!body.issue_id || !body.title?.trim() || !body.description?.trim() || !body.severity) {
+      return new Response(JSON.stringify({ error: 'issue_id, title, description, and severity are required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -114,7 +115,7 @@ Deno.serve(async request => {
     const createItemData = await mondayRequest<{ create_item: { id: string } }>(createItemQuery, {
       boardId,
       groupId,
-      itemName: buildMondayItemName(body.description, body.severity),
+      itemName: buildMondayItemName(body.title, body.severity),
       columnValues,
     })
 
