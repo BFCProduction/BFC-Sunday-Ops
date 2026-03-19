@@ -146,13 +146,11 @@ async function pullFields(fields, sundayId) {
   }
 
   for (const { host, port, fields: hostFields } of Object.values(byHost)) {
-    const ppBase = `http://${host}:${port}/v1`
+    const ppBase = `http://${host}:${port}`
     console.log(`\n  Connecting to ${ppBase}...`)
 
     let timers
     try {
-      // Try /v1/timers/current first (gives current elapsed time for all timers)
-      // Fall back to /v1/timers (gives timer definitions, may include current time)
       let raw
       try {
         raw = await fetchJSON(`${ppBase}/v1/timers/current`)
