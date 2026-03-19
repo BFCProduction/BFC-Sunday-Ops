@@ -23,13 +23,23 @@ export function Checklist({ sundayId }: ChecklistProps) {
   const [role, setRole] = useState<Role>('All')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [modal, setModal] = useState<number | null>(null)
-  const [initials, setInitials] = useState('')
+  const [operatorInitials, setOperatorInitials] = useState(() => window.localStorage.getItem('bfc-checklist-initials') || '')
+  const [modalInitials, setModalInitials] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [editItem, setEditItem] = useState<ChecklistItemRecord | null>(null)
   const [addSection, setAddSection] = useState<string | null>(null)
   const [showItemForm, setShowItemForm] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<ChecklistItemRecord | null>(null)
+
+  useEffect(() => {
+    const normalizedInitials = operatorInitials.trim().toUpperCase()
+    if (normalizedInitials) {
+      window.localStorage.setItem('bfc-checklist-initials', normalizedInitials)
+    } else {
+      window.localStorage.removeItem('bfc-checklist-initials')
+    }
+  }, [operatorInitials])
 
   const loadItems = useCallback(async () => {
     const data = await loadOrSeedChecklistItems()
@@ -75,31 +85,46 @@ export function Checklist({ sundayId }: ChecklistProps) {
     }
   }, [loadItems, loadCompletions])
 
+  const completeItem = async (id: number, initialsValue: string) => {
+    const normalizedInitials = initialsValue.trim().toUpperCase() || 'N/A'
+    const now = new Date().toISOString()
+
+    setSaving(true)
+    await supabase.from('checklist_completions').upsert({
+      sunday_id: sundayId, item_id: id, initials: normalizedInitials, completed_at: now,
+    })
+    setCompletions(p => ({
+      ...p,
+      [id]: {
+        initials: normalizedInitials,
+        time: new Date(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+      },
+    }))
+    setSaving(false)
+  }
+
   const toggleItem = async (id: number) => {
     if (completions[id]) {
       await supabase.from('checklist_completions')
         .delete().eq('sunday_id', sundayId).eq('item_id', id)
       setCompletions(p => { const n = { ...p }; delete n[id]; return n })
+    } else if (operatorInitials.trim()) {
+      await completeItem(id, operatorInitials)
     } else {
+      setModalInitials('')
       setModal(id)
     }
   }
 
   const confirmCheck = async () => {
     if (!modal) return
-    setSaving(true)
-    const ini = initials.trim().toUpperCase() || 'N/A'
-    const now = new Date().toISOString()
-    await supabase.from('checklist_completions').upsert({
-      sunday_id: sundayId, item_id: modal, initials: ini, completed_at: now,
-    })
-    setCompletions(p => ({
-      ...p,
-      [modal]: { initials: ini, time: new Date(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) },
-    }))
-    setSaving(false)
+    const normalizedInitials = modalInitials.trim().toUpperCase()
+    await completeItem(modal, normalizedInitials)
+    if (normalizedInitials) {
+      setOperatorInitials(normalizedInitials)
+    }
     setModal(null)
-    setInitials('')
+    setModalInitials('')
   }
 
   const deleteItem = async (item: ChecklistItemRecord) => {
@@ -167,6 +192,23 @@ export function Checklist({ sundayId }: ChecklistProps) {
             )
           })}
         </div>
+        {!isAdmin && (
+          <div className="mb-3">
+            <label className="block text-gray-500 text-[11px] font-medium mb-1.5">Your Initials</label>
+            <div className="flex items-center gap-2">
+              <input
+                maxLength={3}
+                value={operatorInitials}
+                onChange={e => setOperatorInitials(e.target.value.toUpperCase())}
+                placeholder="AB"
+                className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm font-bold tracking-widest uppercase text-center focus:outline-none focus:border-blue-500"
+              />
+              <p className="text-gray-400 text-[11px]">
+                These initials will be applied automatically to every item you check off.
+              </p>
+            </div>
+          </div>
+        )}
         <div className="bg-gray-100 rounded-full h-1">
           <div className="bg-blue-600 h-1 rounded-full progress-fill" style={{ width: `${pct}%` }} />
         </div>
@@ -298,7 +340,7 @@ export function Checklist({ sundayId }: ChecklistProps) {
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm slide-up shadow-2xl">
             <div className="flex items-start justify-between mb-1">
               <h3 className="text-gray-900 font-bold">Sign Off</h3>
-              <button onClick={() => { setModal(null); setInitials('') }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setModal(null); setModalInitials('') }} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -306,10 +348,10 @@ export function Checklist({ sundayId }: ChecklistProps) {
             <p className="text-gray-400 text-xs mb-4">Enter your initials to confirm.</p>
             <input autoFocus maxLength={3}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-center text-2xl font-bold tracking-widest uppercase focus:outline-none focus:border-blue-500"
-              placeholder="AB" value={initials} onChange={e => setInitials(e.target.value.toUpperCase())}
+              placeholder="AB" value={modalInitials} onChange={e => setModalInitials(e.target.value.toUpperCase())}
               onKeyDown={e => e.key === 'Enter' && confirmCheck()} />
             <div className="flex gap-3 mt-4">
-              <button onClick={() => { setModal(null); setInitials('') }}
+              <button onClick={() => { setModal(null); setModalInitials('') }}
                 className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
                 Cancel
               </button>
