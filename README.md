@@ -21,12 +21,14 @@ Live now:
 - Checklist data is seeded into Supabase on first run and then managed from the admin UI.
 - Dashboard checklist counts now come from the live `checklist_items` table.
 - Runtime fields support ProPresenter's native zero-based timer index. `0` is the first clock.
+- Runtime fields can also be manual-only by leaving the ProPresenter host blank.
+- Weather location and pull schedule can be configured in the admin UI.
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
 - Monday.com push is disabled by default unless `VITE_ENABLE_MONDAY_PUSH=true`.
 
 Still pending:
 - Real Monday.com edge function implementation
-- Real weather importer
+- Real weather importer that uses the configured location and pull schedule
 - Real YouTube / RESI analytics importers
 - Any downstream reporting or summary-email automation
 
@@ -56,6 +58,8 @@ Still pending:
 Fresh schema setup is represented by:
 - `supabase/migrations/001_initial_schema.sql`
 - `supabase/migrations/002_align_runtime_and_checklist_tables.sql`
+- `supabase/migrations/003_allow_manual_runtime_fields.sql`
+- `supabase/migrations/004_add_weather_config.sql`
 
 ## Local Development
 
@@ -102,6 +106,7 @@ node scripts/propresenter-relay.js --probe --now
 Runtime field notes:
 - `clock_number` is zero-based.
 - `0` is the first ProPresenter timer.
+- Leave the host blank for a manual-entry-only runtime field.
 - Runtime values are stored in `runtime_values`.
 
 ## GitHub Workflows

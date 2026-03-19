@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase'
 export interface RuntimeField {
   id: number
   label: string
-  host: string
+  host: string | null
   port: number
   clock_number: number
   pull_time: string
@@ -34,12 +34,12 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
 
   const handleSave = async () => {
     if (!label.trim()) { setError('Label is required'); return }
-    if (!host.trim()) { setError('ProPresenter host IP is required'); return }
     if (clockNumber < 0) { setError('Clock number must be 0 or greater'); return }
     setSaving(true)
+    const trimmedHost = host.trim()
     const payload = {
       label: label.trim(),
-      host: host.trim(),
+      host: trimmedHost || null,
       port,
       clock_number: clockNumber,
       pull_time: pullTime,
@@ -81,7 +81,7 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">ProPresenter Connection *</label>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">ProPresenter Connection</label>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
                 <input
@@ -89,13 +89,14 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
                   value={host} onChange={e => setHost(e.target.value)}
                   placeholder="192.168.1.100"
                 />
-                <p className="text-gray-400 text-[10px] mt-1">IP address</p>
+                <p className="text-gray-400 text-[10px] mt-1">Leave blank for a manual-entry-only runtime</p>
               </div>
               <div>
                 <input
                   type="number" min="1" max="65535"
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm font-mono focus:outline-none focus:border-blue-500"
                   value={port} onChange={e => setPort(parseInt(e.target.value) || 1025)}
+                  disabled={!host.trim()}
                 />
                 <p className="text-gray-400 text-[10px] mt-1">Port</p>
               </div>
@@ -112,8 +113,13 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
                 const nextValue = parseInt(e.target.value, 10)
                 setClockNumber(Number.isNaN(nextValue) ? 0 : nextValue)
               }}
+              disabled={!host.trim()}
             />
-            <p className="text-gray-400 text-[10px] mt-1">Zero-based index in ProPresenter&apos;s Clock module (0 = first clock)</p>
+            <p className="text-gray-400 text-[10px] mt-1">
+              {host.trim()
+                ? 'Zero-based index in ProPresenter&apos;s Clock module (0 = first clock)'
+                : 'Not used for manual-entry-only runtimes'}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

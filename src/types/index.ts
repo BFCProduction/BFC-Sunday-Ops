@@ -77,6 +77,16 @@ export interface StreamAnalytics {
   pulled_at: string
 }
 
+export interface WeatherConfig {
+  key: string
+  location_label: string | null
+  zip_code: string
+  pull_day: number
+  pull_time: string
+  created_at: string
+  updated_at: string
+}
+
 export interface ChecklistItem {
   id: number
   task: string

@@ -168,6 +168,7 @@ function fetchRaw(url) {
 async function pullFields(fields, sundayId) {
   const byHost = {}
   for (const field of fields) {
+    if (!field.host) continue
     const key = `${field.host}:${field.port}`
     if (!byHost[key]) byHost[key] = { host: field.host, port: field.port, fields: [] }
     byHost[key].fields.push(field)
@@ -249,6 +250,8 @@ async function run() {
   const todayFields = pullNow
     ? allFields
     : allFields.filter(f => f.pull_day === todayDow)
+  const autoFields = todayFields.filter(f => f.host)
+  const manualOnlyFields = todayFields.filter(f => !f.host)
 
   if (todayFields.length === 0) {
     if (pullNow) {
@@ -259,10 +262,23 @@ async function run() {
     process.exit(0)
   }
 
-  console.log(`\nFields to capture (${pullNow ? 'all' : DAY_NAMES[todayDow]}):`)
+  console.log(`\nFields configured (${pullNow ? 'all' : DAY_NAMES[todayDow]}):`)
   todayFields.forEach(f => {
-    console.log(`  ${pullNow ? '' : f.pull_time + ' · '}"${f.label}" · ${f.host}:${f.port} clock index ${f.clock_number}`)
+    if (f.host) {
+      console.log(`  ${pullNow ? '' : f.pull_time + ' · '}"${f.label}" · ${f.host}:${f.port} clock index ${f.clock_number}`)
+    } else {
+      console.log(`  ${pullNow ? '' : f.pull_time + ' · '}"${f.label}" · manual entry only`)
+    }
   })
+
+  if (manualOnlyFields.length > 0) {
+    console.log(`\nManual-only fields: ${manualOnlyFields.length}`)
+  }
+
+  if (autoFields.length === 0) {
+    console.log('\nNo connected ProPresenter fields to pull. Manual-only runtimes must be entered in the app.')
+    process.exit(0)
+  }
 
   const { data: sunday } = await supabase
     .from('sundays')
@@ -277,7 +293,7 @@ async function run() {
   }
 
   if (process.argv.includes('--probe')) {
-    const hosts = [...new Set(todayFields.map(f => `${f.host}:${f.port}`))]
+    const hosts = [...new Set(autoFields.map(f => `${f.host}:${f.port}`))]
     for (const h of hosts) {
       const [host, port] = h.split(':')
       await probeProPresenter(host, parseInt(port))
@@ -286,14 +302,14 @@ async function run() {
   }
 
   if (pullNow) {
-    console.log('\nPulling all fields now...')
-    await pullFields(todayFields, sunday.id)
+    console.log('\nPulling all connected fields now...')
+    await pullFields(autoFields, sunday.id)
     console.log('\nDone.')
     return
   }
 
   const byTime = {}
-  for (const field of todayFields) {
+  for (const field of autoFields) {
     if (!byTime[field.pull_time]) byTime[field.pull_time] = []
     byTime[field.pull_time].push(field)
   }

@@ -121,8 +121,13 @@ export function Runtimes({ sundayId }: RuntimesProps) {
                 <p className="text-gray-900 text-sm font-medium">{field.label}</p>
                 {isAdmin && (
                   <p className="text-gray-400 text-[10px] mt-0.5">
-                    Pull at {field.pull_time} · {field.host}:{field.port} · clock index {field.clock_number}
+                    {field.host
+                      ? `Pull at ${field.pull_time} · ${field.host}:${field.port} · clock index ${field.clock_number}`
+                      : 'Manual entry only'}
                   </p>
+                )}
+                {!isAdmin && !field.host && (
+                  <p className="text-gray-400 text-[10px] mt-0.5">Manual entry only</p>
                 )}
                 {captured[field.id] && (
                   <div className="flex items-center gap-1 mt-1">
@@ -153,7 +158,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
       {/* Relay script note */}
       {!isAdmin && allFields.length > 0 && (
         <p className="text-gray-400 text-xs">
-          Values auto-populate when the relay script runs. Manual entries above will override.
+          Values auto-populate when the relay script runs for connected fields. Manual-only fields are entered directly here.
         </p>
       )}
 
@@ -193,9 +198,13 @@ export function Runtimes({ sundayId }: RuntimesProps) {
                       <span className="flex items-center gap-1 text-gray-400 text-[11px]">
                         <Clock className="w-3 h-3" />{field.pull_time}
                       </span>
-                      <span className="text-gray-400 text-[11px] font-mono">
-                        {field.host}:{field.port} · clock index {field.clock_number}
-                      </span>
+                      {field.host ? (
+                        <span className="text-gray-400 text-[11px] font-mono">
+                          {field.host}:{field.port} · clock index {field.clock_number}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-[11px]">Manual entry only</span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -222,7 +231,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
               node scripts/propresenter-relay.js
             </code>
             <p className="text-gray-400 text-[10px] mt-1.5">
-              Add <span className="font-mono">--now</span> to pull all fields immediately for testing. ProPresenter timer indexes are zero-based.
+              Add <span className="font-mono">--now</span> to pull all connected fields immediately for testing. ProPresenter timer indexes are zero-based.
             </p>
           </div>
         </div>
