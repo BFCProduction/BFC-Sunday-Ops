@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardCheck, AlertTriangle,
-  BarChart2, Star, Calendar, Radio,
+  BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
 } from 'lucide-react'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
@@ -46,7 +46,7 @@ export function Sidebar({ active, setActive, issueCount, sundayDate }: SidebarPr
         <p className="text-gray-700 text-[10px] mt-2">Resets each Sunday at midnight</p>
       </div>
 
-      <nav className="flex-1 px-3 py-3 space-y-0.5">
+      <nav className="flex-1 px-3 py-3 space-y-0.5 flex flex-col">
         {navItems.map(item => {
           const Icon = item.icon
           const isActive = active === item.id
@@ -65,6 +65,19 @@ export function Sidebar({ active, setActive, issueCount, sundayDate }: SidebarPr
             </button>
           )
         })}
+
+        <div className="mt-auto pt-4 border-t border-white/[0.05]">
+          <a
+            href="https://bfcproduction.github.io/bfc-production-support/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-gray-300 hover:bg-white/[0.04] transition-all"
+          >
+            <BookOpen className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.8} />
+            <span className="flex-1 leading-tight">Production Support</span>
+            <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-50" />
+          </a>
+        </div>
       </nav>
     </aside>
   )
