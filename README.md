@@ -9,9 +9,9 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 ## Current Scope
 
 - Gameday checklist with initials and timestamps
-- Issue log with severity tracking
+- Issue log with severity tracking and admin cleanup
 - Attendance, runtime, loudness, weather, and evaluation tabs
-- Admin mode for checklist items and runtime field definitions
+- Admin mode for checklist items, runtime definitions, issue cleanup, and weather settings
 - ProPresenter relay script for runtime capture
 - GitHub Pages deployment
 
@@ -20,12 +20,14 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 Live now:
 - Checklist data is seeded into Supabase on first run and then managed from the admin UI.
 - Dashboard checklist counts now come from the live `checklist_items` table.
+- Operators can set persistent checklist initials once and reuse them for multiple checkoffs.
 - Runtime fields support ProPresenter's native zero-based timer index. `0` is the first clock.
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
 - Weather location and pull schedule can be configured in the admin UI.
 - Weather can be imported automatically from the configured ZIP code and pull schedule via the weather workflow.
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
 - Monday.com push can be enabled with the edge function and related secrets.
+- Admins can delete issue log entries directly in the app.
 
 Still pending:
 - Real YouTube / RESI analytics importers
@@ -79,6 +81,11 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key_here
 VITE_ADMIN_PASSWORD=choose_a_shared_admin_password
 VITE_ENABLE_MONDAY_PUSH=false
+```
+
+Server-side scripts / edge functions:
+
+```bash
 SUPABASE_SERVICE_KEY=your_service_role_key
 MONDAY_API_TOKEN=your_monday_api_token
 MONDAY_BOARD_ID=your_board_id
@@ -101,11 +108,25 @@ node scripts/propresenter-relay.js --now
 node scripts/propresenter-relay.js --probe --now
 ```
 
+Automatic start on the relay Mac:
+
+```bash
+./scripts/install-relay-launch-agent.sh --hour 5 --minute 0
+```
+
+This installs a per-user `launchd` agent that runs the relay at login and daily at the chosen time.
+
+Operational runbook:
+
+- `docs/relay-mac-setup.md`
+
 Runtime field notes:
 - `clock_number` is zero-based.
 - `0` is the first ProPresenter timer.
 - Leave the host blank for a manual-entry-only runtime field.
 - Runtime values are stored in `runtime_values`.
+- The relay now targets the operational Sunday date and creates that `sundays` row if needed.
+- The relay tries HTTP timer endpoints first and falls back to ProPresenter's TCP/IP API if HTTP fails.
 
 ## Weather Import
 
@@ -127,6 +148,7 @@ Notes:
 - The importer reads the ZIP code, pull day, and pull time from `weather_config`.
 - It uses [Open-Meteo](https://open-meteo.com/en/docs) for geocoding and weather data.
 - It writes the imported weather into the `weather` table for the current or upcoming Sunday.
+- Weather import and ProPresenter runtime import were both verified live on March 19, 2026.
 
 ## GitHub Workflows
 
@@ -148,7 +170,7 @@ Setup notes:
 - If `MONDAY_STATUS_COLUMN_ID` is provided, the function will try to set that status column to the issue severity label.
 
 The function creates:
-- a Monday item whose name begins with the severity
+- a Monday item named from the issue text
 - a Monday update containing the full issue description and internal issue ID
 
 Example function deploy command:
@@ -162,3 +184,4 @@ supabase functions deploy push-monday-issue
 - Admin mode is a shared-password convenience layer in the frontend.
 - The repo now matches the current checklist/runtime data model better than the original generated README did.
 - Scheduled analytics should stay disabled until their backing code exists.
+- A session-level change summary is tracked in `CHANGELOG.md`.
