@@ -113,7 +113,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
         )))
       } catch (error) {
         console.error(error)
-        setNotice('Issue saved, but Monday.com push is unavailable in this environment.')
+        setNotice('Issue saved, but follow-up sync is unavailable in this environment.')
       }
     }
 
@@ -197,10 +197,10 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                 </button>
               </div>
               {!MONDAY_PUSH_ENABLED && severity !== 'Low' && (
-                <p className="text-amber-600 text-[10px] text-center">Monday.com push is disabled in this environment.</p>
+                <p className="text-amber-600 text-[10px] text-center">Follow-up sync is disabled in this environment.</p>
               )}
               {MONDAY_PUSH_ENABLED && severity !== 'Low' && (
-                <p className="text-gray-400 text-[10px] text-center">You will be asked whether to push this to Monday.com</p>
+                <p className="text-gray-400 text-[10px] text-center">You will be asked whether to log this only or flag it for follow-up before next Sunday.</p>
               )}
             </Card>
           )}
@@ -237,10 +237,10 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                 <div className="mt-2.5">
                   {issue.pushed_to_monday ? (
                     <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 text-[10px] text-blue-700 font-medium">
-                      Task created in Monday.com
+                      Flagged for follow-up
                     </span>
                   ) : (
-                    <span className="text-gray-400 text-[10px]">Not pushed to Monday.com</span>
+                    <span className="text-gray-400 text-[10px]">Logged only</span>
                   )}
                 </div>
               </Card>
@@ -256,7 +256,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             <div className="w-10 h-10 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center mb-3">
               <AlertTriangle className="w-5 h-5 text-amber-600" />
             </div>
-            <h3 className="text-gray-900 font-bold mb-1">Push to Monday.com?</h3>
+            <h3 className="text-gray-900 font-bold mb-1">How should we handle this?</h3>
             <p className="text-gray-500 text-sm mb-3">
               This is a <span className={`font-semibold ${confirmIssue.severity === 'Critical' ? 'text-red-600' : 'text-amber-600'}`}>{confirmIssue.severity}</span> severity issue.
             </p>
@@ -267,7 +267,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                 className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">Log Only</button>
               <button onClick={() => saveIssue(confirmIssue, true)} disabled={saving}
                 className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700">
-                {saving ? 'Saving...' : 'Push to Monday'}
+                {saving ? 'Saving...' : 'Address Before Next Sunday'}
               </button>
             </div>
           </div>

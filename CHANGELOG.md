@@ -26,6 +26,13 @@
   - `supabase/functions/push-monday-issue`
 - Enabled Monday.com integration through GitHub build-time flag support in the deploy workflow.
 - Updated Monday.com issue creation so new Monday items use the issue text without the severity prefix in the item name.
+- Added issue titles to the issue log so operators can enter a short issue name plus a separate description.
+- Updated Monday.com issue sync so:
+  - the issue title becomes the Monday item name
+  - the issue description becomes the Monday update body
+- Changed operator-facing issue wording from explicit Monday.com language to neutral follow-up language such as:
+  - `Log Only`
+  - `Address Before Next Sunday`
 - Added admin-only issue deletion in the issue log.
 - Added placeholder analytics scripts so the repo explicitly reflects missing importer work instead of referencing absent files.
 - Updated README to match the actual app scope, setup, and workflows.
@@ -49,6 +56,14 @@
 - Identified and corrected the production host typo from `10.1.51.39` to `10.1.51.139`.
 - Documented the relay Mac setup and troubleshooting in:
   - `docs/relay-mac-setup.md`
+- Logged the local Supabase CLI in, repaired the remote migration history for:
+  - `001`
+  - `002`
+  - `003`
+  - `004`
+- Applied `005_add_issue_titles.sql` to the linked Supabase project and redeployed:
+  - `supabase/functions/push-monday-issue`
+- Pushed the frontend issue-title and wording updates to `main`.
 
 ### Notes
 
@@ -59,4 +74,6 @@
   - Monday.com issue pushing
 - Remaining planned work:
   - YouTube / RESI analytics importers
+  - historical loudness-log import for reporting and graphics
+  - desktop checklist column layout cleanup to avoid large blank gaps between sections
   - downstream reporting / summary-email automation

@@ -160,7 +160,7 @@ export function Dashboard({ sundayId, setScreen }: DashboardProps) {
             </div>
             <div className="flex-1 text-left">
               <p className="text-red-700 font-semibold text-sm">{highIssues.length} High-Priority Issue{highIssues.length > 1 ? 's' : ''} Active</p>
-              <p className="text-red-400 text-xs mt-0.5">Tap to view and push to Monday.com</p>
+              <p className="text-red-400 text-xs mt-0.5">Tap to review and flag for follow-up</p>
             </div>
             <ChevronRight className="w-4 h-4 text-red-400" />
           </button>

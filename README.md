@@ -21,6 +21,8 @@ Live now:
 - Checklist data is seeded into Supabase on first run and then managed from the admin UI.
 - Dashboard checklist counts now come from the live `checklist_items` table.
 - Operators can set persistent checklist initials once and reuse them for multiple checkoffs.
+- Issues now capture both a short title and a longer description.
+- High-priority issue follow-up uses neutral operator-facing copy such as `Log Only` and `Address Before Next Sunday`, while still syncing to Monday.com when that integration is enabled.
 - Runtime fields support ProPresenter's native zero-based timer index. `0` is the first clock.
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
 - Weather location and pull schedule can be configured in the admin UI.
@@ -61,6 +63,7 @@ Fresh schema setup is represented by:
 - `supabase/migrations/002_align_runtime_and_checklist_tables.sql`
 - `supabase/migrations/003_allow_manual_runtime_fields.sql`
 - `supabase/migrations/004_add_weather_config.sql`
+- `supabase/migrations/005_add_issue_titles.sql`
 
 ## Local Development
 
@@ -170,7 +173,7 @@ Setup notes:
 - If `MONDAY_STATUS_COLUMN_ID` is provided, the function will try to set that status column to the issue severity label.
 
 The function creates:
-- a Monday item named from the issue text
+- a Monday item named from the issue title
 - a Monday update containing the full issue description and internal issue ID
 
 Example function deploy command:
@@ -185,3 +188,10 @@ supabase functions deploy push-monday-issue
 - The repo now matches the current checklist/runtime data model better than the original generated README did.
 - Scheduled analytics should stay disabled until their backing code exists.
 - A session-level change summary is tracked in `CHANGELOG.md`.
+
+## Future Session Notes
+
+- Set up the analytics importers and supporting workflow.
+- Import historical loudness logs so the loudness section can support graphics and trend views.
+- Fix the desktop checklist layout so the two columns place sections independently and do not leave large blank gaps.
+- Decide what the summary email should look like before building the reporting/automation flow.
