@@ -60,7 +60,7 @@ export default function App() {
   return (
     <AdminProvider>
     <SundayContext.Provider value={{ sundayId, sundayDate }}>
-      <div className="min-h-screen flex flex-col" style={{ background: '#111827' }}>
+      <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#111827' }}>
         <SiteHeader />
         <div className="flex flex-1 min-h-0">
           <Sidebar active={screen} setActive={setScreen} issueCount={issueCount} sundayDate={sundayDate} />
