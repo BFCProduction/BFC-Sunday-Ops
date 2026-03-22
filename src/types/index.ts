@@ -57,15 +57,13 @@ export interface ServiceRuntimes {
 export interface Evaluation {
   id: string
   sunday_id: string
-  audio_rating: number | null
-  video_rating: number | null
-  lighting_rating: number | null
-  stage_rating: number | null
-  stream_rating: number | null
-  overall_rating: number | null
-  went_well: string | null
-  didnt_go: string | null
   submitted_at: string
+  service_feel: 'excellent' | 'solid' | 'rough_spots' | 'significant_issues' | null
+  broken_moment: boolean | null
+  broken_moment_detail: string | null
+  went_well: string | null
+  needed_attention: string | null
+  area_notes: string | null
 }
 
 export interface StreamAnalytics {
@@ -84,6 +82,40 @@ export interface WeatherConfig {
   zip_code: string
   pull_day: number
   pull_time: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ReportEmailSettings {
+  key: string
+  enabled: boolean
+  send_day: number
+  send_time: string
+  timezone: string
+  sender_name: string
+  reply_to_email: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ReportEmailRecipient {
+  id: string
+  name: string | null
+  email: string
+  active: boolean
+  sort_order: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ReportEmailRun {
+  id: string
+  sunday_id: string
+  status: 'pending' | 'sent' | 'failed'
+  sent_at: string | null
+  recipient_count: number
+  error: string | null
+  provider_message_id: string | null
   created_at: string
   updated_at: string
 }
