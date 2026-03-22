@@ -215,6 +215,25 @@ export function Checklist({ sundayId }: ChecklistProps) {
     return () => { active = false }
   }, [loadItems, loadCompletions])
 
+  // Real-time: re-sync whenever another client changes completions or items
+  useEffect(() => {
+    const channel = supabase
+      .channel(`checklist-realtime-${sundayId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checklist_completions', filter: `sunday_id=eq.${sundayId}` },
+        () => loadCompletions(),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'checklist_items' },
+        () => loadItems(),
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [sundayId, loadCompletions, loadItems])
+
   const completeItem = async (id: number, initialsValue: string) => {
     const normalizedInitials = initialsValue.trim().toUpperCase() || 'N/A'
     const now = new Date().toISOString()
