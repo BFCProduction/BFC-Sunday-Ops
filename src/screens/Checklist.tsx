@@ -147,10 +147,21 @@ export function Checklist({ sundayId }: ChecklistProps) {
     }
   })
 
-  const sectionedItems = allSections.map(section => ({
-    section,
-    items: items.filter(i => i.section === section && (role === 'All' || i.role === role)),
-  }))
+  const sectionedItems = allSections.map(section => {
+    const sectionItems = items.filter(i => i.section === section && (role === 'All' || i.role === role))
+    // Stable-sort so items sharing a subsection are always adjacent.
+    // Preserves the first-appearance order of each subsection and
+    // sort_order within each subsection group.
+    const subsectionOrder: string[] = []
+    sectionItems.forEach(item => {
+      const key = item.subsection || ''
+      if (!subsectionOrder.includes(key)) subsectionOrder.push(key)
+    })
+    const sorted = [...sectionItems].sort(
+      (a, b) => subsectionOrder.indexOf(a.subsection || '') - subsectionOrder.indexOf(b.subsection || '')
+    )
+    return { section, items: sorted }
+  })
 
   // In normal mode, hide sections with no visible items; in admin mode keep all sections visible
   const displaySections = isAdmin
