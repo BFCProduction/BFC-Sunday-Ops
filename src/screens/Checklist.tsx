@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { CheckCircle2, ChevronDown, X, Pencil, Trash2, Plus } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, X, Pencil, Trash2, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { ROLE_COLORS, ROLES } from '../data/checklist'
 import { loadOrSeedChecklistItems } from '../lib/checklist'
@@ -31,6 +31,7 @@ export function Checklist({ sundayId }: ChecklistProps) {
   const [addSection, setAddSection] = useState<string | null>(null)
   const [showItemForm, setShowItemForm] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<ChecklistItemRecord | null>(null)
+  const [expandedNotes, setExpandedNotes] = useState<Record<number, boolean>>({})
 
   useEffect(() => {
     const normalizedInitials = operatorInitials.trim().toUpperCase()
@@ -304,8 +305,23 @@ export function Checklist({ sundayId }: ChecklistProps) {
                                   </button>
                                 )}
                                 <div className="flex-1 min-w-0">
-                                  <p className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.task}</p>
-                                  {item.note && <p className="text-gray-400 text-[11px] mt-0.5 leading-snug">{item.note}</p>}
+                                  {item.note ? (
+                                    <button
+                                      onClick={() => setExpandedNotes(p => ({ ...p, [item.id]: !p[item.id] }))}
+                                      className="flex items-start gap-1 text-left w-full group">
+                                      <span className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.task}</span>
+                                      <ChevronRight className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-300 group-hover:text-gray-400 transition-transform duration-200 ${expandedNotes[item.id] ? 'rotate-90' : ''}`} />
+                                    </button>
+                                  ) : (
+                                    <p className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.task}</p>
+                                  )}
+                                  {item.note && (
+                                    <div className={`grid transition-all duration-200 ease-in-out ${expandedNotes[item.id] ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                                      <div className="overflow-hidden">
+                                        <p className="text-gray-400 text-[11px] mt-1 leading-snug pb-0.5">{item.note}</p>
+                                      </div>
+                                    </div>
+                                  )}
                                   {chk && !isAdmin && <p className="text-emerald-600 text-[10px] mt-0.5 font-medium">{chk.initials} · {chk.time}</p>}
                                 </div>
                                 <div className="flex items-center gap-1.5 flex-shrink-0">
