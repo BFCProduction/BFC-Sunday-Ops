@@ -136,6 +136,16 @@ export function Checklist({ sundayId }: ChecklistProps) {
   const allSections = Array.from(new Set(items.map(i => i.section)))
   const sectionOptions = [...allSections]
 
+  const subsectionsBySection: Record<string, string[]> = {}
+  items.forEach(i => {
+    if (i.subsection) {
+      if (!subsectionsBySection[i.section]) subsectionsBySection[i.section] = []
+      if (!subsectionsBySection[i.section].includes(i.subsection)) {
+        subsectionsBySection[i.section].push(i.subsection)
+      }
+    }
+  })
+
   const sectionedItems = allSections.map(section => ({
     section,
     items: items.filter(i => i.section === section && (role === 'All' || i.role === role)),
@@ -375,6 +385,7 @@ export function Checklist({ sundayId }: ChecklistProps) {
           item={editItem || undefined}
           defaultSection={addSection || undefined}
           sectionOptions={sectionOptions}
+          subsectionsBySection={subsectionsBySection}
           onClose={() => { setShowItemForm(false); setEditItem(null); setAddSection(null) }}
           onSaved={loadItems}
         />

@@ -8,13 +8,15 @@ interface Props {
   item?: ChecklistItemRecord
   defaultSection?: string
   sectionOptions?: string[]
+  subsectionsBySection?: Record<string, string[]>
   onClose: () => void
   onSaved: () => void
 }
 
 const ROLES_LIST = ['A1', 'Video', 'Graphics', 'Lighting', 'Stage']
+const ADD_NEW = '__add_new__'
 
-export function ItemFormModal({ item, defaultSection, sectionOptions = [], onClose, onSaved }: Props) {
+export function ItemFormModal({ item, defaultSection, sectionOptions = [], subsectionsBySection = {}, onClose, onSaved }: Props) {
   const [task, setTask] = useState(item?.task || '')
   const [role, setRole] = useState(item?.role || 'A1')
   const [section, setSection] = useState(item?.section || defaultSection || sectionOptions[0] || '')
@@ -22,16 +24,49 @@ export function ItemFormModal({ item, defaultSection, sectionOptions = [], onClo
   const [note, setNote] = useState(item?.note || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [addingSection, setAddingSection] = useState(false)
+  const [newSectionText, setNewSectionText] = useState('')
+  const [addingSubsection, setAddingSubsection] = useState(false)
+  const [newSubsectionText, setNewSubsectionText] = useState('')
+
+  const subsectionOptions = subsectionsBySection[addingSection ? newSectionText : section] || []
+
+  const handleSectionChange = (val: string) => {
+    if (val === ADD_NEW) {
+      setAddingSection(true)
+      setNewSectionText('')
+      setSection('')
+    } else {
+      setSection(val)
+    }
+    setSubsection('')
+    setAddingSubsection(false)
+    setNewSubsectionText('')
+  }
+
+  const handleSubsectionChange = (val: string) => {
+    if (val === ADD_NEW) {
+      setAddingSubsection(true)
+      setNewSubsectionText('')
+      setSubsection('')
+    } else {
+      setSubsection(val)
+      setAddingSubsection(false)
+    }
+  }
+
+  const effectiveSection = addingSection ? newSectionText : section
+  const effectiveSubsection = addingSubsection ? newSubsectionText : subsection
 
   const handleSave = async () => {
     if (!task.trim()) { setError('Task description is required'); return }
-    if (!section.trim()) { setError('Section is required'); return }
+    if (!effectiveSection.trim()) { setError('Section is required'); return }
     setSaving(true)
     const payload = {
       task: task.trim(),
       role,
-      section: section.trim(),
-      subsection: subsection.trim() || null,
+      section: effectiveSection.trim(),
+      subsection: effectiveSubsection.trim() || null,
       note: note.trim() || null,
       sort_order: item?.sort_order ?? 999,
     }
@@ -86,24 +121,65 @@ export function ItemFormModal({ item, defaultSection, sectionOptions = [], onClo
 
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Section *</label>
-            <input
-              list="section-options"
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
-              value={section} onChange={e => setSection(e.target.value)} placeholder="Choose or type a section name"
-            />
-            <datalist id="section-options">
-              {sectionOptions.map(s => <option key={s} value={s} />)}
-            </datalist>
+            {addingSection ? (
+              <div className="space-y-1.5">
+                <input
+                  autoFocus
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+                  value={newSectionText}
+                  onChange={e => setNewSectionText(e.target.value)}
+                  placeholder="New section name"
+                />
+                {sectionOptions.length > 0 && (
+                  <button
+                    onClick={() => { setAddingSection(false); setSection(sectionOptions[0]) }}
+                    className="text-xs text-blue-600 hover:underline">
+                    ← Choose existing
+                  </button>
+                )}
+              </div>
+            ) : (
+              <select
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+                value={section}
+                onChange={e => handleSectionChange(e.target.value)}>
+                {sectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                <option disabled>──────────</option>
+                <option value={ADD_NEW}>＋ New section...</option>
+              </select>
+            )}
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
               Subsection <span className="text-gray-400 normal-case font-normal">(optional)</span>
             </label>
-            <input
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
-              value={subsection} onChange={e => setSubsection(e.target.value)} placeholder="e.g. DiGiCo SD12"
-            />
+            {addingSubsection ? (
+              <div className="space-y-1.5">
+                <input
+                  autoFocus
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+                  value={newSubsectionText}
+                  onChange={e => setNewSubsectionText(e.target.value)}
+                  placeholder="New subsection name"
+                />
+                <button
+                  onClick={() => { setAddingSubsection(false); setSubsection('') }}
+                  className="text-xs text-blue-600 hover:underline">
+                  ← Choose existing
+                </button>
+              </div>
+            ) : (
+              <select
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+                value={subsection}
+                onChange={e => handleSubsectionChange(e.target.value)}>
+                <option value="">(None)</option>
+                {subsectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                <option disabled>──────────</option>
+                <option value={ADD_NEW}>＋ New subsection...</option>
+              </select>
+            )}
           </div>
 
           <div>
