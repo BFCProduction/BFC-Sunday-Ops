@@ -1,5 +1,13 @@
-import { useEffect, useState, useCallback } from 'react'
-import { CheckCircle2, ChevronDown, ChevronRight, X, Pencil, Trash2, Plus } from 'lucide-react'
+import { useEffect, useState, useCallback, Fragment } from 'react'
+import { CheckCircle2, ChevronDown, ChevronRight, GripVertical, X, Pencil, Trash2, Plus } from 'lucide-react'
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, verticalListSortingStrategy, useSortable, arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { supabase } from '../lib/supabase'
 import { ROLE_COLORS, ROLES } from '../data/checklist'
 import { loadOrSeedChecklistItems } from '../lib/checklist'
@@ -15,6 +23,126 @@ interface ChecklistProps {
 interface CompletionMap {
   [itemId: number]: { initials: string; time: string }
 }
+
+// ─── Sortable row ─────────────────────────────────────────────────────────────
+
+interface SortableItemProps {
+  item: ChecklistItemRecord
+  isAdmin: boolean
+  isLast: boolean
+  chk?: { initials: string; time: string }
+  expandedNote: boolean
+  onToggleNote: () => void
+  onToggleCheck: () => void
+  onEdit: () => void
+  onDelete: () => void
+}
+
+function SortableChecklistItem({
+  item, isAdmin, isLast, chk, expandedNote,
+  onToggleNote, onToggleCheck, onEdit, onDelete,
+}: SortableItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: item.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: isDragging ? ('relative' as const) : undefined,
+    zIndex: isDragging ? 1 : undefined,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-start gap-3 px-4 py-2.5 ${isLast ? '' : 'border-b border-gray-50'} ${chk && !isAdmin ? 'opacity-50' : ''} hover:bg-gray-50/50 transition-colors bg-white`}
+    >
+      {/* Drag handle — admin only */}
+      {isAdmin && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="flex-shrink-0 mt-0.5 p-0.5 text-gray-300 hover:text-gray-400 cursor-grab active:cursor-grabbing touch-none focus:outline-none"
+          tabIndex={-1}
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="w-3.5 h-3.5" />
+        </button>
+      )}
+
+      {/* Checkbox — non-admin only */}
+      {!isAdmin && (
+        <button
+          onClick={onToggleCheck}
+          className={`flex-shrink-0 mt-0.5 w-[18px] h-[18px] rounded border-2 flex items-center justify-center transition-all ${
+            chk ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-gray-400'
+          }`}
+        >
+          {chk && <CheckCircle2 className="w-3 h-3 text-white" strokeWidth={3} />}
+        </button>
+      )}
+
+      {/* Task text + note */}
+      <div className="flex-1 min-w-0">
+        {item.note ? (
+          <button
+            onClick={onToggleNote}
+            className="flex items-start gap-1 text-left w-full group"
+          >
+            <span className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+              {item.task}
+            </span>
+            <ChevronRight className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-300 group-hover:text-gray-400 transition-transform duration-200 ${expandedNote ? 'rotate-90' : ''}`} />
+          </button>
+        ) : (
+          <p className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+            {item.task}
+          </p>
+        )}
+        {item.note && (
+          <div className={`grid transition-all duration-200 ease-in-out ${expandedNote ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+            <div className="overflow-hidden">
+              <p className="text-gray-400 text-[11px] mt-1 leading-snug pb-0.5">{item.note}</p>
+            </div>
+          </div>
+        )}
+        {chk && !isAdmin && (
+          <p className="text-emerald-600 text-[10px] mt-0.5 font-medium">{chk.initials} · {chk.time}</p>
+        )}
+      </div>
+
+      {/* Role badge + admin actions */}
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+          style={{ background: ROLE_COLORS[item.role] + '20', color: ROLE_COLORS[item.role] }}
+        >
+          {item.role}
+        </span>
+        {isAdmin && (
+          <>
+            <button
+              onClick={onEdit}
+              className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={onDelete}
+              className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
 
 export function Checklist({ sundayId }: ChecklistProps) {
   const { isAdmin } = useAdmin()
@@ -32,6 +160,12 @@ export function Checklist({ sundayId }: ChecklistProps) {
   const [showItemForm, setShowItemForm] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<ChecklistItemRecord | null>(null)
   const [expandedNotes, setExpandedNotes] = useState<Record<number, boolean>>({})
+
+  // Drag sensors — require 8 px movement so clicks still register
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  )
 
   useEffect(() => {
     const normalizedInitials = operatorInitials.trim().toUpperCase()
@@ -73,23 +207,17 @@ export function Checklist({ sundayId }: ChecklistProps) {
 
   useEffect(() => {
     let active = true
-
     async function hydrate() {
       await Promise.all([loadItems(), loadCompletions()])
       if (active) setLoading(false)
     }
-
     hydrate()
-
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [loadItems, loadCompletions])
 
   const completeItem = async (id: number, initialsValue: string) => {
     const normalizedInitials = initialsValue.trim().toUpperCase() || 'N/A'
     const now = new Date().toISOString()
-
     setSaving(true)
     await supabase.from('checklist_completions').upsert({
       sunday_id: sundayId, item_id: id, initials: normalizedInitials, completed_at: now,
@@ -121,9 +249,7 @@ export function Checklist({ sundayId }: ChecklistProps) {
     if (!modal) return
     const normalizedInitials = modalInitials.trim().toUpperCase()
     await completeItem(modal, normalizedInitials)
-    if (normalizedInitials) {
-      setOperatorInitials(normalizedInitials)
-    }
+    if (normalizedInitials) setOperatorInitials(normalizedInitials)
     setModal(null)
     setModalInitials('')
   }
@@ -132,6 +258,40 @@ export function Checklist({ sundayId }: ChecklistProps) {
     await supabase.from('checklist_items').delete().eq('id', item.id)
     setItems(prev => prev.filter(i => i.id !== item.id))
     setConfirmDelete(null)
+  }
+
+  // ── Drag end: reorder within section, persist new sort_orders ───────────────
+  const handleDragEnd = async (event: DragEndEvent, section: string) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    // Rebuild the full items list with the dragged section reordered
+    const allSectionNames = Array.from(new Set(items.map(i => i.section)))
+    const newItems: ChecklistItemRecord[] = []
+
+    for (const sec of allSectionNames) {
+      const secItems = items.filter(i => i.section === sec)
+      if (sec === section) {
+        const oldIdx = secItems.findIndex(i => i.id === active.id)
+        const newIdx = secItems.findIndex(i => i.id === over.id)
+        newItems.push(...arrayMove(secItems, oldIdx, newIdx))
+      } else {
+        newItems.push(...secItems)
+      }
+    }
+
+    // Assign globally contiguous sort_orders
+    const withOrder = newItems.map((item, idx) => ({ ...item, sort_order: idx }))
+    setItems(withOrder)
+
+    // Persist only changed rows
+    const changed = withOrder.filter((item, idx) => items[idx]?.id !== item.id || items.find(i => i.id === item.id)?.sort_order !== item.sort_order)
+    if (changed.length > 0) {
+      await supabase.from('checklist_items').upsert(
+        changed.map(i => ({ id: i.id, sort_order: i.sort_order })),
+        { onConflict: 'id' }
+      )
+    }
   }
 
   const allSections = Array.from(new Set(items.map(i => i.section)))
@@ -150,8 +310,6 @@ export function Checklist({ sundayId }: ChecklistProps) {
   const sectionedItems = allSections.map(section => {
     const sectionItems = items.filter(i => i.section === section && (role === 'All' || i.role === role))
     // Stable-sort so items sharing a subsection are always adjacent.
-    // Preserves the first-appearance order of each subsection and
-    // sort_order within each subsection group.
     const subsectionOrder: string[] = []
     sectionItems.forEach(item => {
       const key = item.subsection || ''
@@ -163,12 +321,10 @@ export function Checklist({ sundayId }: ChecklistProps) {
     return { section, items: sorted }
   })
 
-  // In normal mode, hide sections with no visible items; in admin mode keep all sections visible
   const displaySections = isAdmin
     ? sectionedItems
     : sectionedItems.filter(s => s.items.length > 0)
 
-  // Stats are based on non-admin filtered view
   const visItems = sectionedItems.filter(s => s.items.length > 0).flatMap(s => s.items)
   const visDone = visItems.filter(i => completions[i.id]).length
   const pct = visItems.length ? Math.round(visDone / visItems.length * 100) : 0
@@ -240,7 +396,7 @@ export function Checklist({ sundayId }: ChecklistProps) {
         {isAdmin && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
             <p className="text-amber-700 text-xs font-medium">
-              Admin mode active — use pencil to edit, trash to delete, or "Add item" within each section.
+              Admin mode active — drag <GripVertical className="inline w-3 h-3" /> to reorder, pencil to edit, trash to delete, or "Add item" within each section.
             </p>
           </div>
         )}
@@ -279,8 +435,10 @@ export function Checklist({ sundayId }: ChecklistProps) {
               return (
                 <div key={section} className="xl:inline-block xl:w-full xl:break-inside-avoid xl:mb-3">
                   <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                    <button onClick={() => setExpanded(p => ({ ...p, [section]: !p[section] }))}
-                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                    <button
+                      onClick={() => setExpanded(p => ({ ...p, [section]: !p[section] }))}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+                    >
                       <div className="flex items-center gap-2.5">
                         <span className="text-gray-900 font-semibold text-sm">{section}</span>
                         {!isAdmin && secDone === sectionItems.length && sectionItems.length > 0 && (
@@ -297,71 +455,48 @@ export function Checklist({ sundayId }: ChecklistProps) {
 
                     {isOpen && (
                       <div className="border-t border-gray-100">
-                        {sectionItems.map((item, idx) => {
-                          const chk = completions[item.id]
-                          const prevSubsection = idx > 0 ? sectionItems[idx - 1].subsection : null
-                          const showSubsection = item.subsection && item.subsection !== prevSubsection
-                          return (
-                            <div key={item.id}>
-                              {showSubsection && (
-                                <div className="px-4 py-1.5 bg-gray-50 border-t border-b border-gray-100">
-                                  <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">{item.subsection}</p>
-                                </div>
-                              )}
-                              <div className={`flex items-start gap-3 px-4 py-2.5 ${idx < sectionItems.length - 1 ? 'border-b border-gray-50' : ''} ${chk && !isAdmin ? 'opacity-50' : ''} hover:bg-gray-50/50 transition-colors`}>
-                                {!isAdmin && (
-                                  <button onClick={() => toggleItem(item.id)}
-                                    className={`flex-shrink-0 mt-0.5 w-[18px] h-[18px] rounded border-2 flex items-center justify-center transition-all ${chk ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-gray-400'}`}>
-                                    {chk && <CheckCircle2 className="w-3 h-3 text-white" strokeWidth={3} />}
-                                  </button>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  {item.note ? (
-                                    <button
-                                      onClick={() => setExpandedNotes(p => ({ ...p, [item.id]: !p[item.id] }))}
-                                      className="flex items-start gap-1 text-left w-full group">
-                                      <span className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.task}</span>
-                                      <ChevronRight className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-300 group-hover:text-gray-400 transition-transform duration-200 ${expandedNotes[item.id] ? 'rotate-90' : ''}`} />
-                                    </button>
-                                  ) : (
-                                    <p className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.task}</p>
-                                  )}
-                                  {item.note && (
-                                    <div className={`grid transition-all duration-200 ease-in-out ${expandedNotes[item.id] ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                                      <div className="overflow-hidden">
-                                        <p className="text-gray-400 text-[11px] mt-1 leading-snug pb-0.5">{item.note}</p>
-                                      </div>
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={e => handleDragEnd(e, section)}
+                        >
+                          <SortableContext
+                            items={sectionItems.map(i => i.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            {sectionItems.map((item, idx) => {
+                              const chk = completions[item.id]
+                              const prevSubsection = idx > 0 ? sectionItems[idx - 1].subsection : null
+                              const showSubsection = item.subsection && item.subsection !== prevSubsection
+                              return (
+                                <Fragment key={item.id}>
+                                  {showSubsection && (
+                                    <div className="px-4 py-1.5 bg-gray-50 border-t border-b border-gray-100">
+                                      <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">{item.subsection}</p>
                                     </div>
                                   )}
-                                  {chk && !isAdmin && <p className="text-emerald-600 text-[10px] mt-0.5 font-medium">{chk.initials} · {chk.time}</p>}
-                                </div>
-                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-                                    style={{ background: ROLE_COLORS[item.role] + '20', color: ROLE_COLORS[item.role] }}>
-                                    {item.role}
-                                  </span>
-                                  {isAdmin && (
-                                    <>
-                                      <button onClick={() => { setEditItem(item); setAddSection(null); setShowItemForm(true) }}
-                                        className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button onClick={() => setConfirmDelete(item)}
-                                        className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
+                                  <SortableChecklistItem
+                                    item={item}
+                                    isAdmin={isAdmin}
+                                    isLast={idx === sectionItems.length - 1}
+                                    chk={chk}
+                                    expandedNote={!!expandedNotes[item.id]}
+                                    onToggleNote={() => setExpandedNotes(p => ({ ...p, [item.id]: !p[item.id] }))}
+                                    onToggleCheck={() => toggleItem(item.id)}
+                                    onEdit={() => { setEditItem(item); setAddSection(null); setShowItemForm(true) }}
+                                    onDelete={() => setConfirmDelete(item)}
+                                  />
+                                </Fragment>
+                              )
+                            })}
+                          </SortableContext>
+                        </DndContext>
 
                         {isAdmin && (
                           <button
                             onClick={() => { setAddSection(section); setEditItem(null); setShowItemForm(true) }}
-                            className="w-full flex items-center gap-2 px-4 py-2.5 text-blue-600 hover:bg-blue-50 transition-colors border-t border-gray-100 text-xs font-medium">
+                            className="w-full flex items-center gap-2 px-4 py-2.5 text-blue-600 hover:bg-blue-50 transition-colors border-t border-gray-100 text-xs font-medium"
+                          >
                             <Plus className="w-3.5 h-3.5" />
                             Add item to {section}
                           </button>
