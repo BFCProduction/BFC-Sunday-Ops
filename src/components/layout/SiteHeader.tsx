@@ -1,4 +1,5 @@
 import { Calendar, Radio } from 'lucide-react'
+import bfcLogo from '../../assets/BFC_Production_Logo_Hor reverse.png'
 
 export function SiteHeader() {
   const today = new Date().toLocaleDateString('en-US', {
@@ -12,10 +13,7 @@ export function SiteHeader() {
     <header className="site-header hidden md:flex items-center justify-between px-6 h-14 flex-shrink-0"
       style={{ background: '#1a1a1a' }}>
       <div className="flex items-center gap-3">
-        <div className="w-7 h-7 bg-white/10 border border-white/20 rounded flex items-center justify-center">
-          <span className="text-white font-black text-[10px] leading-none">BFC</span>
-        </div>
-        <span className="text-white font-bold text-sm tracking-tight">BFC Production</span>
+        <img src={bfcLogo} alt="BFC Production" className="h-7 w-auto object-contain" />
         <span className="text-gray-600 mx-1 text-sm">·</span>
         <span className="text-gray-400 text-sm">Sunday Ops Hub</span>
       </div>
