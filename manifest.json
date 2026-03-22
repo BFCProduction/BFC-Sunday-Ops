@@ -1,0 +1,16 @@
+{
+  "name": "BFC Sunday Ops",
+  "short_name": "BFC Ops",
+  "start_url": "/BFC-Sunday-Ops/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "icons": [
+    {
+      "src": "/BFC-Sunday-Ops/apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
