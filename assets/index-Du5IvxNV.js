@@ -142,7 +142,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   <meta charset="utf-8" />
   <title>BFC Sunday Service Report — ${ol(e.sundayDate)}</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body {
       font-family: Inter, "Segoe UI", sans-serif;
       background: #f3f4f6;
@@ -158,7 +158,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
     @media print {
       body { background: #fff; padding: 0; }
       .page { box-shadow: none; margin: 0; width: 100%; }
-      .page-break { page-break-before: always; }
+      .page-break { page-break-before: always; break-before: page; }
     }
   </style>
 </head>
