@@ -96,7 +96,6 @@ function buildRuntimes(data: ReportData): string {
   }
   const rows = runtimes.map((r, i) => {
     const even = i % 2 === 1
-    const bg = even ? 'background:#fafafa;' : ''
     return `<tr>
       <td style="${tdStyle(even)}">${esc(r.label)}</td>
       <td style="${tdStyle(even)} font-family:monospace;">${r.value ? esc(r.value) : '<span style="color:#9ca3af;">—</span>'}</td>

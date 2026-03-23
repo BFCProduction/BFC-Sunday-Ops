@@ -10,9 +10,13 @@ export function AdminPasswordModal({ onClose }: Props) {
   const { login } = useAdmin()
   const [password, setPassword] = useState('')
   const [error, setError] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = () => {
-    if (login(password)) {
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    const ok = await login(password)
+    setSubmitting(false)
+    if (ok) {
       onClose()
     } else {
       setError(true)
@@ -40,7 +44,7 @@ export function AdminPasswordModal({ onClose }: Props) {
           placeholder="Password"
           value={password}
           onChange={e => { setPassword(e.target.value); setError(false) }}
-          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          onKeyDown={e => e.key === 'Enter' && void handleSubmit()}
         />
         {error && <p className="text-red-500 text-xs mt-1.5">Incorrect password</p>}
         <div className="flex gap-3 mt-4">
@@ -48,9 +52,9 @@ export function AdminPasswordModal({ onClose }: Props) {
             className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
             Cancel
           </button>
-          <button onClick={handleSubmit}
-            className="flex-1 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors">
-            Unlock
+          <button onClick={() => void handleSubmit()} disabled={submitting}
+            className="flex-1 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors disabled:opacity-60">
+            {submitting ? 'Checking...' : 'Unlock'}
           </button>
         </div>
       </div>
