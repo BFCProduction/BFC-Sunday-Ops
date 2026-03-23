@@ -3,7 +3,6 @@ import { Attendance } from './Attendance'
 import { Runtimes } from './Runtimes'
 import { Weather } from './Weather'
 import { LoudnessLog } from './LoudnessLog'
-import { Reporting } from './Reporting'
 
 interface ServiceDataProps { sundayId: string }
 
@@ -12,7 +11,6 @@ const TABS = [
   { id: 'runtimes',   label: 'Runtimes'   },
   { id: 'weather',    label: 'Weather'    },
   { id: 'loudness',   label: 'Loudness'   },
-  { id: 'reporting',  label: 'Reporting'  },
 ] as const
 
 type TabId = typeof TABS[number]['id']
@@ -38,7 +36,6 @@ export function ServiceData({ sundayId }: ServiceDataProps) {
         {tab === 'runtimes'   && <Runtimes sundayId={sundayId} />}
         {tab === 'weather'    && <Weather sundayId={sundayId} />}
         {tab === 'loudness'   && <LoudnessLog sundayId={sundayId} />}
-        {tab === 'reporting'  && <Reporting sundayId={sundayId} />}
       </div>
     </div>
   )

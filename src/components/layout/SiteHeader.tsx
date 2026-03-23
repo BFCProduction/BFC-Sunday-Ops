@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Calendar, Radio } from 'lucide-react'
 import bfcLogo from '../../assets/BFC_Production_Logo_Hor reverse.png'
+import { getServicePhase, type ServicePhase } from '../../lib/serviceStatus'
 
 export function SiteHeader() {
   const today = new Date().toLocaleDateString('en-US', {
@@ -8,6 +10,13 @@ export function SiteHeader() {
     day: 'numeric',
     year: 'numeric',
   })
+
+  const [phase, setPhase] = useState<ServicePhase | null>(() => getServicePhase())
+
+  useEffect(() => {
+    const id = setInterval(() => setPhase(getServicePhase()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   return (
     <header className="site-header flex items-center justify-between px-4 md:px-6 h-14 flex-shrink-0"
@@ -22,10 +31,12 @@ export function SiteHeader() {
           <Calendar className="w-3.5 h-3.5 text-gray-500" />
           <span className="text-gray-500 text-xs">{today}</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <Radio className="w-3.5 h-3.5 text-emerald-400 pulse" />
-          <span className="text-emerald-400 text-xs font-medium">Pre-Service</span>
-        </div>
+        {phase && (
+          <div className="flex items-center gap-1.5">
+            {phase.pulse && <Radio className={`w-3.5 h-3.5 ${phase.text} pulse`} />}
+            <span className={`${phase.text} text-xs font-medium`}>{phase.label}</span>
+          </div>
+        )}
       </div>
     </header>
   )

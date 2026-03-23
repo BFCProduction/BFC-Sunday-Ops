@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Plus, Trash2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
@@ -25,7 +25,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
   const [severity, setSeverity] = useState<Issue['severity']>('Medium')
-  const [confirmIssue, setConfirmIssue] = useState<Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday'> | null>(null)
+  const [createTask, setCreateTask] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Issue | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -41,8 +41,8 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     setTitle('')
     setDesc('')
     setSeverity('Medium')
+    setCreateTask(false)
     setShowForm(false)
-    setConfirmIssue(null)
   }
 
   const handleSubmit = () => {
@@ -58,14 +58,14 @@ export function IssueLog({ sundayId }: IssueLogProps) {
       created_at: new Date().toISOString(),
     }
     setNotice('')
-    if (severity === 'Low' || !MONDAY_PUSH_ENABLED) {
-      saveIssue(newIssue, false)
-    } else {
-      setConfirmIssue(newIssue)
-    }
+    const pushToMonday = MONDAY_PUSH_ENABLED && createTask && severity !== 'Low'
+    saveIssue(newIssue, pushToMonday)
   }
 
-  const saveIssue = async (issue: Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday'>, pushToMonday: boolean) => {
+  const saveIssue = async (
+    issue: Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday' | 'resolved_at'>,
+    pushToMonday: boolean,
+  ) => {
     setSaving(true)
     const { data, error } = await supabase.from('issues').insert({
       ...issue, pushed_to_monday: false,
@@ -94,9 +94,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
           }),
         })
 
-        if (!response.ok) {
-          throw new Error(`Monday push failed with ${response.status}`)
-        }
+        if (!response.ok) throw new Error(`Monday push failed with ${response.status}`)
 
         const result = await response.json().catch(() => ({}))
         const mondayItemId = typeof result?.itemId === 'string' ? result.itemId : null
@@ -111,8 +109,8 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             ? { ...entry, pushed_to_monday: true, monday_item_id: mondayItemId }
             : entry
         )))
-      } catch (error) {
-        console.error(error)
+      } catch (err) {
+        console.error(err)
         setNotice('Issue saved, but follow-up sync is unavailable in this environment.')
       }
     }
@@ -120,17 +118,25 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     setSaving(false)
   }
 
+  const resolveIssue = async (issue: Issue) => {
+    const resolved_at = new Date().toISOString()
+    const { error } = await supabase.from('issues').update({ resolved_at }).eq('id', issue.id)
+    if (error) { setNotice(error.message); return }
+    setIssues(prev => prev.map(e => e.id === issue.id ? { ...e, resolved_at } : e))
+  }
+
+  const unresolveIssue = async (issue: Issue) => {
+    const { error } = await supabase.from('issues').update({ resolved_at: null }).eq('id', issue.id)
+    if (error) { setNotice(error.message); return }
+    setIssues(prev => prev.map(e => e.id === issue.id ? { ...e, resolved_at: null } : e))
+  }
+
   const deleteIssue = async (issue: Issue) => {
     setSaving(true)
     const { error } = await supabase.from('issues').delete().eq('id', issue.id)
     setSaving(false)
-
-    if (error) {
-      setNotice(error.message)
-      return
-    }
-
-    setIssues(prev => prev.filter(entry => entry.id !== issue.id))
+    if (error) { setNotice(error.message); return }
+    setIssues(prev => prev.filter(e => e.id !== issue.id))
     setConfirmDelete(null)
     setNotice('Issue deleted.')
   }
@@ -141,12 +147,17 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     </div>
   )
 
+  const open     = issues.filter(i => !i.resolved_at)
+  const resolved = issues.filter(i => i.resolved_at)
+
   return (
     <div className="fade-in">
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-5 pt-4 pb-4 flex items-center justify-between">
         <div>
           <h2 className="text-gray-900 font-bold text-lg">Issue Log</h2>
-          <p className="text-gray-400 text-xs mt-0.5">{issues.length} issue{issues.length !== 1 ? 's' : ''} logged today</p>
+          <p className="text-gray-400 text-xs mt-0.5">
+            {open.length} open · {resolved.length} resolved
+          </p>
         </div>
         <button onClick={() => setShowForm(f => !f)}
           className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors active:scale-95">
@@ -160,7 +171,9 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             <p className="text-amber-700 text-xs font-medium">{notice}</p>
           </div>
         )}
+
         <div className="grid grid-cols-1 xl:grid-cols-[400px_1fr] gap-5 items-start">
+          {/* ── New issue form ── */}
           {showForm && (
             <Card className="p-5 space-y-4 slide-up">
               <div className="flex items-center justify-between">
@@ -188,6 +201,23 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                   ))}
                 </div>
               </div>
+
+              {/* Monday follow-up checkbox — replaces the old modal */}
+              {MONDAY_PUSH_ENABLED && severity !== 'Low' && (
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={createTask}
+                    onChange={e => setCreateTask(e.target.checked)}
+                    className="h-4 w-4 mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <div>
+                    <p className="text-gray-800 text-xs font-semibold">Flag for follow-up before next Sunday</p>
+                    <p className="text-gray-400 text-[10px] mt-0.5">Creates a task in monday.com to address this issue.</p>
+                  </div>
+                </label>
+              )}
+
               <div className="flex gap-2">
                 <button onClick={resetForm}
                   className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">Cancel</button>
@@ -196,15 +226,10 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                   {saving ? 'Saving...' : 'Submit'}
                 </button>
               </div>
-              {!MONDAY_PUSH_ENABLED && severity !== 'Low' && (
-                <p className="text-amber-600 text-[10px] text-center">Follow-up sync is disabled in this environment.</p>
-              )}
-              {MONDAY_PUSH_ENABLED && severity !== 'Low' && (
-                <p className="text-gray-400 text-[10px] text-center">You will be asked whether to log this only or flag it for follow-up before next Sunday.</p>
-              )}
             </Card>
           )}
 
+          {/* ── Issue list ── */}
           <div className="space-y-3">
             {issues.length === 0 && !showForm && (
               <div className="text-center py-16">
@@ -212,16 +237,17 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                 <p className="text-gray-400 text-sm">No issues logged yet</p>
               </div>
             )}
-            {issues.map(issue => (
+
+            {/* Open issues */}
+            {open.map(issue => (
               <Card key={issue.id} className="p-4">
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SEV_STYLE[issue.severity]}`}>
                       {issue.severity}
                     </span>
                     {isAdmin && (
-                      <button
-                        onClick={() => setConfirmDelete(issue)}
+                      <button onClick={() => setConfirmDelete(issue)}
                         className="p-1 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors"
                         aria-label="Delete issue">
                         <Trash2 className="w-3.5 h-3.5" />
@@ -229,73 +255,82 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                     )}
                   </div>
                   <span className="text-gray-400 text-[11px]">
-                    {new Date(issue.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    {new Date(issue.created_at).toLocaleTimeString('en-US', {
+                      hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
+                    })}
                   </span>
                 </div>
                 <p className="text-gray-900 text-sm font-semibold leading-snug">{issue.title || issue.description}</p>
                 <p className="mt-1 text-gray-600 text-sm leading-snug">{issue.description}</p>
-                <div className="mt-2.5">
-                  {issue.pushed_to_monday ? (
-                    <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 text-[10px] text-blue-700 font-medium">
-                      Flagged for follow-up
-                    </span>
-                  ) : (
-                    <span className="text-gray-400 text-[10px]">Logged only</span>
-                  )}
+                <div className="mt-3 flex items-center justify-between">
+                  <div>
+                    {issue.pushed_to_monday ? (
+                      <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 text-[10px] text-blue-700 font-medium">
+                        Flagged for follow-up
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-[10px]">Logged only</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => void resolveIssue(issue)}
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1 hover:bg-emerald-100 transition-colors">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Mark Resolved
+                  </button>
                 </div>
               </Card>
             ))}
+
+            {/* Resolved issues */}
+            {resolved.length > 0 && (
+              <div>
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-widest mb-2 mt-2">Resolved</p>
+                {resolved.map(issue => (
+                  <Card key={issue.id} className="p-4 opacity-60 mb-3">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SEV_STYLE[issue.severity]}`}>
+                          {issue.severity}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Resolved {new Date(issue.resolved_at!).toLocaleTimeString('en-US', {
+                            hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
+                          })}
+                        </span>
+                      </div>
+                      {isAdmin && (
+                        <button onClick={() => void unresolveIssue(issue)}
+                          className="text-gray-400 text-[10px] hover:text-gray-600 underline">
+                          Undo
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-gray-700 text-sm font-semibold leading-snug">{issue.title || issue.description}</p>
+                    <p className="mt-0.5 text-gray-500 text-sm leading-snug">{issue.description}</p>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Confirmation modal */}
-      {confirmIssue && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end md:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm slide-up shadow-2xl">
-            <div className="w-10 h-10 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center mb-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-            </div>
-            <h3 className="text-gray-900 font-bold mb-1">How should we handle this?</h3>
-            <p className="text-gray-500 text-sm mb-3">
-              This is a <span className={`font-semibold ${confirmIssue.severity === 'Critical' ? 'text-red-600' : 'text-amber-600'}`}>{confirmIssue.severity}</span> severity issue.
-            </p>
-            <p className="text-gray-900 text-sm font-semibold mb-2">{confirmIssue.title}</p>
-            <p className="text-gray-500 text-xs bg-gray-50 rounded-xl p-3 leading-relaxed mb-4">{confirmIssue.description}</p>
-            <div className="flex gap-3">
-              <button onClick={() => saveIssue(confirmIssue, false)} disabled={saving}
-                className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">Log Only</button>
-              <button onClick={() => saveIssue(confirmIssue, true)} disabled={saving}
-                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700">
-                {saving ? 'Saving...' : 'Address Before Next Sunday'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Delete confirmation modal */}
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 className="text-gray-900 font-bold mb-2">Delete Issue</h3>
-            <p className="text-gray-500 text-sm mb-4">
-              Delete this issue from Sunday Ops?
-            </p>
-            <p className="text-gray-900 text-sm font-semibold mb-2">
-              {confirmDelete.title || confirmDelete.description}
-            </p>
-            <p className="text-gray-500 text-xs bg-gray-50 rounded-xl p-3 leading-relaxed mb-4">
-              {confirmDelete.description}
-            </p>
+            <p className="text-gray-500 text-sm mb-4">Delete this issue from Sunday Ops?</p>
+            <p className="text-gray-900 text-sm font-semibold mb-2">{confirmDelete.title || confirmDelete.description}</p>
+            <p className="text-gray-500 text-xs bg-gray-50 rounded-xl p-3 leading-relaxed mb-4">{confirmDelete.description}</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmDelete(null)}
+              <button onClick={() => setConfirmDelete(null)}
                 className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
                 Cancel
               </button>
-              <button
-                onClick={() => deleteIssue(confirmDelete)}
-                disabled={saving}
+              <button onClick={() => deleteIssue(confirmDelete)} disabled={saving}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-60">
                 {saving ? 'Deleting...' : 'Delete'}
               </button>

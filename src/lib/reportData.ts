@@ -15,6 +15,7 @@ export interface ReportData {
     description: string
     severity: string
     created_at: string
+    resolved_at: string | null
   }>
   checklistExceptions: Array<{
     task: string

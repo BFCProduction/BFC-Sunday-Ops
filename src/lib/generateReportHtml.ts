@@ -120,6 +120,12 @@ function buildIssues(data: ReportData): string {
   const rows = issues.map((issue, i) => {
     const even = i % 2 === 1
     const color = SEV_COLORS[issue.severity] || '#9ca3af'
+    const resolvedBadge = issue.resolved_at
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;font-weight:700;
+          background:#ecfdf5;color:#059669;border:1px solid #6ee7b7;border-radius:20px;padding:1px 6px;margin-left:4px;">
+          ✓ Resolved
+         </span>`
+      : ''
     return `<tr>
       <td style="${tdStyle(even)}">
         <span style="display:inline-flex;align-items:center;gap:5px;">
@@ -127,7 +133,7 @@ function buildIssues(data: ReportData): string {
           ${esc(issue.severity)}
         </span>
       </td>
-      <td style="${tdStyle(even)};font-weight:600;">${esc(issue.title)}</td>
+      <td style="${tdStyle(even)};font-weight:600;">${esc(issue.title)}${resolvedBadge}</td>
       <td style="${tdStyle(even)};color:#6b7280;font-size:10px;">${esc(issue.description || '')}</td>
     </tr>`
   }).join('')
@@ -297,7 +303,7 @@ function kpiCard(value: string | number, label: string): string {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function generateReportHtml(data: ReportData): string {
+export function generateReportHtml(data: ReportData, logoBase64?: string): string {
   const dateLabel = data.sundayDate
     ? new Date(data.sundayDate + 'T12:00:00').toLocaleDateString('en-US', {
         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -340,8 +346,11 @@ export function generateReportHtml(data: ReportData): string {
   <!-- Header -->
   <div style="background:#1a1a1a;padding:28px 40px 22px;display:flex;align-items:flex-start;justify-content:space-between;">
     <div>
-      <div style="color:#fff;font-size:17px;font-weight:700;letter-spacing:.02em;">BFC Production</div>
-      <div style="color:#9ca3af;font-size:10px;margin-top:3px;">Bethany First Church · Sunday Ops Hub</div>
+      ${logoBase64
+        ? `<img src="${logoBase64}" style="height:28px;width:auto;display:block;" alt="BFC Production" />`
+        : `<div style="color:#fff;font-size:17px;font-weight:700;letter-spacing:.02em;">BFC Production</div>`
+      }
+      <div style="color:#9ca3af;font-size:10px;margin-top:5px;">Bethany First Church · Sunday Ops Hub</div>
     </div>
     <div style="text-align:right;">
       <div style="color:#fff;font-size:20px;font-weight:800;letter-spacing:-.01em;">Sunday Service Report</div>

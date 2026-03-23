@@ -22,6 +22,7 @@ export interface Issue {
   monday_item_id: string | null
   pushed_to_monday: boolean
   created_at: string
+  resolved_at: string | null
 }
 
 export interface Attendance {

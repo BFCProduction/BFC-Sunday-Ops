@@ -198,7 +198,10 @@ async function run() {
     .eq('key', 'default')
     .maybeSingle()
 
-  if (configError) throw configError
+  if (configError) {
+    console.log('Unable to read weather config:', configError.message, '— skipping.')
+    process.exit(0)
+  }
 
   if (!config) {
     console.log('No weather config found. Save weather settings in the admin UI first.')

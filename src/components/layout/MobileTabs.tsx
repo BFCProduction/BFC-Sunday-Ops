@@ -1,6 +1,6 @@
 import { LayoutDashboard, ClipboardCheck, AlertTriangle, BarChart2, Star } from 'lucide-react'
 
-type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
+type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'settings'
 
 interface MobileTabsProps {
   active: Screen

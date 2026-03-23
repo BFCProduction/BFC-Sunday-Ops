@@ -10,9 +10,11 @@ import { Checklist } from './screens/Checklist'
 import { IssueLog } from './screens/IssueLog'
 import { ServiceData } from './screens/ServiceData'
 import { Evaluation } from './screens/Evaluation'
+import { Settings } from './screens/Settings'
 import { supabase } from './lib/supabase'
 
-type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
+export type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'settings'
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('dashboard')
   const [sundayId, setSundayId] = useState('')
@@ -26,10 +28,11 @@ export default function App() {
       .then(sunday => {
         setSundayId(sunday.id)
         setSundayDate(sunday.date)
-        // Fetch high-priority issue count for badge
+        // Badge: unresolved High/Critical issues only
         supabase.from('issues').select('id', { count: 'exact' })
           .eq('sunday_id', sunday.id)
           .in('severity', ['High', 'Critical'])
+          .is('resolved_at', null)
           .then(({ count }) => setIssueCount(count || 0))
         setLoading(false)
       })
@@ -70,6 +73,7 @@ export default function App() {
             {screen === 'issues'     && <IssueLog    sundayId={sundayId} />}
             {screen === 'data'       && <ServiceData  sundayId={sundayId} />}
             {screen === 'evaluation' && <Evaluation  sundayId={sundayId} />}
+            {screen === 'settings'   && <Settings />}
           </main>
         </div>
         <MobileTabs active={screen} setActive={setScreen} issueCount={issueCount} />

@@ -48,7 +48,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
         vals[r.field_id] = r.value || ''
         if (r.captured_at) {
           caps[r.field_id] = new Date(r.captured_at).toLocaleTimeString('en-US', {
-            hour: 'numeric', minute: '2-digit'
+            hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
           })
         }
       })
