@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BFC Sunday Service Report — PDF Mockup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #cbd5e1;
+      padding: 40px 20px 60px;
+      font-family: Inter, "Segoe UI", sans-serif;
+    }
+
+    /* US Letter: 8.5 × 11 in → at 96dpi = 816 × 1056px */
+    .page {
+      width: 816px;
+      background: #ffffff;
+      margin: 0 auto 40px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.28);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* page break hint for multi-page */
+    .page-break {
+      border-top: 2px dashed #cbd5e1;
+      margin: 0;
+      position: relative;
+    }
+    .page-break::before {
+      content: "Page 2";
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%) translateY(-50%);
+      background: #cbd5e1;
+      color: #94a3b8;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      padding: 2px 10px;
+      border-radius: 20px;
+    }
+
+    /* ── HEADER BAND ── */
+    .page-header {
+      background: #1a1a1a;
+      padding: 28px 40px 22px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .brand-name { color: #fff; font-size: 17px; font-weight: 700; letter-spacing: .02em; }
+    .brand-sub  { color: #9ca3af; font-size: 10px; margin-top: 3px; }
+
+    .report-title-block { text-align: right; }
+    .report-title { color: #fff; font-size: 20px; font-weight: 800; letter-spacing: -.01em; }
+    .report-meta  { color: #9ca3af; font-size: 10px; margin-top: 4px; }
+
+    /* ── ACCENT BAR ── */
+    .accent-bar {
+      height: 4px;
+      background: linear-gradient(90deg, #2563eb 0%, #10b981 100%);
+    }
+
+    /* ── BODY ── */
+    .page-body { padding: 28px 40px; }
+
+    /* ── KPI ROW ── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 26px;
+    }
+
+    .kpi-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 14px 16px;
+      text-align: center;
+    }
+
+    .kpi-val {
+      font-size: 26px;
+      font-weight: 800;
+      color: #111827;
+      letter-spacing: -.02em;
+      line-height: 1;
+    }
+
+    .kpi-lbl {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: #9ca3af;
+      margin-top: 5px;
+    }
+
+    /* ── SECTION ── */
+    .section { margin-bottom: 22px; }
+
+    .section-title {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .13em;
+      color: #6b7280;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e5e7eb;
+      margin-bottom: 10px;
+    }
+
+    /* ── TABLES ── */
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+
+    thead th {
+      background: #f9fafb;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #9ca3af;
+      text-align: left;
+      padding: 6px 10px;
+      border: 1px solid #e5e7eb;
+    }
+
+    tbody td {
+      padding: 7px 10px;
+      border: 1px solid #f3f4f6;
+      color: #374151;
+    }
+
+    tbody tr:nth-child(even) td { background: #fafafa; }
+
+    .total-row td {
+      font-weight: 700;
+      color: #111827;
+      background: #f3f4f6 !important;
+    }
+
+    .over  { color: #dc2626; font-weight: 600; }
+    .under { color: #16a34a; font-weight: 600; }
+
+    /* ── SEVERITY ── */
+    .sev { display: inline-flex; align-items: center; gap: 5px; }
+    .sev-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .sev-high   { background: #ef4444; }
+    .sev-medium { background: #f59e0b; }
+    .sev-low    { background: #22c55e; }
+
+    .status-chip {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 20px;
+    }
+    .chip-open   { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+    .chip-noted  { background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; }
+    .chip-closed { background: #ecfdf5; color: #059669; border: 1px solid #6ee7b7; }
+
+    /* ── CHECKLIST EXCEPTIONS ── */
+    .exception-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 0;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 11px;
+      color: #374151;
+    }
+    .exception-row:last-child { border-bottom: none; }
+
+    .x-box {
+      width: 14px; height: 14px;
+      border-radius: 3px;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+      font-size: 9px;
+      font-weight: 700;
+      color: #ef4444;
+    }
+
+    .exc-label { font-weight: 600; color: #111827; }
+    .exc-meta  { color: #9ca3af; font-size: 10px; }
+
+    /* ── WEATHER (two-col grid) ── */
+    .weather-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .weather-cell {
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 9px 10px;
+    }
+
+    .weather-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #9ca3af; }
+    .weather-val { font-size: 13px; font-weight: 700; color: #111827; margin-top: 3px; }
+
+    /* ── EVALUATION SECTION ── */
+
+    /* Feel tally row */
+    .eval-tally {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .tally-count {
+      font-size: 10px;
+      font-weight: 600;
+      color: #6b7280;
+      margin-right: 4px;
+    }
+
+    /* feel pills */
+    .feel-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .feel-excellent   { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; }
+    .feel-solid       { background: #eff6ff; color: #1e40af; border: 1px solid #93c5fd; }
+    .feel-rough       { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+    .feel-significant { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+
+    /* individual response card */
+    .response-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .response-card:last-child { margin-bottom: 0; }
+
+    .response-header {
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 7px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .response-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #9ca3af; }
+    .response-time  { font-size: 9px; color: #9ca3af; }
+
+    .response-body { padding: 11px 12px; }
+
+    .resp-field { margin-bottom: 9px; }
+    .resp-field:last-child { margin-bottom: 0; }
+
+    .resp-field-label {
+      font-size: 8.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .09em;
+      color: #9ca3af;
+      margin-bottom: 3px;
+    }
+
+    .resp-field-text {
+      font-size: 10.5px;
+      color: #374151;
+      line-height: 1.55;
+    }
+
+    /* broken-moment callout inside a response */
+    .broken-callout {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 5px;
+      padding: 7px 10px;
+      margin-bottom: 9px;
+    }
+
+    .broken-icon {
+      font-size: 11px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .broken-text {
+      font-size: 10px;
+      color: #991b1b;
+      line-height: 1.5;
+    }
+
+    .broken-text strong { font-weight: 700; }
+
+    /* no-break indicator */
+    .no-break {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: #059669;
+      font-weight: 500;
+      margin-bottom: 9px;
+    }
+
+    /* ── FOOTER ── */
+    .page-footer {
+      border-top: 1px solid #e5e7eb;
+      padding: 12px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-left  { font-size: 8.5px; color: #9ca3af; }
+    .footer-right { font-size: 8.5px; color: #9ca3af; }
+
+    /* page 2 continuation header */
+    .cont-header {
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 10px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .cont-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: #9ca3af; }
+    .cont-date  { font-size: 9px; color: #9ca3af; }
+
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ── PAGE 1 HEADER ── -->
+  <div class="page-header">
+    <div>
+      <div class="brand-name">BFC Production</div>
+      <div class="brand-sub">Bethany First Church · Sunday Ops Hub</div>
+    </div>
+    <div class="report-title-block">
+      <div class="report-title">Sunday Service Report</div>
+      <div class="report-meta">March 22, 2026 &nbsp;·&nbsp; Generated 3:47 PM CT</div>
+    </div>
+  </div>
+  <div class="accent-bar"></div>
+
+  <!-- ── PAGE 1 BODY ── -->
+  <div class="page-body">
+
+    <!-- KPI row — "Eval Score" replaced with response count since evals are qualitative -->
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-val">412</div>
+        <div class="kpi-lbl">Total Attendance</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">1:22:10</div>
+        <div class="kpi-lbl">Avg. Runtime</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">2</div>
+        <div class="kpi-lbl">Open Issues</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">4</div>
+        <div class="kpi-lbl">Eval Responses</div>
+      </div>
+    </div>
+
+    <!-- Attendance -->
+    <div class="section">
+      <div class="section-title">Attendance</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>In-Person</th>
+            <th>Online</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>8:30 AM</td>
+            <td>138</td>
+            <td>22</td>
+            <td>160</td>
+          </tr>
+          <tr>
+            <td>10:15 AM</td>
+            <td>197</td>
+            <td>55</td>
+            <td>252</td>
+          </tr>
+          <tr class="total-row">
+            <td>Total</td>
+            <td>335</td>
+            <td>77</td>
+            <td>412</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Runtimes -->
+    <div class="section">
+      <div class="section-title">Service Runtimes</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Runtime</th>
+            <th>vs. Target</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>8:30 AM</td>
+            <td>8:29 AM</td>
+            <td>9:52 AM</td>
+            <td>1:23:00</td>
+            <td class="under">−2:00</td>
+            <td>Ended early — sermon ran short</td>
+          </tr>
+          <tr>
+            <td>10:15 AM</td>
+            <td>10:16 AM</td>
+            <td>11:37 AM</td>
+            <td>1:21:00</td>
+            <td class="over">+1:00</td>
+            <td>Late start; bumper video delay</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Issues -->
+    <div class="section">
+      <div class="section-title">Issues Logged</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Service</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="sev"><span class="sev-dot sev-high"></span>High</span></td>
+            <td>8:30 AM</td>
+            <td>Audio</td>
+            <td>Stage-left monitor dropout mid-worship set</td>
+            <td><span class="status-chip chip-open">Open</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev"><span class="sev-dot sev-medium"></span>Medium</span></td>
+            <td>10:15 AM</td>
+            <td>Video</td>
+            <td>Bumper video started 30 sec late</td>
+            <td><span class="status-chip chip-noted">Noted</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Checklist Exceptions -->
+    <div class="section">
+      <div class="section-title">Checklist Exceptions — Unchecked Items</div>
+      <div class="exception-row">
+        <div class="x-box">✕</div>
+        <div>
+          <div class="exc-label">Baptismal filled and heated</div>
+          <div class="exc-meta">Pre-Service · Audio / Video Setup</div>
+        </div>
+      </div>
+      <div class="exception-row">
+        <div class="x-box">✕</div>
+        <div>
+          <div class="exc-label">House lights dimmer tested at full range</div>
+          <div class="exc-meta">Pre-Service · Lights</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weather -->
+    <div class="section">
+      <div class="section-title">Weather Conditions</div>
+      <div class="weather-grid">
+        <div class="weather-cell">
+          <div class="weather-lbl">Conditions</div>
+          <div class="weather-val">Partly Cloudy</div>
+        </div>
+        <div class="weather-cell">
+          <div class="weather-lbl">Temperature</div>
+          <div class="weather-val">62 °F</div>
+        </div>
+        <div class="weather-cell">
+          <div class="weather-lbl">Wind</div>
+          <div class="weather-val">12 mph SW</div>
+        </div>
+        <div class="weather-cell">
+          <div class="weather-lbl">Precipitation</div>
+          <div class="weather-val">None</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /page-body p1 -->
+
+  <!-- Footer p1 -->
+  <div class="page-footer">
+    <div class="footer-left">BFC Sunday Ops Hub &nbsp;·&nbsp; bethanynaz.org &nbsp;·&nbsp; Confidential — internal use only</div>
+    <div class="footer-right">Page 1 of 2</div>
+  </div>
+
+  <!-- ── PAGE BREAK ── -->
+  <div class="page-break"></div>
+
+  <!-- Continuation header -->
+  <div class="cont-header">
+    <div class="cont-label">Sunday Service Report — Continued</div>
+    <div class="cont-date">March 22, 2026</div>
+  </div>
+
+  <!-- ── PAGE 2 BODY: EVALUATIONS ── -->
+  <div class="page-body">
+
+    <div class="section">
+      <div class="section-title">Service Evaluations &nbsp;·&nbsp; 4 Responses</div>
+
+      <!-- Feel tally -->
+      <div class="eval-tally">
+        <span class="tally-count">How did the service feel overall?</span>
+        <span class="feel-pill feel-excellent">Excellent &nbsp;×2</span>
+        <span class="feel-pill feel-solid">Solid &nbsp;×1</span>
+        <span class="feel-pill feel-rough">Had some rough spots &nbsp;×1</span>
+      </div>
+
+      <!-- Response 1 -->
+      <div class="response-card">
+        <div class="response-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="response-label">Response 1</span>
+            <span class="feel-pill feel-excellent">Excellent</span>
+          </div>
+          <span class="response-time">Submitted 1:12 PM</span>
+        </div>
+        <div class="response-body">
+          <div class="no-break">✓ &nbsp;No moment broke the experience</div>
+          <div class="resp-field">
+            <div class="resp-field-label">What worked really well</div>
+            <div class="resp-field-text">Worship transitions were the smoothest they've been in months — no dead air between songs and the lighting followed perfectly. Second service energy was especially strong.</div>
+          </div>
+          <div class="resp-field">
+            <div class="resp-field-label">What needed attention</div>
+            <div class="resp-field-text">The announcements slide deck had a typo on the first card. Minor, but worth a proof pass before it goes on screen.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Response 2 -->
+      <div class="response-card">
+        <div class="response-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="response-label">Response 2</span>
+            <span class="feel-pill feel-rough">Had some rough spots</span>
+          </div>
+          <span class="response-time">Submitted 1:28 PM</span>
+        </div>
+        <div class="response-body">
+          <!-- broken moment -->
+          <div class="broken-callout">
+            <div class="broken-icon">⚠</div>
+            <div class="broken-text">
+              <strong>A moment broke the experience.</strong> Stage-left monitor went out completely about 3 songs in during the 8:30. You could see the worship leader clearly struggling to hear herself. Probably noticeable to the front rows.
+            </div>
+          </div>
+          <div class="resp-field">
+            <div class="resp-field-label">What worked really well</div>
+            <div class="resp-field-text">Stream quality was rock solid all morning — no buffering complaints and the camera cuts felt intentional and clean. Best mix we've had on the FOH side for the message.</div>
+          </div>
+          <div class="resp-field">
+            <div class="resp-field-label">What needed attention</div>
+            <div class="resp-field-text">Beyond the monitor issue — the house felt a little thin in the first service during the offering. Could push the room mains a touch more at that point in the service.</div>
+          </div>
+          <div class="resp-field">
+            <div class="resp-field-label">Anything specific to your area</div>
+            <div class="resp-field-text">Audio: Need to trace the stage-left monitor send before next week. Suspecting a bad XLR in the snake but haven't confirmed.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Response 3 -->
+      <div class="response-card">
+        <div class="response-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="response-label">Response 3</span>
+            <span class="feel-pill feel-excellent">Excellent</span>
+          </div>
+          <span class="response-time">Submitted 1:45 PM</span>
+        </div>
+        <div class="response-body">
+          <div class="no-break">✓ &nbsp;No moment broke the experience</div>
+          <div class="resp-field">
+            <div class="resp-field-label">What worked really well</div>
+            <div class="resp-field-text">The new sermon lower-third graphics looked great. Pastor noticed and mentioned it after the second service. Graphic on the baptism announcement was also clean.</div>
+          </div>
+          <div class="resp-field">
+            <div class="resp-field-label">Anything specific to your area</div>
+            <div class="resp-field-text">Video/Lighting: The haze level in second service was perfect — need to remember that setting for next week. First service we ran it a bit heavy early on.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Response 4 -->
+      <div class="response-card">
+        <div class="response-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="response-label">Response 4</span>
+            <span class="feel-pill feel-solid">Solid</span>
+          </div>
+          <span class="response-time">Submitted 2:03 PM</span>
+        </div>
+        <div class="response-body">
+          <div class="no-break">✓ &nbsp;No moment broke the experience</div>
+          <div class="resp-field">
+            <div class="resp-field-label">What worked really well</div>
+            <div class="resp-field-text">Communication between the stage and booth was better than usual. Calls were clear and the team stayed composed when the monitor went down — good recovery.</div>
+          </div>
+          <div class="resp-field">
+            <div class="resp-field-label">What needed attention</div>
+            <div class="resp-field-text">Bumper video in 10:15 was late — we need a clearer handoff cue from the stage manager so the booth knows to roll. That one's a process gap, not a tech issue.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /section -->
+  </div><!-- /page-body p2 -->
+
+  <!-- Footer p2 -->
+  <div class="page-footer">
+    <div class="footer-left">BFC Sunday Ops Hub &nbsp;·&nbsp; bethanynaz.org &nbsp;·&nbsp; Confidential — internal use only</div>
+    <div class="footer-right">Page 2 of 2</div>
+  </div>
+
+</div><!-- /page -->
+
+</body>
+</html>
