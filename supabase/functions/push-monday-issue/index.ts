@@ -102,6 +102,7 @@ Deno.serve(async request => {
     const statusColumnId = Deno.env.get('MONDAY_STATUS_COLUMN_ID') || undefined
 
     const body = await request.json() as PushIssuePayload
+    console.log('push-monday-issue received:', JSON.stringify({ ...body, photo_urls: body.photo_urls ?? [] }))
     if (!body.issue_id || !body.title?.trim() || !body.description?.trim() || !body.severity) {
       return new Response(JSON.stringify({ error: 'issue_id, title, description, and severity are required' }), {
         status: 400,
@@ -123,6 +124,7 @@ Deno.serve(async request => {
       }
     `
 
+    console.log('Creating Monday item...')
     const createItemData = await mondayRequest<{ create_item: { id: string } }>(createItemQuery, {
       boardId,
       groupId,
@@ -131,6 +133,10 @@ Deno.serve(async request => {
     })
 
     const itemId = createItemData.create_item.id
+    console.log('Monday item created:', itemId)
+
+    const updateBody = buildMondayUpdateBody(body.description, body.severity, body.issue_id, body.photo_urls)
+    console.log('Creating Monday update, body length:', updateBody.length, 'photo_urls count:', body.photo_urls?.length ?? 0)
 
     const createUpdateQuery = `
       mutation CreateIssueUpdate($itemId: ID!, $body: String!) {
@@ -140,11 +146,19 @@ Deno.serve(async request => {
       }
     `
 
-    await mondayRequest(createUpdateQuery, {
-      itemId,
-      body: buildMondayUpdateBody(body.description, body.severity, body.issue_id, body.photo_urls),
-    })
+    try {
+      await mondayRequest(createUpdateQuery, {
+        itemId,
+        body: updateBody,
+      })
+      console.log('Monday update created successfully')
+    } catch (updateErr) {
+      const msg = updateErr instanceof Error ? updateErr.message : String(updateErr)
+      console.error('Monday update failed (non-fatal):', msg)
+      // Don't throw — item was created, update is best-effort
+    }
 
+    console.log('Updating Supabase issues table...')
     const { error: updateIssueError } = await supabase
       .from('issues')
       .update({
@@ -154,7 +168,8 @@ Deno.serve(async request => {
       .eq('id', body.issue_id)
 
     if (updateIssueError) {
-      throw updateIssueError
+      console.error('Supabase update failed:', updateIssueError.message)
+      // Don't throw — Monday push succeeded, just log the DB sync failure
     }
 
     return new Response(JSON.stringify({ itemId }), {
