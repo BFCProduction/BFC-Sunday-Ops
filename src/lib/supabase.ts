@@ -15,6 +15,15 @@ export async function loadChurchTimezone(): Promise<string> {
   return data?.value || CHURCH_TIME_ZONE
 }
 
+export async function getSundayByDate(date: string): Promise<{ id: string; date: string } | null> {
+  const { data } = await supabase
+    .from('sundays')
+    .select('id, date')
+    .eq('date', date)
+    .maybeSingle()
+  return data
+}
+
 export async function getOrCreateSunday(timezone = CHURCH_TIME_ZONE) {
   const today = getOperationalSundayDateString(new Date(), timezone)
   const { data: existing } = await supabase

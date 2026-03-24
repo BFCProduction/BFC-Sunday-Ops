@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { AdminProvider } from './context/AdminContext'
 import { SundayContext } from './context/SundayContext'
-import { getOrCreateSunday, loadChurchTimezone } from './lib/supabase'
+import { getOrCreateSunday, getSundayByDate, loadChurchTimezone } from './lib/supabase'
 import { CHURCH_TIME_ZONE } from './lib/churchTime'
 import { SiteHeader } from './components/layout/SiteHeader'
 import { Sidebar } from './components/layout/Sidebar'
@@ -18,12 +18,19 @@ export type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('dashboard')
-  const [sundayId, setSundayId] = useState('')
+
+  // The real current Sunday — never changes after load
+  const [todaySundayId, setTodaySundayId]     = useState('')
+  const [todaySundayDate, setTodaySundayDate] = useState('')
+  const [timezone, setTimezone]               = useState(CHURCH_TIME_ZONE)
+
+  // The Sunday currently being viewed — may differ from today
+  const [sundayId, setSundayId]     = useState('')
   const [sundayDate, setSundayDate] = useState('')
-  const [timezone, setTimezone] = useState(CHURCH_TIME_ZONE)
+
   const [issueCount, setIssueCount] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState('')
 
   useEffect(() => {
     loadChurchTimezone()
@@ -32,6 +39,8 @@ export default function App() {
         return getOrCreateSunday(tz)
       })
       .then(sunday => {
+        setTodaySundayId(sunday.id)
+        setTodaySundayDate(sunday.date)
         setSundayId(sunday.id)
         setSundayDate(sunday.date)
         supabase.from('issues').select('id', { count: 'exact' })
@@ -46,6 +55,19 @@ export default function App() {
         setLoading(false)
       })
   }, [])
+
+  const navigateSunday = useCallback(async (date: string) => {
+    if (date === todaySundayDate) {
+      setSundayId(todaySundayId)
+      setSundayDate(todaySundayDate)
+      return
+    }
+    const row = await getSundayByDate(date)
+    setSundayId(row?.id ?? '')
+    setSundayDate(date)
+  }, [todaySundayId, todaySundayDate])
+
+  const isViewingPast = sundayDate !== '' && sundayDate !== todaySundayDate
 
   if (loading) return (
     <div className="min-h-screen bg-white flex items-center justify-center">
@@ -67,11 +89,11 @@ export default function App() {
 
   return (
     <AdminProvider>
-    <SundayContext.Provider value={{ sundayId, sundayDate, timezone }}>
+    <SundayContext.Provider value={{ sundayId, sundayDate, timezone, todaySundayDate, isViewingPast, navigateSunday }}>
       <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#111827' }}>
         <SiteHeader />
         <div className="flex flex-1 min-h-0">
-          <Sidebar active={screen} setActive={setScreen} issueCount={issueCount} sundayDate={sundayDate} />
+          <Sidebar active={screen} setActive={setScreen} issueCount={issueCount} />
           <main className="flex-1 min-w-0 overflow-y-auto bg-white" style={{ paddingBottom: '72px' }}>
             {screen === 'dashboard'  && <Dashboard   sundayId={sundayId} setScreen={setScreen} />}
             {screen === 'checklist'  && <Checklist   sundayId={sundayId} />}
