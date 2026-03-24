@@ -79,7 +79,7 @@ export function Dashboard({ sundayId, setScreen }: DashboardProps) {
     }
   })
 
-  const highIssues = issues.filter(i => i.severity === 'High' || i.severity === 'Critical')
+  const highIssues = issues.filter(i => !i.resolved_at && (i.severity === 'High' || i.severity === 'Critical'))
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
