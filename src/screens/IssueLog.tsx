@@ -264,7 +264,6 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     }
 
     if (pushToMonday && data) {
-      console.log('[Monday push] photoUrls:', photoUrls)
       try {
         const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/push-monday-issue`, {
           method: 'POST',
