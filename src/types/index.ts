@@ -121,6 +121,14 @@ export interface ReportEmailRun {
   updated_at: string
 }
 
+export interface IssuePhoto {
+  id: string
+  issue_id: string
+  storage_path: string
+  filename: string
+  uploaded_at: string
+}
+
 export interface ChecklistItem {
   id: number
   task: string

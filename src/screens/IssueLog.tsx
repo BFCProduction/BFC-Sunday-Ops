@@ -1,16 +1,17 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Plus, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, CheckCircle2, ImagePlus, Plus, Trash2, X, ZoomIn } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
-import type { Issue } from '../types'
+import type { Issue, IssuePhoto } from '../types'
 
 interface IssueLogProps {
   sundayId: string
 }
 
 const MONDAY_PUSH_ENABLED = import.meta.env.VITE_ENABLE_MONDAY_PUSH === 'true'
+const STORAGE_BUCKET = 'issue-photos'
 
 const SEV_STYLE: Record<string, string> = {
   Low:      'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -19,34 +20,190 @@ const SEV_STYLE: Record<string, string> = {
   Critical: 'bg-red-100 text-red-800 border-red-300',
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+async function uploadPhotos(issueId: string, files: File[]): Promise<void> {
+  for (const file of files) {
+    const ext = file.name.split('.').pop() ?? 'jpg'
+    const path = `${issueId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, file, { contentType: file.type, upsert: false })
+    if (uploadError) {
+      console.error('Photo upload failed:', uploadError.message)
+      continue
+    }
+    await supabase.from('issue_photos').insert({
+      issue_id: issueId,
+      storage_path: path,
+      filename: file.name,
+    })
+  }
+}
+
+function getPublicUrl(storagePath: string): string {
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath)
+  return data.publicUrl
+}
+
+// ─── Photo strip ────────────────────────────────────────────────────────────
+
+interface PhotoStripProps {
+  photos: IssuePhoto[]
+  onDelete?: (photo: IssuePhoto) => void
+  onOpen: (url: string) => void
+}
+
+function PhotoStrip({ photos, onDelete, onOpen }: PhotoStripProps) {
+  if (photos.length === 0) return null
+  return (
+    <div className="flex gap-2 flex-wrap mt-3">
+      {photos.map(photo => {
+        const url = getPublicUrl(photo.storage_path)
+        return (
+          <div key={photo.id} className="relative group">
+            <button
+              onClick={() => onOpen(url)}
+              className="block w-16 h-16 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors focus:outline-none"
+              aria-label={`View ${photo.filename}`}
+            >
+              <img
+                src={url}
+                alt={photo.filename}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                <ZoomIn className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </button>
+            {onDelete && (
+              <button
+                onClick={() => onDelete(photo)}
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
+                aria-label="Delete photo"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Lightbox ───────────────────────────────────────────────────────────────
+
+function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors"
+        aria-label="Close"
+      >
+        <X className="w-6 h-6" />
+      </button>
+      <img
+        src={url}
+        alt="Issue photo"
+        className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      />
+    </div>
+  )
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
+
 export function IssueLog({ sundayId }: IssueLogProps) {
   const { isAdmin } = useAdmin()
   const { timezone } = useSunday()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const [issues, setIssues] = useState<Issue[]>([])
+  const [photos, setPhotos] = useState<Record<string, IssuePhoto[]>>({})
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
   const [severity, setSeverity] = useState<Issue['severity']>('Medium')
   const [createTask, setCreateTask] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [confirmDelete, setConfirmDelete] = useState<Issue | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
+  // ── Load issues ──────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.from('issues').select('*').eq('sunday_id', sundayId)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setIssues((data || []) as Issue[]); setLoading(false) })
   }, [sundayId])
 
+  // ── Load photos for all issues ───────────────────────────────────────────
+  useEffect(() => {
+    if (issues.length === 0) return
+    const ids = issues.map(i => i.id)
+    supabase.from('issue_photos')
+      .select('*')
+      .in('issue_id', ids)
+      .order('uploaded_at', { ascending: true })
+      .then(({ data }) => {
+        if (!data) return
+        const map: Record<string, IssuePhoto[]> = {}
+        ;(data as IssuePhoto[]).forEach(p => {
+          if (!map[p.issue_id]) map[p.issue_id] = []
+          map[p.issue_id].push(p)
+        })
+        setPhotos(map)
+      })
+  }, [issues])
+
+  // ── Form helpers ──────────────────────────────────────────────────────────
   const resetForm = () => {
     setTitle('')
     setDesc('')
     setSeverity('Medium')
     setCreateTask(false)
+    setPendingFiles([])
+    setPendingPreviews([])
     setShowForm(false)
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const chosen = Array.from(e.target.files ?? [])
+    if (chosen.length === 0) return
+    setPendingFiles(prev => [...prev, ...chosen])
+    chosen.forEach(file => {
+      const reader = new FileReader()
+      reader.onload = ev => {
+        setPendingPreviews(prev => [...prev, ev.target!.result as string])
+      }
+      reader.readAsDataURL(file)
+    })
+    // Reset input so same file can be re-added if needed
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const removePending = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index))
+    setPendingPreviews(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = () => {
     if (!title.trim() || !desc.trim()) {
       setNotice('Issue title and description are required.')
@@ -78,7 +235,23 @@ export function IssueLog({ sundayId }: IssueLogProps) {
       return
     }
     if (data) setIssues(p => [data as Issue, ...p])
+
+    // Upload photos if any
+    const filesToUpload = [...pendingFiles]
     resetForm()
+
+    if (filesToUpload.length > 0 && data) {
+      await uploadPhotos(data.id, filesToUpload)
+      // Reload photos for this issue
+      const { data: newPhotos } = await supabase
+        .from('issue_photos')
+        .select('*')
+        .eq('issue_id', data.id)
+        .order('uploaded_at', { ascending: true })
+      if (newPhotos) {
+        setPhotos(prev => ({ ...prev, [data.id]: newPhotos as IssuePhoto[] }))
+      }
+    }
 
     if (pushToMonday && data) {
       try {
@@ -120,6 +293,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     setSaving(false)
   }
 
+  // ── Resolve / unresolve ───────────────────────────────────────────────────
   const resolveIssue = async (issue: Issue) => {
     const resolved_at = new Date().toISOString()
     const { error } = await supabase.from('issues').update({ resolved_at }).eq('id', issue.id)
@@ -133,15 +307,36 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     setIssues(prev => prev.map(e => e.id === issue.id ? { ...e, resolved_at: null } : e))
   }
 
+  // ── Delete issue ──────────────────────────────────────────────────────────
   const deleteIssue = async (issue: Issue) => {
     setSaving(true)
+    // Delete storage objects for this issue's photos
+    const issuePhotos = photos[issue.id] ?? []
+    if (issuePhotos.length > 0) {
+      await supabase.storage
+        .from(STORAGE_BUCKET)
+        .remove(issuePhotos.map(p => p.storage_path))
+    }
     const { error } = await supabase.from('issues').delete().eq('id', issue.id)
     setSaving(false)
     if (error) { setNotice(error.message); return }
     setIssues(prev => prev.filter(e => e.id !== issue.id))
+    setPhotos(prev => { const next = { ...prev }; delete next[issue.id]; return next })
     setConfirmDelete(null)
     setNotice('Issue deleted.')
   }
+
+  // ── Delete single photo ───────────────────────────────────────────────────
+  const deletePhoto = async (photo: IssuePhoto) => {
+    await supabase.storage.from(STORAGE_BUCKET).remove([photo.storage_path])
+    await supabase.from('issue_photos').delete().eq('id', photo.id)
+    setPhotos(prev => ({
+      ...prev,
+      [photo.issue_id]: (prev[photo.issue_id] ?? []).filter(p => p.id !== photo.id),
+    }))
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -204,7 +399,44 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                 </div>
               </div>
 
-              {/* Monday follow-up checkbox — replaces the old modal */}
+              {/* Photo attachment */}
+              <div>
+                <p className="text-gray-500 text-xs font-medium mb-2">Photos <span className="text-gray-400 font-normal">(optional)</span></p>
+                {pendingPreviews.length > 0 && (
+                  <div className="flex gap-2 flex-wrap mb-2">
+                    {pendingPreviews.map((src, i) => (
+                      <div key={i} className="relative group">
+                        <img src={src} alt="" className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                        <button
+                          onClick={() => removePending(i)}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Remove photo"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 border-dashed rounded-xl text-gray-500 text-xs font-medium hover:bg-gray-100 hover:border-gray-300 transition-colors w-full justify-center"
+                >
+                  <ImagePlus className="w-4 h-4" />
+                  Add Photos
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </div>
+
+              {/* Monday follow-up checkbox */}
               {MONDAY_PUSH_ENABLED && severity !== 'Low' && (
                 <label className="flex items-start gap-2.5 cursor-pointer select-none">
                   <input
@@ -264,6 +496,13 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                 </div>
                 <p className="text-gray-900 text-sm font-semibold leading-snug">{issue.title || issue.description}</p>
                 <p className="mt-1 text-gray-600 text-sm leading-snug">{issue.description}</p>
+
+                <PhotoStrip
+                  photos={photos[issue.id] ?? []}
+                  onDelete={isAdmin ? deletePhoto : undefined}
+                  onOpen={setLightboxUrl}
+                />
+
                 <div className="mt-3 flex items-center justify-between">
                   <div>
                     {issue.pushed_to_monday ? (
@@ -311,6 +550,12 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                     </div>
                     <p className="text-gray-700 text-sm font-semibold leading-snug">{issue.title || issue.description}</p>
                     <p className="mt-0.5 text-gray-500 text-sm leading-snug">{issue.description}</p>
+
+                    <PhotoStrip
+                      photos={photos[issue.id] ?? []}
+                      onDelete={isAdmin ? deletePhoto : undefined}
+                      onOpen={setLightboxUrl}
+                    />
                   </Card>
                 ))}
               </div>
@@ -327,6 +572,11 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             <p className="text-gray-500 text-sm mb-4">Delete this issue from Sunday Ops?</p>
             <p className="text-gray-900 text-sm font-semibold mb-2">{confirmDelete.title || confirmDelete.description}</p>
             <p className="text-gray-500 text-xs bg-gray-50 rounded-xl p-3 leading-relaxed mb-4">{confirmDelete.description}</p>
+            {(photos[confirmDelete.id]?.length ?? 0) > 0 && (
+              <p className="text-amber-600 text-xs bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
+                {photos[confirmDelete.id].length} attached photo{photos[confirmDelete.id].length > 1 ? 's' : ''} will also be deleted.
+              </p>
+            )}
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)}
                 className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
@@ -339,6 +589,11 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
       )}
     </div>
   )
