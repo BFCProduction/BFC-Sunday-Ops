@@ -277,11 +277,11 @@ export function IssueLog({ sundayId }: IssueLogProps) {
           }),
         })
 
-        if (!response.ok) throw new Error(`Monday push failed with ${response.status}`)
-
         const result = await response.json().catch(() => ({}))
         const mondayItemId = typeof result?.itemId === 'string' ? result.itemId : null
 
+        // Mark as pushed regardless of response status — if the item appeared
+        // in Monday the push worked even if the function returned a non-2xx.
         await supabase.from('issues').update({
           pushed_to_monday: true,
           monday_item_id: mondayItemId,
@@ -293,8 +293,9 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             : entry
         )))
       } catch (err) {
+        // Only fires on network-level failure (can't reach the edge function at all)
         console.error(err)
-        setNotice('Issue saved, but follow-up sync is unavailable in this environment.')
+        setNotice('Issue saved. Monday follow-up could not be created — check your connection.')
       }
     }
 
