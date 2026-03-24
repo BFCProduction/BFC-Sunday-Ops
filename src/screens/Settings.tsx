@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, Loader2, Mail, Plus, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { FileDown, Globe, Loader2, Mail, Plus, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
 import { requestSummaryEmailAdmin } from '../lib/adminApi'
@@ -62,6 +62,11 @@ async function openPdf(sundayId: string, sundayDate: string) {
 export function Settings() {
   const { isAdmin, adminPassword } = useAdmin()
   const { sundayId, sundayDate } = useSunday()
+
+  // ── Timezone state ──
+  const [churchTimezone, setChurchTimezone] = useState(timezone)
+  const [savingTz, setSavingTz]             = useState(false)
+  const [tzNotice, setTzNotice]             = useState('')
 
   // ── PDF Export state ──
   const [exportingCurrent, setExportingCurrent] = useState(false)
@@ -181,6 +186,18 @@ export function Settings() {
     }
   }
 
+  const saveTimezone = async () => {
+    if (!churchTimezone.trim()) return
+    setSavingTz(true)
+    setTzNotice('')
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'church_timezone', value: churchTimezone.trim(), updated_at: new Date().toISOString() })
+    setSavingTz(false)
+    if (error) { setTzNotice('Failed to save: ' + error.message); return }
+    setTzNotice('Saved — reload the page for changes to take effect.')
+  }
+
   const formatSundayDate = (dateStr: string) =>
     new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -248,6 +265,91 @@ export function Settings() {
                 }
               </button>
             </div>
+          </Card>
+        </div>
+
+        {/* ── Church Settings ── */}
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Church Settings</p>
+          <Card className="p-5">
+            <p className="text-gray-900 text-sm font-semibold flex items-center gap-2 mb-1">
+              <Globe className="w-4 h-4 text-blue-600" />
+              Church Timezone
+            </p>
+            <p className="text-gray-400 text-xs mb-4 leading-relaxed">
+              Used for service-status display, captured-time labels, and PDF reports. Must be a valid <a href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">IANA timezone</a> (e.g. <code className="bg-gray-100 px-1 rounded text-[10px]">America/Chicago</code>).
+            </p>
+            <div className="flex gap-3 flex-wrap items-start">
+              <div className="flex-1 min-w-[200px]">
+                <select
+                  value={[
+                    'America/New_York','America/Chicago','America/Denver','America/Phoenix',
+                    'America/Los_Angeles','America/Anchorage','Pacific/Honolulu',
+                    'America/Halifax','America/Toronto','America/Vancouver',
+                    'Europe/London','Europe/Paris','Europe/Berlin','Europe/Amsterdam',
+                    'Australia/Sydney','Australia/Melbourne','Pacific/Auckland',
+                    'Asia/Tokyo','Asia/Seoul','Asia/Manila','Asia/Kolkata',
+                    'Africa/Nairobi','Africa/Lagos',
+                  ].includes(churchTimezone) ? churchTimezone : 'custom'}
+                  onChange={e => { if (e.target.value !== 'custom') setChurchTimezone(e.target.value) }}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500 mb-2"
+                >
+                  <optgroup label="United States">
+                    <option value="America/New_York">Eastern — America/New_York</option>
+                    <option value="America/Chicago">Central — America/Chicago</option>
+                    <option value="America/Denver">Mountain — America/Denver</option>
+                    <option value="America/Phoenix">Mountain (no DST) — America/Phoenix</option>
+                    <option value="America/Los_Angeles">Pacific — America/Los_Angeles</option>
+                    <option value="America/Anchorage">Alaska — America/Anchorage</option>
+                    <option value="Pacific/Honolulu">Hawaii — Pacific/Honolulu</option>
+                  </optgroup>
+                  <optgroup label="Canada">
+                    <option value="America/Halifax">Atlantic — America/Halifax</option>
+                    <option value="America/Toronto">Eastern — America/Toronto</option>
+                    <option value="America/Vancouver">Pacific — America/Vancouver</option>
+                  </optgroup>
+                  <optgroup label="Europe">
+                    <option value="Europe/London">London — Europe/London</option>
+                    <option value="Europe/Paris">Paris — Europe/Paris</option>
+                    <option value="Europe/Berlin">Berlin — Europe/Berlin</option>
+                    <option value="Europe/Amsterdam">Amsterdam — Europe/Amsterdam</option>
+                  </optgroup>
+                  <optgroup label="Pacific / Oceania">
+                    <option value="Australia/Sydney">Sydney — Australia/Sydney</option>
+                    <option value="Australia/Melbourne">Melbourne — Australia/Melbourne</option>
+                    <option value="Pacific/Auckland">Auckland — Pacific/Auckland</option>
+                  </optgroup>
+                  <optgroup label="Asia">
+                    <option value="Asia/Tokyo">Tokyo — Asia/Tokyo</option>
+                    <option value="Asia/Seoul">Seoul — Asia/Seoul</option>
+                    <option value="Asia/Manila">Manila — Asia/Manila</option>
+                    <option value="Asia/Kolkata">Kolkata — Asia/Kolkata</option>
+                  </optgroup>
+                  <optgroup label="Africa">
+                    <option value="Africa/Nairobi">Nairobi — Africa/Nairobi</option>
+                    <option value="Africa/Lagos">Lagos — Africa/Lagos</option>
+                  </optgroup>
+                  <option value="custom">Custom (type below)…</option>
+                </select>
+                <input
+                  value={churchTimezone}
+                  onChange={e => setChurchTimezone(e.target.value)}
+                  placeholder="America/Chicago"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <button
+                onClick={saveTimezone}
+                disabled={savingTz || !churchTimezone.trim()}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 whitespace-nowrap mt-0.5">
+                {savingTz ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+            {tzNotice && (
+              <p className={`text-xs mt-2 ${tzNotice.startsWith('Failed') ? 'text-red-600' : 'text-emerald-700'}`}>
+                {tzNotice}
+              </p>
+            )}
           </Card>
         </div>
 

@@ -7,9 +7,9 @@ export interface ServicePhase {
   pulse: boolean   // whether to show pulsing radio dot
 }
 
-function minutesCT(date = new Date()): number {
+function minutesCT(date = new Date(), tz = CHURCH_TIME_ZONE): number {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CHURCH_TIME_ZONE,
+    timeZone: tz,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -21,11 +21,11 @@ function minutesCT(date = new Date()): number {
 
 const t = (h: number, m = 0) => h * 60 + m
 
-/** Returns the current service phase (Chicago time), or null if not Sunday / outside crew hours. */
-export function getServicePhase(date = new Date()): ServicePhase | null {
-  if (getChurchDayOfWeek(date) !== 0) return null
+/** Returns the current service phase, or null if not Sunday / outside crew hours. */
+export function getServicePhase(date = new Date(), tz = CHURCH_TIME_ZONE): ServicePhase | null {
+  if (getChurchDayOfWeek(date, tz) !== 0) return null
 
-  const mins = minutesCT(date)
+  const mins = minutesCT(date, tz)
 
   if (mins < t(7))     return null
   if (mins < t(8, 30)) return { label: 'Pre-Service',       bg: 'bg-emerald-500/15', text: 'text-emerald-400', pulse: true  }

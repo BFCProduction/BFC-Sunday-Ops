@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Plus, Trash2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
+import { useSunday } from '../context/SundayContext'
 import type { Issue } from '../types'
 
 interface IssueLogProps {
@@ -20,6 +21,7 @@ const SEV_STYLE: Record<string, string> = {
 
 export function IssueLog({ sundayId }: IssueLogProps) {
   const { isAdmin } = useAdmin()
+  const { timezone } = useSunday()
   const [issues, setIssues] = useState<Issue[]>([])
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
@@ -256,7 +258,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                   </div>
                   <span className="text-gray-400 text-[11px]">
                     {new Date(issue.created_at).toLocaleTimeString('en-US', {
-                      hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
+                      hour: 'numeric', minute: '2-digit', timeZone: timezone,
                     })}
                   </span>
                 </div>
@@ -296,7 +298,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
                           <CheckCircle2 className="w-3 h-3" />
                           Resolved {new Date(issue.resolved_at!).toLocaleTimeString('en-US', {
-                            hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
+                            hour: 'numeric', minute: '2-digit', timeZone: timezone,
                           })}
                         </span>
                       </div>

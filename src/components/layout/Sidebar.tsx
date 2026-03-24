@@ -7,6 +7,7 @@ import {
 import { useAdmin } from '../../context/adminState'
 import { AdminPasswordModal } from '../admin/AdminPasswordModal'
 import { getServicePhase, type ServicePhase } from '../../lib/serviceStatus'
+import { useSunday } from '../../context/SundayContext'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'settings'
 
@@ -27,13 +28,15 @@ const navItems = [
 
 export function Sidebar({ active, setActive, issueCount, sundayDate }: SidebarProps) {
   const { isAdmin, logout } = useAdmin()
+  const { timezone } = useSunday()
   const [showAdminModal, setShowAdminModal] = useState(false)
-  const [phase, setPhase] = useState<ServicePhase | null>(() => getServicePhase())
+  const [phase, setPhase] = useState<ServicePhase | null>(() => getServicePhase(new Date(), timezone))
 
   useEffect(() => {
-    const id = setInterval(() => setPhase(getServicePhase()), 60_000)
+    setPhase(getServicePhase(new Date(), timezone))
+    const id = setInterval(() => setPhase(getServicePhase(new Date(), timezone)), 60_000)
     return () => clearInterval(id)
-  }, [])
+  }, [timezone])
 
   const dateFormatted = new Date(sundayDate + 'T12:00:00').toLocaleDateString('en-US', {
     month: 'long', day: 'numeric', year: 'numeric',

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { AdminProvider } from './context/AdminContext'
 import { SundayContext } from './context/SundayContext'
-import { getOrCreateSunday } from './lib/supabase'
+import { getOrCreateSunday, loadChurchTimezone } from './lib/supabase'
+import { CHURCH_TIME_ZONE } from './lib/churchTime'
 import { SiteHeader } from './components/layout/SiteHeader'
 import { Sidebar } from './components/layout/Sidebar'
 import { MobileTabs } from './components/layout/MobileTabs'
@@ -19,16 +20,20 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('dashboard')
   const [sundayId, setSundayId] = useState('')
   const [sundayDate, setSundayDate] = useState('')
+  const [timezone, setTimezone] = useState(CHURCH_TIME_ZONE)
   const [issueCount, setIssueCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    getOrCreateSunday()
+    loadChurchTimezone()
+      .then(tz => {
+        setTimezone(tz)
+        return getOrCreateSunday(tz)
+      })
       .then(sunday => {
         setSundayId(sunday.id)
         setSundayDate(sunday.date)
-        // Badge: unresolved High/Critical issues only
         supabase.from('issues').select('id', { count: 'exact' })
           .eq('sunday_id', sunday.id)
           .in('severity', ['High', 'Critical'])
@@ -62,7 +67,7 @@ export default function App() {
 
   return (
     <AdminProvider>
-    <SundayContext.Provider value={{ sundayId, sundayDate }}>
+    <SundayContext.Provider value={{ sundayId, sundayDate, timezone }}>
       <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#111827' }}>
         <SiteHeader />
         <div className="flex flex-1 min-h-0">

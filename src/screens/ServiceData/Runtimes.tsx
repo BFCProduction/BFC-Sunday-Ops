@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Server, Clock, CheckCircle2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAdmin } from '../../context/adminState'
+import { useSunday } from '../../context/SundayContext'
 import { RuntimeFieldModal } from '../../components/admin/RuntimeFieldModal'
 import type { RuntimeField } from '../../components/admin/RuntimeFieldModal'
 
@@ -17,6 +18,7 @@ interface RuntimeValue {
 
 export function Runtimes({ sundayId }: RuntimesProps) {
   const { isAdmin } = useAdmin()
+  const { timezone } = useSunday()
   const [allFields, setAllFields] = useState<RuntimeField[]>([])
   const [values, setValues] = useState<Record<number, string>>({})
   const [captured, setCaptured] = useState<Record<number, string>>({})
@@ -48,7 +50,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
         vals[r.field_id] = r.value || ''
         if (r.captured_at) {
           caps[r.field_id] = new Date(r.captured_at).toLocaleTimeString('en-US', {
-            hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
+            hour: 'numeric', minute: '2-digit', timeZone: timezone,
           })
         }
       })

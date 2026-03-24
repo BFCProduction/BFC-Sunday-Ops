@@ -1,9 +1,9 @@
 export const CHURCH_TIME_ZONE = 'America/Chicago'
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-export function getChurchDateString(date = new Date()) {
+export function getChurchDateString(date = new Date(), tz = CHURCH_TIME_ZONE) {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CHURCH_TIME_ZONE,
+    timeZone: tz,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -20,9 +20,9 @@ export function getChurchDateString(date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
-export function getChurchDayOfWeek(date = new Date()) {
+export function getChurchDayOfWeek(date = new Date(), tz = CHURCH_TIME_ZONE) {
   const dayName = new Intl.DateTimeFormat('en-US', {
-    timeZone: CHURCH_TIME_ZONE,
+    timeZone: tz,
     weekday: 'long',
   }).format(date)
 
@@ -36,13 +36,13 @@ function addDaysToDateString(dateString: string, daysToAdd: number) {
   return base.toISOString().slice(0, 10)
 }
 
-export function getOperationalSundayDateString(date = new Date()) {
-  const dayOfWeek = getChurchDayOfWeek(date)
+export function getOperationalSundayDateString(date = new Date(), tz = CHURCH_TIME_ZONE) {
+  const dayOfWeek = getChurchDayOfWeek(date, tz)
 
   if (dayOfWeek === 0) {
-    return getChurchDateString(date)
+    return getChurchDateString(date, tz)
   }
 
   const daysUntilSunday = (7 - dayOfWeek) % 7
-  return addDaysToDateString(getChurchDateString(date), daysUntilSunday)
+  return addDaysToDateString(getChurchDateString(date, tz), daysUntilSunday)
 }

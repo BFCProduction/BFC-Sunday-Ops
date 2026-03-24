@@ -350,7 +350,7 @@ export function generateReportHtml(data: ReportData, logoBase64?: string): strin
         ? `<img src="${logoBase64}" style="height:28px;width:auto;display:block;" alt="BFC Production" />`
         : `<div style="color:#fff;font-size:17px;font-weight:700;letter-spacing:.02em;">BFC Production</div>`
       }
-      <div style="color:#9ca3af;font-size:10px;margin-top:5px;">Bethany First Church · Sunday Ops Hub</div>
+      <div style="color:#9ca3af;font-size:10px;margin-top:5px;">Bethany First Church · Sunday Ops</div>
     </div>
     <div style="text-align:right;">
       <div style="color:#fff;font-size:20px;font-weight:800;letter-spacing:-.01em;">Sunday Service Report</div>
@@ -405,7 +405,7 @@ export function generateReportHtml(data: ReportData, logoBase64?: string): strin
   <!-- Footer page 1 -->
   <div style="border-top:1px solid #e5e7eb;padding:12px 40px;display:flex;
     align-items:center;justify-content:space-between;">
-    <span style="font-size:8.5px;color:#9ca3af;">BFC Sunday Ops Hub · bethanynaz.org · Confidential — internal use only</span>
+    <span style="font-size:8.5px;color:#9ca3af;">BFC Sunday Ops · bethanynaz.org · Confidential — internal use only</span>
     <span style="font-size:8.5px;color:#9ca3af;">Page 1 of 2</span>
   </div>
 
@@ -431,7 +431,7 @@ export function generateReportHtml(data: ReportData, logoBase64?: string): strin
   <!-- Footer page 2 -->
   <div style="border-top:1px solid #e5e7eb;padding:12px 40px;display:flex;
     align-items:center;justify-content:space-between;">
-    <span style="font-size:8.5px;color:#9ca3af;">BFC Sunday Ops Hub · bethanynaz.org · Confidential — internal use only</span>
+    <span style="font-size:8.5px;color:#9ca3af;">BFC Sunday Ops · bethanynaz.org · Confidential — internal use only</span>
     <span style="font-size:8.5px;color:#9ca3af;">Page 2 of 2</span>
   </div>
 
