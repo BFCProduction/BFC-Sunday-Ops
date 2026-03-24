@@ -59,7 +59,7 @@ export function Sidebar({ active, setActive, issueCount }: SidebarProps) {
         <div className="flex items-center gap-2 mb-2">
           <Calendar className="w-3.5 h-3.5 text-gray-600" />
           <p className="text-gray-600 text-[10px] font-semibold uppercase tracking-widest">
-            {isViewingPast ? 'Viewing Past Sunday' : 'Today'}
+            {isViewingPast ? 'Viewing Past Sunday' : 'This Sunday'}
           </p>
         </div>
 
