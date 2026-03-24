@@ -1,27 +1,43 @@
-name: Manual Analytics Pull
+name: RESI Analytics Import
+
 on:
+  schedule:
+    # 1:00 PM CST / 2:00 PM CDT on Sundays (19:00 UTC)
+    # Both services are done by ~12:30 PM; RESI has ~30 min to finalize data.
+    - cron: '0 19 * * 0'
   workflow_dispatch:
 
 jobs:
-  pull-analytics:
+  import-resi:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci --legacy-peer-deps
-      - name: Pull YouTube Analytics
-        run: node scripts/fetch-youtube.js
-        env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          YOUTUBE_CHANNEL_HANDLE: '@BethanyNaz'
-          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      - name: Pull RESI Analytics
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Import RESI analytics
         run: node scripts/fetch-resi.js
         env:
-          RESI_EMAIL: ${{ secrets.RESI_EMAIL }}
+          RESI_EMAIL:    ${{ secrets.RESI_EMAIL }}
           RESI_PASSWORD: ${{ secrets.RESI_PASSWORD }}
-          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_URL:  ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:  ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+
+      - name: Upload debug screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resi-debug-screenshot
+          path: /tmp/resi-debug.png
+          if-no-files-found: ignore
