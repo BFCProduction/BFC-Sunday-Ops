@@ -22,7 +22,7 @@ const SEV_STYLE: Record<string, string> = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-async function uploadPhotos(issueId: string, files: File[]): Promise<void> {
+async function uploadPhotos(issueId: string, files: File[]): Promise<string | null> {
   for (const file of files) {
     const ext = file.name.split('.').pop() ?? 'jpg'
     const path = `${issueId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
@@ -31,14 +31,19 @@ async function uploadPhotos(issueId: string, files: File[]): Promise<void> {
       .upload(path, file, { contentType: file.type, upsert: false })
     if (uploadError) {
       console.error('Photo upload failed:', uploadError.message)
-      continue
+      return uploadError.message
     }
-    await supabase.from('issue_photos').insert({
+    const { error: insertError } = await supabase.from('issue_photos').insert({
       issue_id: issueId,
       storage_path: path,
       filename: file.name,
     })
+    if (insertError) {
+      console.error('Photo record failed:', insertError.message)
+      return insertError.message
+    }
   }
+  return null
 }
 
 function getPublicUrl(storagePath: string): string {
@@ -241,7 +246,10 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     resetForm()
 
     if (filesToUpload.length > 0 && data) {
-      await uploadPhotos(data.id, filesToUpload)
+      const uploadErr = await uploadPhotos(data.id, filesToUpload)
+      if (uploadErr) {
+        setNotice(`Issue saved, but photo upload failed: ${uploadErr}. Check that the 'issue-photos' storage bucket is public.`)
+      }
       // Reload photos for this issue
       const { data: newPhotos } = await supabase
         .from('issue_photos')
