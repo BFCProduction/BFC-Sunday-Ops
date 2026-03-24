@@ -1,4 +1,4 @@
-# BFC Sunday Ops Hub
+# BFC Sunday Ops
 
 Internal Sunday-morning ops app for the BFC production team.
 
@@ -9,11 +9,12 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 ## Current Scope
 
 - Gameday checklist with initials, timestamps, and expandable item notes
-- Issue log with severity tracking and admin cleanup
+- Issue log with severity tracking, photo attachments, resolution, and Monday.com follow-up sync
 - Attendance, runtime, loudness, weather, and evaluation tabs
 - Anonymous multi-submission post-service evaluation with outcome-based questions and aggregate response view
+- Admin Settings page: PDF export, configurable church timezone, and summary email management
 - Admin mode for checklist items, runtime definitions, issue cleanup, and weather settings
-- Admin-managed Sunday summary email schedule and recipient list
+- PDF service report export with logo, KPIs, issues, and evaluation responses
 - ProPresenter relay script for runtime capture
 - GitHub Pages deployment
 
@@ -24,19 +25,27 @@ Live now:
 - Dashboard checklist counts now come from the live `checklist_items` table.
 - Operators can set persistent checklist initials once and reuse them for multiple checkoffs.
 - Checklist items with notes show a chevron indicator; tapping the task label slides the note open inline.
-- Issues now capture both a short title and a longer description.
-- High-priority issue follow-up uses neutral operator-facing copy such as `Log Only` and `Address Before Next Sunday`, while still syncing to Monday.com when that integration is enabled.
+- Issues capture a short title, description, severity, and optional photo attachments.
+- Issue photos upload to Supabase Storage, display as thumbnail strips on each issue card, and open in a full-screen lightbox.
+- Issues can be marked resolved; resolved issues move to a dimmed section and are excluded from the sidebar badge and dashboard alert.
+- High-priority issue follow-up uses neutral operator-facing copy (`Flag for follow-up before next Sunday`), syncing to Monday.com when that integration is enabled.
+- When photos are attached to a flagged issue, the photo URLs are included in the Monday item update.
 - Runtime fields support ProPresenter's native zero-based timer index. `0` is the first clock.
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
+- Runtime captured-at timestamps display in the configured church timezone, not the device timezone.
 - Weather location and pull schedule can be configured in the admin UI.
-- Weather can be imported automatically from the configured ZIP code and pull schedule via the weather workflow.
+- Weather is imported automatically on Sundays only via the weather workflow.
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
 - Monday.com push can be enabled with the edge function and related secrets.
-- Admins can delete issue log entries directly in the app.
-- Sunday summary email settings and recipients can be managed in `Service Data -> Reporting`.
+- Admins can delete issue log entries directly in the app (photos are cleaned up from Storage).
+- Admin Settings page (gear icon in sidebar) provides PDF export, church timezone selection, and summary email management.
+- Church timezone is configurable in Settings and stored in `app_config`; falls back to `America/Chicago`.
+- PDF service report can be exported for the current Sunday or any of the previous 14 Sundays.
+- Dynamic service phase indicator in the sidebar and header (Pre-Service, Service 1, Between Services, Service 2, Post-Service) updates every 60 seconds.
+- Sunday summary email settings and recipients are managed in Settings → Summary Email.
 - Sunday summary email can be sent automatically through Google Workspace Gmail API once the related secrets are configured.
 - Post-service evaluation redesigned: anonymous multi-submission, outcome-based questions, conditional broken-moment detail, collapsible aggregate response view.
-- BFC Production branding applied: logo in header, icon as favicon, iOS home screen icon.
+- BFC Production branding applied: logo in header, icon as favicon, iOS home screen icon. App name is "Sunday Ops" throughout.
 
 Still pending:
 - Real YouTube / RESI analytics importers
@@ -65,6 +74,7 @@ Still pending:
 - `runtime_fields`
 - `runtime_values`
 - `issues`
+- `issue_photos`
 - `loudness`
 - `weather`
 - `evaluations`
@@ -72,6 +82,7 @@ Still pending:
 - `report_email_settings`
 - `report_email_recipients`
 - `report_email_runs`
+- `app_config`
 
 Fresh schema setup is represented by:
 - `supabase/migrations/001_initial_schema.sql`
@@ -80,6 +91,9 @@ Fresh schema setup is represented by:
 - `supabase/migrations/004_add_weather_config.sql`
 - `supabase/migrations/005_add_issue_titles.sql`
 - `supabase/migrations/006_add_summary_email_config.sql`
+- `supabase/migrations/007_add_issue_resolution.sql`
+- `supabase/migrations/008_add_app_config.sql`
+- `supabase/migrations/009_add_issue_photos.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -209,12 +223,34 @@ Notes:
 - It writes the imported weather into the `weather` table for the current or upcoming Sunday.
 - Weather import and ProPresenter runtime import were both verified live on March 19, 2026.
 
+## Supabase Storage
+
+The `issue-photos` bucket stores photos attached to issue log entries.
+
+### Setup
+
+1. Create a bucket named `issue-photos` in the Supabase dashboard → Storage.
+2. Set the bucket to **Public** (enables public URL access for thumbnails).
+3. Run the following in the SQL Editor to allow anonymous uploads and reads:
+
+```sql
+create policy "allow public uploads" on storage.objects
+  for insert to public with check (bucket_id = 'issue-photos');
+create policy "allow public reads" on storage.objects
+  for select to public using (bucket_id = 'issue-photos');
+create policy "allow public deletes" on storage.objects
+  for delete to public using (bucket_id = 'issue-photos');
+
+grant select, insert, update, delete on table issue_photos to anon;
+grant select, insert, update, delete on table issue_photos to authenticated;
+```
+
 ## GitHub Workflows
 
 - `deploy.yml`: builds and deploys to GitHub Pages on push to `main`
 - `summary-email.yml`: checks every 15 minutes on Sunday and sends the summary email once the configured local send time has passed
 - `sunday-analytics.yml`: manual-only placeholder workflow until real analytics importers are added
-- `weather-import.yml`: runs every 5 minutes and imports weather once the configured day/time has passed
+- `weather-import.yml`: runs every 5 minutes **on Sundays only** and imports weather once the configured day/time has passed
 
 ## Monday.com Push
 
@@ -231,7 +267,7 @@ Setup notes:
 
 The function creates:
 - a Monday item named from the issue title
-- a Monday update containing the full issue description and internal issue ID
+- a Monday update containing the full issue description, internal issue ID, and any attached photo URLs as numbered links
 
 Example function deploy command:
 
@@ -289,3 +325,4 @@ supabase functions deploy summary-email-admin
 - Import historical loudness logs so the loudness section can support graphics and trend views.
 - Fix the desktop checklist layout so the two columns place sections independently and do not leave large blank gaps.
 - Verify the Google Workspace send-as / reply-to behavior you want for the summary email.
+- Consider embedding issue photo thumbnails in the PDF export (currently excluded by design).

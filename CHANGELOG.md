@@ -1,5 +1,126 @@
 # Changelog
 
+## 2026-03-23
+
+### Completed
+
+- **PDF export** (`src/lib/generateReportHtml.ts`, `src/lib/reportData.ts`):
+  - "Export PDF" button in the new Settings page generates a self-contained HTML report opened in a new tab, then triggers the browser print dialog.
+  - Fetches attendance, runtimes, issues, checklist exceptions, evaluations, and weather in one parallel call.
+  - Background colors preserved in print output via `print-color-adjust: exact`.
+  - BFC Production logo embedded as a base64 data URL so it renders correctly in the print window regardless of the page's asset base path.
+  - Resolved issues show a "✓ Resolved" badge in the issues table.
+  - Supports exporting "This Sunday" or any of the previous 14 Sundays via a dropdown.
+
+- **Settings page** (`src/screens/Settings.tsx`):
+  - Admin-only screen accessible from the sidebar gear icon.
+  - PDF Export section: "This Sunday" button and a "Previous Sunday" dropdown.
+  - Church Settings section: timezone dropdown (20+ IANA zones) with free-text fallback, saved to `app_config` Supabase table.
+  - Summary Email section: full email config (enable/disable, send day/time, reply-to) and recipient management (add/edit/delete/toggle active) — previously in `Service Data → Reporting`.
+  - Removed the Reporting tab from Service Data entirely.
+
+- **Configurable church timezone** (`src/lib/supabase.ts`, `src/context/SundayContext.ts`, `src/App.tsx`):
+  - Timezone is no longer hardcoded to `America/Chicago`.
+  - On startup, `loadChurchTimezone()` reads the `church_timezone` key from `app_config`; falls back to `America/Chicago` if absent.
+  - `timezone` is stored in `SundayContext` and consumed throughout the app.
+  - `getOrCreateSunday()` accepts a timezone parameter so the correct operational Sunday is identified in any timezone.
+  - All `toLocaleTimeString` calls that previously hardcoded `America/Chicago` now pull from context.
+  - **Migration required:** `supabase/migrations/008_add_app_config.sql`
+
+- **Issue log — modal removed, inline checkbox** (`src/screens/IssueLog.tsx`):
+  - Removed the "How should we handle this?" confirmation modal.
+  - Replaced with an inline "Flag for follow-up before next Sunday" checkbox in the new issue form (only visible when `VITE_ENABLE_MONDAY_PUSH=true` and severity is not Low).
+
+- **Issue resolution** (`src/screens/IssueLog.tsx`, `src/types/index.ts`):
+  - Added "Mark Resolved" button to each open issue card.
+  - Resolved issues move to a dimmed "Resolved" section at the bottom with a timestamp and an admin "Undo" link.
+  - Issue badge in the sidebar/nav filters to unresolved issues only.
+  - Dashboard high-priority issue banner filters out resolved issues.
+  - **Migration required:** `supabase/migrations/007_add_issue_resolution.sql`
+
+- **Runtime timezone fix** (`src/screens/ServiceData/Runtimes.tsx`):
+  - `captured_at` display was using the device's local timezone, causing runtimes captured at e.g. 10:20 CDT to display as 9:20 on a device set to CST. Fixed to use `timeZone: timezone` from context.
+
+- **Dynamic service status** (`src/components/layout/Sidebar.tsx`, `src/components/layout/SiteHeader.tsx`):
+  - Replaced hardcoded "Pre-Service" badge with a live computed phase using `getServicePhase()`.
+  - Updates every 60 seconds. Returns null on non-Sundays (shows a static service time fallback).
+  - Phases: Pre-Service · Service 1 · Between Services · Service 2 · Post-Service.
+
+- **Weather import fixes** (`.github/workflows/weather-import.yml`, `scripts/fetch-weather.js`):
+  - Cron schedule changed from `*/5 * * * *` (every 5 min every day) to `*/5 * * * 0` (Sundays only), eliminating daily failure notification emails.
+  - Script now exits 0 gracefully on DB config errors instead of failing the workflow.
+
+- **Branding** (all screens, components, generated HTML):
+  - "Sunday Ops Hub" renamed to "Sunday Ops" everywhere — header, sidebar, PDF footer, page title.
+
+- **Photo attachments for issue logs** (`src/screens/IssueLog.tsx`, `supabase/migrations/009_add_issue_photos.sql`):
+  - Multiple photos can be attached to an issue at log time via a file picker in the new issue form.
+  - Selected photos show as removable thumbnail previews before submission.
+  - Photos upload to Supabase Storage bucket `issue-photos` immediately after the issue is saved.
+  - Thumbnail strip renders on each issue card (open and resolved); tapping a thumbnail opens a full-screen lightbox (Escape or tap outside to close).
+  - Admins can delete individual photos via a hover-reveal ✕ button; the Storage object is removed alongside the DB record.
+  - Deleting an issue also removes all its Storage objects.
+  - Upload errors are surfaced in the notice banner rather than silently swallowed.
+  - **Migration required:** `supabase/migrations/009_add_issue_photos.sql`
+  - **Supabase setup required:** see README for storage bucket and policy instructions.
+
+- **Monday.com photo sync** (`supabase/functions/push-monday-issue/index.ts`):
+  - When an issue with photos is flagged for follow-up, the public Storage URLs are appended to the Monday item's update body as numbered links.
+  - The edge function now handles `create_update` failures as non-fatal (item creation still succeeds).
+  - Supabase DB sync errors inside the edge function are also non-fatal — the function returns 200 if Monday accepted the item.
+
+### Required Supabase Steps (run in SQL Editor)
+
+```sql
+-- Migration 007: issue resolution
+alter table issues add column if not exists resolved_at timestamptz;
+
+-- Migration 008: app config
+create table if not exists app_config (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+alter table app_config enable row level security;
+create policy "public_all" on app_config for all using (true) with check (true);
+insert into app_config (key, value)
+  values ('church_timezone', 'America/Chicago')
+  on conflict (key) do nothing;
+
+-- Migration 009: issue photos
+create table if not exists issue_photos (
+  id           uuid primary key default gen_random_uuid(),
+  issue_id     uuid not null references issues(id) on delete cascade,
+  storage_path text not null,
+  filename     text not null,
+  uploaded_at  timestamptz not null default now()
+);
+alter table issue_photos enable row level security;
+create policy "public_all" on issue_photos for all using (true) with check (true);
+create index if not exists issue_photos_issue_id_idx on issue_photos(issue_id);
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE issue_photos TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE issue_photos TO authenticated;
+
+-- Storage policies for issue-photos bucket
+create policy "allow public uploads" on storage.objects
+  for insert to public with check (bucket_id = 'issue-photos');
+create policy "allow public reads" on storage.objects
+  for select to public using (bucket_id = 'issue-photos');
+create policy "allow public deletes" on storage.objects
+  for delete to public using (bucket_id = 'issue-photos');
+```
+
+### In Queue for Next Session
+
+- **Checklist — subsection dropdown bug:** Adding a new item to an existing subsection creates a duplicate subsection header instead of placing it under the correct one.
+- **Checklist — section/subsection as dropdowns:** Section and subsection fields in the item edit modal should be dropdowns of existing values with an "Add new…" option.
+- **Checklist — drag-to-reorder (admin only):** Drag handles on each item to reorder within a section, persisted to `sort_order`.
+- **Checklist — real-time sync:** Supabase Realtime is enabled on `checklist_completions` and `checklist_items`; subscription code not yet written.
+- **Loudness Log — split services:** 9 AM and 11 AM service submissions should be saveable independently.
+- **Layout — sticky header / mobile header visibility.**
+
+---
+
 ## 2026-03-22
 
 ### Completed
