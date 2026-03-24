@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { Card } from '../../components/ui/Card'
+import { generateLoudnessReportHtml } from '../../lib/generateLoudnessReportHtml'
+import bfcLogo from '../../assets/BFC_Production_Logo_Hor reverse.png'
 
 interface LoudnessProps { sundayId: string }
 
@@ -48,6 +50,7 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
   const [s1Saved, setS1Saved] = useState(false)
   const [s2Saving, setS2Saving] = useState(false)
   const [s2Saved, setS2Saved] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     supabase.from('loudness').select('*').eq('sunday_id', sundayId).single()
@@ -96,6 +99,46 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
     setS2Saving(false)
     setS2Saved(true)
     setTimeout(() => setS2Saved(false), 2500)
+  }
+
+  const exportPdf = async () => {
+    setExporting(true)
+    try {
+      const { data } = await supabase
+        .from('loudness')
+        .select('*, sundays(date)')
+        .order('sunday_id')
+      const rows = (data ?? []).map((r: {
+        sundays: { date: string }
+        service_1_max_db: number | null
+        service_1_laeq: number | null
+        service_2_max_db: number | null
+        service_2_laeq: number | null
+      }) => ({
+        date: r.sundays.date,
+        service_1_max_db: r.service_1_max_db,
+        service_1_laeq:   r.service_1_laeq,
+        service_2_max_db: r.service_2_max_db,
+        service_2_laeq:   r.service_2_laeq,
+      }))
+      const logoBase64 = await new Promise<string>((resolve) => {
+        fetch(bfcLogo).then(r => r.blob()).then(blob => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = () => resolve('')
+          reader.readAsDataURL(blob)
+        }).catch(() => resolve(''))
+      })
+      const html = generateLoudnessReportHtml(rows, logoBase64)
+      const win = window.open('', '_blank')
+      if (!win) { alert('Pop-up was blocked. Please allow pop-ups for this site and try again.'); return }
+      win.document.write(html)
+      win.document.close()
+      win.focus()
+      setTimeout(() => win.print(), 600)
+    } finally {
+      setExporting(false)
+    }
   }
 
   const s1Over = parseFloat(s1LAeq) > GOAL_9AM
@@ -173,7 +216,13 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
 
         {/* History table */}
         <div>
-          <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-widest mb-2.5">Recent Sundays</p>
+          <div className="flex items-center justify-between mb-2.5">
+            <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-widest">Recent Sundays</p>
+            <button onClick={exportPdf} disabled={exporting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all disabled:opacity-50">
+              {exporting ? 'Generating…' : '↓ Full History PDF'}
+            </button>
+          </div>
           <Card className="overflow-hidden">
             <div className="grid grid-cols-5 px-4 py-2 border-b border-gray-100 bg-gray-50">
               <span className="text-gray-400 text-[10px] font-semibold">Date</span>

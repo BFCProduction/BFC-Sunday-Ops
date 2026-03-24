@@ -25,6 +25,9 @@ Live now:
 - Dashboard checklist counts now come from the live `checklist_items` table.
 - Operators can set persistent checklist initials once and reuse them for multiple checkoffs.
 - Checklist items with notes show a chevron indicator; tapping the task label slides the note open inline.
+- Checklist section and subsection fields use dropdowns with an "Add new…" option in the item edit modal; free-text fallback is gone.
+- Checklist items can be dragged to reorder within each section in admin mode; order is persisted to `sort_order`.
+- Checklist completions and checklist items subscribe to Supabase Realtime so the list updates across devices without a page refresh.
 - Issues capture a short title, description, severity, and optional photo attachments.
 - Issue photos upload to Supabase Storage, display as thumbnail strips on each issue card, and open in a full-screen lightbox.
 - Issues can be marked resolved; resolved issues move to a dimmed section and are excluded from the sidebar badge and dashboard alert.
@@ -46,15 +49,18 @@ Live now:
 - Sunday summary email can be sent automatically through Google Workspace Gmail API once the related secrets are configured.
 - Post-service evaluation redesigned: anonymous multi-submission, outcome-based questions, conditional broken-moment detail, collapsible aggregate response view.
 - BFC Production branding applied: logo in header, icon as favicon, iOS home screen icon. App name is "Sunday Ops" throughout.
+- Header logo is always visible including on mobile viewports.
+- Site header is sticky so it remains visible while scrolling.
+- Desktop checklist uses a CSS two-column layout (`xl:columns-2`) that keeps sections from breaking across columns.
+- Checklist subsection deduplication enforced — new items land in the existing subsection rather than creating a duplicate.
+- Empty subsections are auto-deleted when the last item referencing them is removed.
+- Loudness Log has separate 9 AM and 11 AM submission buttons, stored as a single row per Sunday (one row, two service readings).
+- PDF service report intentionally excludes issue photo thumbnails.
 
 Still pending:
 - Real YouTube / RESI analytics importers
 - Any downstream reporting beyond the Sunday summary email
-- Checklist subsection dropdown (free-text currently allows duplicates)
-- Checklist drag-to-reorder in admin mode
-- Checklist real-time sync (Supabase Realtime enabled on tables; subscription code not yet written)
-- Loudness Log split 9 AM / 11 AM submissions
-- Sticky header and mobile header visibility
+- Import historical loudness logs for trend views
 
 ## Tech Stack
 
@@ -314,15 +320,5 @@ supabase functions deploy summary-email-admin
 
 ## Future Session Notes
 
-- Fix checklist subsection bug — new items land in a duplicate subsection instead of the existing one.
-- Convert section/subsection fields in the item edit modal to dropdowns with an "Add new…" option; auto-delete empty subsections.
-- Add drag-to-reorder for checklist items within each section (admin only), persisted to `sort_order`.
-- Write Supabase Realtime subscription hooks in `Checklist.tsx` for `checklist_completions` and `checklist_items` (Realtime is already enabled on both tables in Supabase).
-- Split Loudness Log into independent 9 AM and 11 AM service submissions.
-- Make the site header sticky so it stays visible while scrolling.
-- Ensure the header logo is visible on mobile viewports.
-- Set up the analytics importers and supporting workflow.
+- Set up the YouTube and RESI analytics importers and enable the supporting workflow (`scripts/fetch-youtube.js` and `scripts/fetch-resi.js` are stubs).
 - Import historical loudness logs so the loudness section can support graphics and trend views.
-- Fix the desktop checklist layout so the two columns place sections independently and do not leave large blank gaps.
-- Verify the Google Workspace send-as / reply-to behavior you want for the summary email.
-- Consider embedding issue photo thumbnails in the PDF export (currently excluded by design).
