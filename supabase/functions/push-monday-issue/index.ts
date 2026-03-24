@@ -10,6 +10,7 @@ interface PushIssuePayload {
   title: string
   description: string
   severity: 'Low' | 'Medium' | 'High' | 'Critical'
+  photo_urls?: string[]
 }
 
 interface MondayGraphqlResponse<T> {
@@ -23,13 +24,23 @@ function buildMondayItemName(title: string, severity: PushIssuePayload['severity
   return snippet || severity
 }
 
-function buildMondayUpdateBody(description: string, severity: PushIssuePayload['severity'], issueId: string) {
-  return [
+function buildMondayUpdateBody(
+  description: string,
+  severity: PushIssuePayload['severity'],
+  issueId: string,
+  photoUrls: string[] = [],
+) {
+  const lines = [
     `Severity: ${severity}`,
     `Issue ID: ${issueId}`,
     '',
     description.trim(),
-  ].join('\n')
+  ]
+  if (photoUrls.length > 0) {
+    lines.push('', photoUrls.length === 1 ? 'Photo:' : 'Photos:')
+    photoUrls.forEach((url, i) => lines.push(`${i + 1}. ${url}`))
+  }
+  return lines.join('\n')
 }
 
 async function mondayRequest<T>(query: string, variables: Record<string, unknown>) {
@@ -131,7 +142,7 @@ Deno.serve(async request => {
 
     await mondayRequest(createUpdateQuery, {
       itemId,
-      body: buildMondayUpdateBody(body.description, body.severity, body.issue_id),
+      body: buildMondayUpdateBody(body.description, body.severity, body.issue_id, body.photo_urls),
     })
 
     const { error: updateIssueError } = await supabase

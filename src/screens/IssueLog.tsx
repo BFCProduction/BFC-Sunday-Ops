@@ -245,6 +245,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     const filesToUpload = [...pendingFiles]
     resetForm()
 
+    let photoUrls: string[] = []
     if (filesToUpload.length > 0 && data) {
       const uploadErr = await uploadPhotos(data.id, filesToUpload)
       if (uploadErr) {
@@ -258,6 +259,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
         .order('uploaded_at', { ascending: true })
       if (newPhotos) {
         setPhotos(prev => ({ ...prev, [data.id]: newPhotos as IssuePhoto[] }))
+        photoUrls = (newPhotos as IssuePhoto[]).map(p => getPublicUrl(p.storage_path))
       }
     }
 
@@ -274,6 +276,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
             title: issue.title,
             description: issue.description,
             severity: issue.severity,
+            photo_urls: photoUrls,
           }),
         })
 
