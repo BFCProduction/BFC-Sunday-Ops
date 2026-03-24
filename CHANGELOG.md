@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-03-23 (Session 2)
+
+### Summary
+
+Audited the README against the actual codebase and corrected it — several features listed as pending were already shipped. Imported three years of historical loudness data from the BFC Audio Loudness Log Google Sheet. Built a full-history loudness PDF export styled to match the Sunday report. Added Sunday time-travel navigation to the sidebar so any past Sunday's data can be viewed in full context.
+
+### Completed
+
+- **README audit and correction** (`README.md`):
+  - Verified every "Future Session Notes" and "Still pending" item against live code.
+  - Moved to "Live now": drag-to-reorder checklist items, Supabase Realtime subscriptions, section/subsection dropdowns with "Add new…", mobile header logo visibility, desktop checklist two-column layout, sticky header, subsection dedup, auto-delete empty subsections, loudness log design, PDF photo thumbnail exclusion.
+  - "Future Session Notes" trimmed to only genuine remaining work.
+
+- **Historical loudness import** (`scripts/import-loudness-history.js`):
+  - One-shot script that fetches the BFC Audio Loudness Log Google Sheet as a public CSV export, parses it (with proper handling of quoted date fields containing commas), and upserts rows into Supabase.
+  - Dry-run by default; pass `--write` to write to the database.
+  - Skips future placeholder rows that have no readings.
+  - Imported 144 rows (March 26, 2023 – March 15, 2026) with 0 errors.
+
+- **Loudness full-history PDF export** (`src/lib/generateLoudnessReportHtml.ts`, `src/screens/ServiceData/LoudnessLog.tsx`):
+  - New "↓ Full History PDF" button in the Loudness Log screen, next to the "Recent Sundays" label.
+  - Fetches all loudness records from Supabase on demand, generates a styled HTML report, and opens the browser print dialog.
+  - PDF matches the Sunday report aesthetic: dark header with BFC Production logo, blue-to-green gradient bar, KPI cards, footer.
+  - Data grouped by year, each with a year-average row. Values exceeding goal shown in red with a `!` flag.
+  - KPI cards: total Sundays logged, 9am avg LAeq 15, 11am avg LAeq 15, total goal exceedances (split by service).
+
+- **Sunday time-travel navigation** (`src/context/SundayContext.ts`, `src/App.tsx`, `src/components/layout/Sidebar.tsx`, `src/lib/supabase.ts`):
+  - Chevron `‹` / `›` arrows added to the sidebar date block. Each click steps one Sunday backward or forward.
+  - Right arrow disabled when already on this Sunday.
+  - Selecting a past Sunday does a read-only lookup (`getSundayByDate`) — no new rows are created for historical dates.
+  - `SundayContext` updated with `todaySundayDate`, `isViewingPast`, and `navigateSunday(date)` so the entire app responds to the navigation.
+  - All screens (Dashboard, Checklist, Issue Log, Service Data, Evaluation) automatically reload with the selected Sunday's data.
+  - Past Sunday indicator: amber "Historical View" badge replaces the live service-phase pill.
+  - "Back to Today" link (with rotate icon) appears below the badge when viewing a past Sunday.
+  - Date block label changed from "Today" to "This Sunday" when on the current week.
+
+### In Queue for Next Session
+
+- YouTube / RESI analytics importers (`scripts/fetch-youtube.js` and `scripts/fetch-resi.js` are stubs).
+- Historical loudness trend graphics and a broader data dashboard (attendance, loudness, stream analytics across time).
+
+---
+
 ## 2026-03-23
 
 ### Completed

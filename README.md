@@ -56,11 +56,13 @@ Live now:
 - Empty subsections are auto-deleted when the last item referencing them is removed.
 - Loudness Log has separate 9 AM and 11 AM submission buttons, stored as a single row per Sunday (one row, two service readings).
 - PDF service report intentionally excludes issue photo thumbnails.
+- Historical loudness data imported from the BFC Audio Loudness Log Google Sheet — 144 Sundays (March 2023 – March 2026) via `scripts/import-loudness-history.js`.
+- Loudness Log includes a "Full History PDF" button that generates a styled multi-year report matching the Sunday report aesthetic, grouped by year with per-year averages and goal exceedance flags.
+- Sidebar date block has `‹` / `›` chevron arrows to step backward and forward through past Sundays. All screens reload with the selected Sunday's data. Past Sundays show an amber "Historical View" badge and a "Back to Today" link.
 
 Still pending:
 - Real YouTube / RESI analytics importers
 - Any downstream reporting beyond the Sunday summary email
-- Import historical loudness logs for trend views
 
 ## Tech Stack
 
@@ -321,4 +323,4 @@ supabase functions deploy summary-email-admin
 ## Future Session Notes
 
 - Set up the YouTube and RESI analytics importers and enable the supporting workflow (`scripts/fetch-youtube.js` and `scripts/fetch-resi.js` are stubs).
-- Import historical loudness logs so the loudness section can support graphics and trend views.
+- Build a historical data dashboard — trend graphs across loudness, attendance, and stream analytics by Sunday.
