@@ -61,7 +61,7 @@ async function openPdf(sundayId: string, sundayDate: string) {
 
 export function Settings() {
   const { isAdmin, adminPassword } = useAdmin()
-  const { sundayId, sundayDate } = useSunday()
+  const { sundayId, sundayDate, timezone } = useSunday()
 
   // ── Timezone state ──
   const [churchTimezone, setChurchTimezone] = useState(timezone)
