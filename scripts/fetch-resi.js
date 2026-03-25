@@ -246,7 +246,42 @@ async function getGoogleToken() {
   return json.access_token ?? null
 }
 
-async function writeToSheet(sundayDate, totalViews, totalUnique) {
+// Maps SERVICE_NAMES → sheet tab names
+const SHEET_TABS = {
+  'Traditional':   '9am Service',
+  'Contemporary':  '11am Service',
+}
+
+async function writeServiceToSheet(token, sheetDate, tabName, views, unique, avgSecs) {
+  const encoded = encodeURIComponent(tabName)
+
+  // Read column A to find the matching date row
+  const colA = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encoded}!A:A`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  ).then(r => r.json())
+
+  const rowIdx = (colA.values ?? []).findIndex(r => r[0] === sheetDate)
+  if (rowIdx === -1) {
+    console.log(`  ${tabName}: row for ${sheetDate} not found — skipping.`)
+    return
+  }
+  const rowNum = rowIdx + 1
+  const avgMins = avgSecs != null ? Math.round(avgSecs / 60) : ''
+
+  // Write J (Views), K (Unique Viewers), L (AVG Watch Time in minutes)
+  await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encoded}!J${rowNum}:L${rowNum}?valueInputOption=RAW`,
+    {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [[views, unique, avgMins]] }),
+    }
+  )
+  console.log(`  ${tabName} row ${rowNum}: Views=${views}, Unique=${unique}, AvgWatch=${avgMins}min`)
+}
+
+async function writeToSheet(sundayDate, eventStats) {
   try {
     const token = await getGoogleToken()
     if (!token) { console.log('No Google credentials — skipping sheet write.'); return }
@@ -255,29 +290,12 @@ async function writeToSheet(sundayDate, totalViews, totalUnique) {
     const [yyyy, mm, dd] = sundayDate.split('-')
     const sheetDate = `${parseInt(mm)}/${parseInt(dd)}/${yyyy}`
 
-    // Find the row index
-    const colA = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Sheet1!A:A`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    ).then(r => r.json())
-
-    const rowIdx = (colA.values ?? []).findIndex(r => r[0] === sheetDate)
-    if (rowIdx === -1) {
-      console.log(`Sheet row for ${sheetDate} not found — skipping.`)
-      return
+    console.log(`Writing to Google Sheets for ${sheetDate}:`)
+    for (const ev of eventStats) {
+      const tab = SHEET_TABS[ev.name]
+      if (!tab) { console.log(`  No sheet tab mapped for service "${ev.name}" — skipping.`); continue }
+      await writeServiceToSheet(token, sheetDate, tab, ev.totalViews, ev.uniqueViewers, ev.avgWatchSeconds)
     }
-    const rowNum = rowIdx + 1
-
-    // Write Church Online Views (col J) and Unique Viewers (col K)
-    await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Sheet1!J${rowNum}:K${rowNum}?valueInputOption=RAW`,
-      {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: [[totalViews, totalUnique]] }),
-      }
-    )
-    console.log(`Google Sheet row ${rowNum} updated: Views=${totalViews}, UniqueViewers=${totalUnique}`)
   } catch (err) {
     console.warn('Google Sheets write failed (non-fatal):', err.message)
   }
@@ -496,7 +514,7 @@ async function run() {
   else       console.log('stream_analytics rollup updated.')
 
   // ── Google Sheets ───────────────────────────────────────────────────────────
-  await writeToSheet(targetSunday, totalViews, totalUnique)
+  await writeToSheet(targetSunday, eventStats)
 
   console.log('\nDone.')
 }
