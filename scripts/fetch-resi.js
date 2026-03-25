@@ -255,38 +255,36 @@ async function downloadResiCsv(targetSunday) {
     page = await context.newPage()
     page.setDefaultTimeout(30000)
 
-    // ── Login ─────────────────────────────────────────────────────────────────
-    // control.resi.io redirects to studio.resi.io after login
-    console.log('Logging into RESI...')
-    await page.goto('https://control.resi.io/', { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(1500)
+    // ── Navigate to analytics (handles login inline if needed) ───────────────
+    // RESI is a SPA that renders the login form at the destination URL when
+    // unauthenticated, rather than redirecting to a /login route.
+    console.log('Navigating to RESI analytics...')
+    await page.goto('https://studio.resi.io/analytics', { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(2000)
 
+    // Detect login form — fill credentials if present
     const emailInput = page.locator('input[type="email"], input[name="email"]').first()
-    if (await emailInput.isVisible({ timeout: 8000 }).catch(() => false)) {
+    if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      console.log('Login form detected, authenticating...')
       await emailInput.fill(RESI_EMAIL)
       await page.locator('input[type="password"], input[name="password"]').first().fill(RESI_PASSWORD)
       await page.locator('button[type="submit"]').click()
+
+      // Wait for post-login redirect (may go to dashboard first)
+      await page.waitForTimeout(5000)
       await page.waitForLoadState('domcontentloaded')
-      await page.waitForTimeout(2000)
+
+      // If login sent us to the dashboard, navigate back to analytics
+      if (!page.url().includes('analytics')) {
+        console.log(`Post-login URL: ${page.url()} — navigating to analytics`)
+        await page.goto('https://studio.resi.io/analytics', { waitUntil: 'domcontentloaded' })
+        await page.waitForTimeout(2000)
+      }
     }
 
-    if (page.url().includes('login') || page.url().includes('signin')) {
-      throw new Error('Login failed — check RESI_EMAIL and RESI_PASSWORD.')
-    }
-    console.log(`Logged in. Current URL: ${page.url()}`)
-
-    // ── Navigate to Analytics ─────────────────────────────────────────────────
-    // After login we may be on control.resi.io or studio.resi.io — navigate
-    // to /analytics relative to whatever domain we ended up on.
-    const baseUrl = new URL(page.url()).origin  // e.g. https://studio.resi.io
-    const analyticsUrl = `${baseUrl}/analytics`
-    console.log(`Navigating to ${analyticsUrl}`)
-    await page.goto(analyticsUrl, { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(2000)
-
-    // Wait for the date picker to confirm the analytics page loaded
-    await page.waitForSelector('.rui-date-picker', { timeout: 15000 })
-    console.log('Analytics page loaded.')
+    // Wait for the analytics page elements (confirms successful auth + render)
+    await page.waitForSelector('.rui-date-picker', { timeout: 20000 })
+    console.log(`Analytics page ready at ${page.url()}`)
 
     // ── Set date range to target Sunday ───────────────────────────────────────
     // The date picker contains two text inputs (start, end) with MM/DD/YYYY format.
