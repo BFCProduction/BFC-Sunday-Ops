@@ -181,17 +181,16 @@ async function getGoogleToken() {
   const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
   if (!email || !rawKey) return null
 
-  // Normalize the key — GitHub Secrets may deliver literal \n instead of newlines,
-  // and sometimes the value arrives with surrounding quotes.
-  const key = rawKey
+  // Normalize the key — GitHub Secrets may deliver literal \n instead of real newlines,
+  // and sometimes the value arrives with surrounding quotes or without PEM headers.
+  let key = rawKey
     .replace(/^["']|["']$/g, '')   // strip wrapping quotes if any
     .replace(/\\n/g, '\n')          // convert escaped \n to real newlines
+    .trim()
 
+  // If the key is just the base64 body (no PEM headers), wrap it
   if (!key.includes('-----BEGIN')) {
-    // Log first 40 chars (safe — no real key data at the start) to help diagnose format
-    const preview = key.slice(0, 40).replace(/\n/g, '\\n')
-    console.warn(`Google Sheets: private key does not appear to be PEM (starts with: "${preview}") — skipping.`)
-    return null
+    key = `-----BEGIN PRIVATE KEY-----\n${key}\n-----END PRIVATE KEY-----`
   }
 
   const now     = Math.floor(Date.now() / 1000)
@@ -203,7 +202,13 @@ async function getGoogleToken() {
   const unsigned = `${enc({ alg: 'RS256', typ: 'JWT' })}.${enc(payload)}`
 
   // Use createPrivateKey for explicit PEM parsing — more robust than passing raw string
-  const privateKey = createPrivateKey({ key, format: 'pem' })
+  let privateKey
+  try {
+    privateKey = createPrivateKey({ key, format: 'pem' })
+  } catch (e) {
+    console.warn(`Google Sheets: could not parse private key (${e.message}) — skipping.`)
+    return null
+  }
   const sig = createSign('RSA-SHA256').update(unsigned).sign(privateKey, 'base64')
     .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
 
