@@ -260,7 +260,7 @@ async function downloadResiCsv(targetSunday) {
     // is unauthenticated (no separate /login route). We wait for EITHER the
     // login form OR the analytics elements, whichever appears first.
     console.log('Navigating to RESI analytics...')
-    await page.goto('https://studio.resi.io/analytics', { waitUntil: 'networkidle' })
+    await page.goto('https://studio.resi.io/analytics', { waitUntil: 'load' })
 
     // Race: login form vs analytics page
     // The login form uses type="text" (not "email") for the username field.
@@ -286,13 +286,13 @@ async function downloadResiCsv(targetSunday) {
       await page.locator('button[type="submit"]').click()
 
       // Wait for the post-login state — either lands on dashboard or stays on analytics
-      await page.waitForLoadState('networkidle').catch(() => {})
+      await page.waitForLoadState('load').catch(() => {})
       await page.waitForTimeout(3000)
 
       // Navigate to analytics if redirected to dashboard
       if (!page.url().includes('analytics')) {
         console.log(`Post-login URL: ${page.url()} — navigating to analytics`)
-        await page.goto('https://studio.resi.io/analytics', { waitUntil: 'networkidle' })
+        await page.goto('https://studio.resi.io/analytics', { waitUntil: 'load' })
       }
 
       // Final confirmation the analytics page is ready
@@ -321,7 +321,7 @@ async function downloadResiCsv(targetSunday) {
     await page.keyboard.press('Tab')
 
     // Wait for data to reload after date change
-    await page.waitForLoadState('networkidle').catch(() => {})
+    await page.waitForLoadState('load').catch(() => {})
     await page.waitForTimeout(2000)
     console.log('Date range set.')
 
