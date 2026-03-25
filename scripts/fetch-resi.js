@@ -256,34 +256,49 @@ async function downloadResiCsv(targetSunday) {
     page.setDefaultTimeout(30000)
 
     // ── Navigate to analytics (handles login inline if needed) ───────────────
-    // RESI is a SPA that renders the login form at the destination URL when
-    // unauthenticated, rather than redirecting to a /login route.
+    // RESI is a SPA — the login form renders at the target URL when the user
+    // is unauthenticated (no separate /login route). We wait for EITHER the
+    // login form OR the analytics elements, whichever appears first.
     console.log('Navigating to RESI analytics...')
-    await page.goto('https://studio.resi.io/analytics', { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(2000)
+    await page.goto('https://studio.resi.io/analytics', { waitUntil: 'networkidle' })
 
-    // Detect login form — fill credentials if present
-    const emailInput = page.locator('input[type="email"], input[name="email"]').first()
-    if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-      console.log('Login form detected, authenticating...')
-      await emailInput.fill(RESI_EMAIL)
-      await page.locator('input[type="password"], input[name="password"]').first().fill(RESI_PASSWORD)
-      await page.locator('button[type="submit"]').click()
+    // Race: login form vs analytics page
+    // The login form uses type="text" (not "email") for the username field.
+    const loginInputSelector  = 'input[type="text"], input[type="email"]'
+    const analyticsSelector   = '.rui-date-picker'
 
-      // Wait for post-login redirect (may go to dashboard first)
-      await page.waitForTimeout(5000)
-      await page.waitForLoadState('domcontentloaded')
+    const whichLoaded = await Promise.race([
+      page.waitForSelector(loginInputSelector,  { state: 'visible', timeout: 25000 }).then(() => 'login'),
+      page.waitForSelector(analyticsSelector,   { state: 'visible', timeout: 25000 }).then(() => 'analytics'),
+    ]).catch(() => 'timeout')
 
-      // If login sent us to the dashboard, navigate back to analytics
-      if (!page.url().includes('analytics')) {
-        console.log(`Post-login URL: ${page.url()} — navigating to analytics`)
-        await page.goto('https://studio.resi.io/analytics', { waitUntil: 'domcontentloaded' })
-        await page.waitForTimeout(2000)
-      }
+    console.log(`Page state after navigation: ${whichLoaded}`)
+
+    if (whichLoaded === 'timeout') {
+      throw new Error('Neither login form nor analytics page appeared within 25 seconds.')
     }
 
-    // Wait for the analytics page elements (confirms successful auth + render)
-    await page.waitForSelector('.rui-date-picker', { timeout: 20000 })
+    if (whichLoaded === 'login') {
+      console.log('Login form detected, authenticating...')
+      // Fill username (type="text") then password
+      await page.locator('input[type="text"], input[type="email"]').first().fill(RESI_EMAIL)
+      await page.locator('input[type="password"]').first().fill(RESI_PASSWORD)
+      await page.locator('button[type="submit"]').click()
+
+      // Wait for the post-login state — either lands on dashboard or stays on analytics
+      await page.waitForLoadState('networkidle').catch(() => {})
+      await page.waitForTimeout(3000)
+
+      // Navigate to analytics if redirected to dashboard
+      if (!page.url().includes('analytics')) {
+        console.log(`Post-login URL: ${page.url()} — navigating to analytics`)
+        await page.goto('https://studio.resi.io/analytics', { waitUntil: 'networkidle' })
+      }
+
+      // Final confirmation the analytics page is ready
+      await page.waitForSelector(analyticsSelector, { timeout: 20000 })
+    }
+
     console.log(`Analytics page ready at ${page.url()}`)
 
     // ── Set date range to target Sunday ───────────────────────────────────────
