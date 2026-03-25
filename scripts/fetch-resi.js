@@ -256,75 +256,74 @@ async function downloadResiCsv(targetSunday) {
     page.setDefaultTimeout(30000)
 
     // ── Login ─────────────────────────────────────────────────────────────────
+    // control.resi.io redirects to studio.resi.io after login
     console.log('Logging into RESI...')
     await page.goto('https://control.resi.io/', { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1500)
 
-    // If already logged in, the page won't have login inputs — check first
     const emailInput = page.locator('input[type="email"], input[name="email"]').first()
-    if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await emailInput.isVisible({ timeout: 8000 }).catch(() => false)) {
       await emailInput.fill(RESI_EMAIL)
       await page.locator('input[type="password"], input[name="password"]').first().fill(RESI_PASSWORD)
       await page.locator('button[type="submit"]').click()
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(2000)
     }
 
     if (page.url().includes('login') || page.url().includes('signin')) {
       throw new Error('Login failed — check RESI_EMAIL and RESI_PASSWORD.')
     }
-    console.log('Logged in.')
+    console.log(`Logged in. Current URL: ${page.url()}`)
 
-    // ── Navigate to Event Analytics ───────────────────────────────────────────
-    // Try direct URL with date params first (avoids interacting with the date picker)
-    const analyticsUrl =
-      `https://control.resi.io/analytics/events?start=${targetSunday}&end=${targetSunday}`
+    // ── Navigate to Analytics ─────────────────────────────────────────────────
+    // After login we may be on control.resi.io or studio.resi.io — navigate
+    // to /analytics relative to whatever domain we ended up on.
+    const baseUrl = new URL(page.url()).origin  // e.g. https://studio.resi.io
+    const analyticsUrl = `${baseUrl}/analytics`
     console.log(`Navigating to ${analyticsUrl}`)
-    await page.goto(analyticsUrl, { waitUntil: 'networkidle' })
+    await page.goto(analyticsUrl, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(2000)
 
-    // If the direct URL didn't work (redirected away), navigate via menu
-    if (!page.url().includes('analytics')) {
-      console.log('Direct URL failed, using nav menu...')
-      await page.locator('a[href*="analytics"], nav >> text=Analytics').first().click()
-      await page.waitForLoadState('networkidle')
+    // Wait for the date picker to confirm the analytics page loaded
+    await page.waitForSelector('.rui-date-picker', { timeout: 15000 })
+    console.log('Analytics page loaded.')
 
-      // Set the date range
-      console.log('Setting date range...')
-      const dateTrigger = page.locator(
-        'button:has-text("Last 7"), button:has-text("days"), [class*="date-range"]'
-      ).first()
-      await dateTrigger.click()
-      await page.waitForTimeout(500)
+    // ── Set date range to target Sunday ───────────────────────────────────────
+    // The date picker contains two text inputs (start, end) with MM/DD/YYYY format.
+    // We set both to the same Sunday date to get just that day's data.
+    console.log(`Setting date range to ${resiDate}...`)
+    const dateInputs = page.locator('.rui-date-picker input[placeholder="MM/DD/YYYY"]')
 
-      const startInput = page.locator(
-        'input[placeholder*="Start" i], input[aria-label*="start" i], input[name*="start" i]'
-      ).first()
-      if (await startInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await startInput.fill(resiDate)
-        await page.locator(
-          'input[placeholder*="End" i], input[aria-label*="end" i], input[name*="end" i]'
-        ).first().fill(resiDate)
-        const applyBtn = page.locator('button:has-text("Apply"), button:has-text("Search")').first()
-        if (await applyBtn.isVisible({ timeout: 3000 }).catch(() => false)) await applyBtn.click()
-        await page.waitForLoadState('networkidle')
-      } else {
-        console.warn('Date picker inputs not found — proceeding with current date range.')
-      }
+    // Fill start date
+    await dateInputs.nth(0).click()
+    await dateInputs.nth(0).selectText()
+    await dateInputs.nth(0).fill(resiDate)
+    await page.keyboard.press('Tab')
+    await page.waitForTimeout(300)
+
+    // Fill end date
+    await dateInputs.nth(1).click()
+    await dateInputs.nth(1).selectText()
+    await dateInputs.nth(1).fill(resiDate)
+    await page.keyboard.press('Tab')
+
+    // Wait for data to reload after date change
+    await page.waitForLoadState('networkidle').catch(() => {})
+    await page.waitForTimeout(2000)
+    console.log('Date range set.')
+
+    // Make sure we're on the Embed Player tab (default, but be explicit)
+    const embedTab = page.locator('button:has-text("Embed Player")').first()
+    if (await embedTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await embedTab.click()
+      await page.waitForTimeout(1000)
     }
 
     // ── Download CSV ──────────────────────────────────────────────────────────
-    console.log('Clicking download button...')
-    const downloadBtn = page.locator([
-      'button[aria-label*="download" i]',
-      'button[title*="download" i]',
-      'button[aria-label*="export" i]',
-      'button[title*="export" i]',
-      'button:has(svg[class*="download"])',
-      '[class*="download-btn"]',
-      '[data-testid*="download"]',
-    ].join(', ')).first()
-
+    console.log('Clicking Export Data...')
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 30000 }),
-      downloadBtn.click(),
+      page.locator('button[aria-label="Export Data"]').first().click(),
     ])
 
     const dlPath = await download.path()
@@ -333,7 +332,6 @@ async function downloadResiCsv(targetSunday) {
     console.log(`Downloaded ${csvText.split('\n').length - 1} rows.`)
 
   } catch (err) {
-    // Save a debug screenshot — the workflow uploads it as an artifact on failure
     if (page) {
       try {
         await page.screenshot({ path: '/tmp/resi-debug.png', fullPage: true })
