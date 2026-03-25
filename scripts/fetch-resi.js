@@ -31,7 +31,7 @@ import { createClient } from '@supabase/supabase-js'
 import { existsSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { createSign } from 'crypto'
+import { createSign, createPrivateKey } from 'crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -177,18 +177,32 @@ async function getOrCreateSunday(dateString) {
 // ─── Google Sheets write-back ─────────────────────────────────────────────────
 
 async function getGoogleToken() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL
-  const key   = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
-  if (!email || !key) return null
+  const email  = process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL
+  const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+  if (!email || !rawKey) return null
+
+  // Normalize the key — GitHub Secrets may deliver literal \n instead of newlines,
+  // and sometimes the value arrives with surrounding quotes.
+  const key = rawKey
+    .replace(/^["']|["']$/g, '')   // strip wrapping quotes if any
+    .replace(/\\n/g, '\n')          // convert escaped \n to real newlines
+
+  if (!key.includes('-----BEGIN')) {
+    console.warn('Google Sheets: private key does not appear to be PEM — skipping.')
+    return null
+  }
 
   const now     = Math.floor(Date.now() / 1000)
   const payload = {
     iss: email, scope: 'https://www.googleapis.com/auth/spreadsheets',
     aud: 'https://oauth2.googleapis.com/token', exp: now + 3600, iat: now,
   }
-  const enc     = obj => Buffer.from(JSON.stringify(obj)).toString('base64url')
+  const enc      = obj => Buffer.from(JSON.stringify(obj)).toString('base64url')
   const unsigned = `${enc({ alg: 'RS256', typ: 'JWT' })}.${enc(payload)}`
-  const sig = createSign('RSA-SHA256').update(unsigned).sign(key, 'base64')
+
+  // Use createPrivateKey for explicit PEM parsing — more robust than passing raw string
+  const privateKey = createPrivateKey({ key, format: 'pem' })
+  const sig = createSign('RSA-SHA256').update(unsigned).sign(privateKey, 'base64')
     .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
 
   const res  = await fetch('https://oauth2.googleapis.com/token', {
