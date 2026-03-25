@@ -270,7 +270,7 @@ async function writeServiceToSheet(token, sheetDate, tabName, views, unique, avg
   const avgMins = avgSecs != null ? Math.round(avgSecs / 60) : ''
 
   // Write J (Views), K (Unique Viewers), L (AVG Watch Time in minutes)
-  await fetch(
+  const writeRes = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encoded}!J${rowNum}:L${rowNum}?valueInputOption=RAW`,
     {
       method: 'PUT',
@@ -278,6 +278,11 @@ async function writeServiceToSheet(token, sheetDate, tabName, views, unique, avg
       body: JSON.stringify({ values: [[views, unique, avgMins]] }),
     }
   )
+  if (!writeRes.ok) {
+    const errBody = await writeRes.json().catch(() => ({}))
+    console.warn(`  ${tabName}: write failed (${writeRes.status}): ${errBody?.error?.message ?? writeRes.statusText}`)
+    return
+  }
   console.log(`  ${tabName} row ${rowNum}: Views=${views}, Unique=${unique}, AvgWatch=${avgMins}min`)
 }
 
