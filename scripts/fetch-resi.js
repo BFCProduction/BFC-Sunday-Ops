@@ -201,12 +201,34 @@ async function getGoogleToken() {
   const enc      = obj => Buffer.from(JSON.stringify(obj)).toString('base64url')
   const unsigned = `${enc({ alg: 'RS256', typ: 'JWT' })}.${enc(payload)}`
 
-  // Use createPrivateKey for explicit PEM parsing — more robust than passing raw string
+  // Try multiple key formats — service accounts use PKCS#8 but fall back gracefully
   let privateKey
-  try {
-    privateKey = createPrivateKey({ key, format: 'pem' })
-  } catch (e) {
-    console.warn(`Google Sheets: could not parse private key (${e.message}) — skipping.`)
+  const keyAttempts = [
+    // Standard PKCS#8 PEM (Google service account default)
+    () => createPrivateKey({ key, format: 'pem' }),
+    // PKCS#1 RSA PEM (older key format)
+    () => createPrivateKey({
+      key: key.replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN RSA PRIVATE KEY-----')
+               .replace('-----END PRIVATE KEY-----', '-----END RSA PRIVATE KEY-----'),
+      format: 'pem',
+    }),
+    // Raw base64 body → DER PKCS#8
+    () => {
+      const body = key.replace(/-----[^-]+-----/g, '').replace(/\s/g, '')
+      return createPrivateKey({ key: Buffer.from(body, 'base64'), format: 'der', type: 'pkcs8' })
+    },
+    // Raw base64 body → DER PKCS#1
+    () => {
+      const body = key.replace(/-----[^-]+-----/g, '').replace(/\s/g, '')
+      return createPrivateKey({ key: Buffer.from(body, 'base64'), format: 'der', type: 'pkcs1' })
+    },
+  ]
+  for (const attempt of keyAttempts) {
+    try { privateKey = attempt(); break } catch {}
+  }
+  if (!privateKey) {
+    console.warn('Google Sheets: could not parse private key in any supported format — skipping.')
+    console.warn('Expected: the private_key value from a Google service account JSON file.')
     return null
   }
   const sig = createSign('RSA-SHA256').update(unsigned).sign(privateKey, 'base64')
