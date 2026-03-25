@@ -188,7 +188,9 @@ async function getGoogleToken() {
     .replace(/\\n/g, '\n')          // convert escaped \n to real newlines
 
   if (!key.includes('-----BEGIN')) {
-    console.warn('Google Sheets: private key does not appear to be PEM — skipping.')
+    // Log first 40 chars (safe — no real key data at the start) to help diagnose format
+    const preview = key.slice(0, 40).replace(/\n/g, '\\n')
+    console.warn(`Google Sheets: private key does not appear to be PEM (starts with: "${preview}") — skipping.`)
     return null
   }
 
