@@ -389,12 +389,16 @@ async function run() {
     byEvent.get(row.eventId).push(row)
   }
 
+  // Filter out internal/monitor streams (e.g. multiviewer) with very few viewers
+  const MIN_SERVICE_VIEWERS = 10
+
   const sortedEvents = [...byEvent.entries()]
     .map(([eventId, rows]) => {
       const ts = rows.map(r => new Date(r.timestamp).getTime()).filter(t => !isNaN(t))
       ts.sort((a, b) => a - b)
       return { eventId, rows, earliestTs: ts[0] ?? Infinity }
     })
+    .filter(({ rows }) => new Set(rows.map(r => r.clientId).filter(Boolean)).size >= MIN_SERVICE_VIEWERS)
     .sort((a, b) => a.earliestTs - b.earliestTs)
 
   // ── Compute stats ───────────────────────────────────────────────────────────
