@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BarChart2, LayoutDashboard, MessageSquare } from 'lucide-react'
 import { Explorer } from './Explorer'
+import { Dashboard } from './Dashboard'
 
 type AnalyticsTab = 'explorer' | 'dashboard' | 'ai'
 
@@ -41,27 +42,14 @@ export function Analytics() {
 
       {/* Content */}
       <div className="p-5">
-        {tab === 'explorer' && <Explorer />}
-        {tab === 'dashboard' && <DashboardPlaceholder />}
+        {tab === 'explorer'  && <Explorer />}
+        {tab === 'dashboard' && <Dashboard />}
         {tab === 'ai'        && <AIPlaceholder />}
       </div>
     </div>
   )
 }
 
-function DashboardPlaceholder() {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-4">
-        <LayoutDashboard className="w-6 h-6 text-blue-500" />
-      </div>
-      <p className="text-gray-900 font-semibold mb-1">Dashboard Coming Soon</p>
-      <p className="text-gray-400 text-sm max-w-xs">
-        KPI cards, trend charts, year-over-year comparisons, and your district report — all in one view.
-      </p>
-    </div>
-  )
-}
 
 function AIPlaceholder() {
   return (
