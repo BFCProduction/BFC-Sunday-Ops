@@ -11,10 +11,11 @@ import { Checklist } from './screens/Checklist'
 import { IssueLog } from './screens/IssueLog'
 import { ServiceData } from './screens/ServiceData'
 import { Evaluation } from './screens/Evaluation'
+import { Analytics } from './screens/Analytics'
 import { Settings } from './screens/Settings'
 import { supabase } from './lib/supabase'
 
-export type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'settings'
+export type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings'
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('dashboard')
@@ -100,6 +101,7 @@ export default function App() {
             {screen === 'issues'     && <IssueLog    sundayId={sundayId} />}
             {screen === 'data'       && <ServiceData  sundayId={sundayId} />}
             {screen === 'evaluation' && <Evaluation  sundayId={sundayId} />}
+            {screen === 'analytics'  && <Analytics />}
             {screen === 'settings'   && <Settings />}
           </main>
         </div>
