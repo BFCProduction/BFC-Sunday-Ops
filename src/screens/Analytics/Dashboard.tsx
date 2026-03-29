@@ -25,6 +25,7 @@ interface Rec {
   church_online_avg_watch_time_secs: number | null
   youtube_unique_viewers: number | null
   service_run_time_secs: number | null
+  message_run_time_secs: number | null
   la_eq_15: number | null
 }
 
@@ -50,6 +51,9 @@ interface KPIs {
   avgRuntime: number | null
   avgRuntime9am: number | null
   avgRuntime11am: number | null
+  avgMsgRuntime: number | null
+  avgMsgRuntime9am: number | null
+  avgMsgRuntime11am: number | null
   loudnessCompliance: number | null
   loudnessExceedances: number
   loudnessChecked: number
@@ -71,16 +75,12 @@ function fmt(n: number | null, decimals = 0): string {
 
 function fmtSecs(secs: number | null): string {
   if (secs == null) return '—'
-  const m = Math.floor(secs / 60)
-  const s = secs % 60
+  const rounded = Math.round(secs)
+  const m = Math.floor(rounded / 60)
+  const s = rounded % 60
   return s > 0 ? `${m}m ${s}s` : `${m}m`
 }
 
-function fmtDate(d: string): string {
-  return new Date(d + 'T12:00:00').toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
-}
 
 function fmtShortDate(d: string): string {
   return new Date(d + 'T12:00:00').toLocaleDateString('en-US', {
@@ -134,6 +134,7 @@ function computeKPIs(records: Rec[]): KPIs {
       avgRuntime: null, avgRuntime9am: null, avgRuntime11am: null,
       loudnessCompliance: null, loudnessExceedances: 0, loudnessChecked: 0,
       highestSunday: null, inPersonPct: null,
+      avgMsgRuntime: null, avgMsgRuntime9am: null, avgMsgRuntime11am: null,
     }
   }
 
@@ -186,9 +187,13 @@ function computeKPIs(records: Rec[]): KPIs {
   const highestSunday = sorted.length ? { date: sorted[0].date, total: sorted[0].total } : null
 
   // Runtime averages
-  const runtimeAll = records.filter(r => r.service_run_time_secs != null).map(r => r.service_run_time_secs!)
-  const runtime9am = all9am.filter(r => r.service_run_time_secs != null).map(r => r.service_run_time_secs!)
+  const runtimeAll  = records.filter(r => r.service_run_time_secs != null).map(r => r.service_run_time_secs!)
+  const runtime9am  = all9am.filter(r => r.service_run_time_secs != null).map(r => r.service_run_time_secs!)
   const runtime11am = all11am.filter(r => r.service_run_time_secs != null).map(r => r.service_run_time_secs!)
+
+  const msgRuntimeAll  = records.filter(r => r.message_run_time_secs != null).map(r => r.message_run_time_secs!)
+  const msgRuntime9am  = all9am.filter(r => r.message_run_time_secs != null).map(r => r.message_run_time_secs!)
+  const msgRuntime11am = all11am.filter(r => r.message_run_time_secs != null).map(r => r.message_run_time_secs!)
 
   // Watch time
   const wt9am = all9am.filter(r => r.church_online_avg_watch_time_secs != null).map(r => r.church_online_avg_watch_time_secs!)
@@ -214,6 +219,9 @@ function computeKPIs(records: Rec[]): KPIs {
     avgRuntime:    avg(runtimeAll),
     avgRuntime9am:  avg(runtime9am),
     avgRuntime11am: avg(runtime11am),
+    avgMsgRuntime:    avg(msgRuntimeAll),
+    avgMsgRuntime9am:  avg(msgRuntime9am),
+    avgMsgRuntime11am: avg(msgRuntime11am),
     loudnessCompliance,
     loudnessExceedances: exceedances,
     loudnessChecked: checked,
@@ -357,7 +365,7 @@ export function Dashboard() {
       const [recResult, evalResult] = await Promise.all([
         supabase
           .from('service_records')
-          .select('service_date,service_type,in_person_attendance,church_online_views,church_online_unique_viewers,church_online_avg_watch_time_secs,youtube_unique_viewers,service_run_time_secs,la_eq_15')
+          .select('service_date,service_type,in_person_attendance,church_online_views,church_online_unique_viewers,church_online_avg_watch_time_secs,youtube_unique_viewers,service_run_time_secs,message_run_time_secs,la_eq_15')
           .order('service_date'),
         supabase
           .from('evaluations')
@@ -465,7 +473,7 @@ export function Dashboard() {
       </div>
 
       {/* ── KPI band ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard
           label="Avg Total Attendance"
           value={fmt(kpis.avgTotal)}
@@ -511,6 +519,15 @@ export function Dashboard() {
             : undefined}
           curValue={kpis.avgRuntime}
           prevValue={prevKpis.avgRuntime}
+        />
+        <KpiCard
+          label="Avg Message Runtime"
+          value={fmtSecs(kpis.avgMsgRuntime)}
+          sub2={kpis.avgMsgRuntime9am != null || kpis.avgMsgRuntime11am != null
+            ? `9am ${fmtSecs(kpis.avgMsgRuntime9am)} · 11am ${fmtSecs(kpis.avgMsgRuntime11am)}`
+            : undefined}
+          curValue={kpis.avgMsgRuntime}
+          prevValue={prevKpis.avgMsgRuntime}
         />
       </div>
 
@@ -605,65 +622,6 @@ export function Dashboard() {
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* ── District Report banner ───────────────────────────────────────── */}
-      <div className="rounded-xl overflow-hidden" style={{ background: '#1e3a5f' }}>
-        <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
-          <p className="text-white text-sm font-semibold">
-            📋 District Report Numbers — {yearLabel}
-            {isCurYear ? ' YTD' : ''}
-          </p>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/10">
-          {[
-            {
-              label: 'Avg Weekly Attendance',
-              value: fmt(kpis.avgTotal),
-              note: 'In-person + concurrent online',
-              star: false,
-            },
-            {
-              label: 'Concurrent Online Viewers ★',
-              value: fmt(kpis.avgCo),
-              note: 'Unique viewers, not peak views',
-              star: true,
-            },
-            {
-              label: 'Highest Sunday',
-              value: kpis.highestSunday ? fmt(kpis.highestSunday.total) : '—',
-              note: kpis.highestSunday ? fmtDate(kpis.highestSunday.date) : '',
-              star: false,
-            },
-            {
-              label: 'Sundays Reported',
-              value: String(kpis.sundayCount),
-              note: yearLabel,
-              star: false,
-            },
-          ].map(({ label, value, note, star }) => (
-            <div key={label} className="px-5 py-4 bg-white/[0.03]">
-              <p className={`text-[11px] font-semibold mb-1 ${star ? 'text-blue-300' : 'text-blue-200/70'}`}>{label}</p>
-              <p className={`text-2xl font-bold mb-0.5 ${star ? 'text-blue-300' : 'text-white'}`}>{value}</p>
-              <p className="text-[11px] text-blue-200/50">{note}</p>
-            </div>
-          ))}
-        </div>
-        {/* Per-service online breakdown */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/10">
-          {[
-            { label: '9am Concurrent Viewers',  value: fmt(kpis.avgCo9am),  note: 'Church Online unique' },
-            { label: '11am Concurrent Viewers', value: fmt(kpis.avgCo11am), note: 'Church Online unique' },
-            { label: 'Avg CO Views (9am)',       value: fmt(kpis.avgCoViews), note: 'Total views incl. replays' },
-            { label: 'Avg Watch Time',           value: `${fmtSecs(kpis.avgWatchTime9am)} / ${fmtSecs(kpis.avgWatchTime11am)}`, note: '9am / 11am' },
-          ].map(({ label, value, note }) => (
-            <div key={label} className="px-5 py-3 bg-white/[0.02]">
-              <p className="text-[10px] text-blue-200/50 mb-0.5">{label}</p>
-              <p className="text-lg font-bold text-white/80">{value}</p>
-              <p className="text-[10px] text-blue-200/40">{note}</p>
-            </div>
-          ))}
         </div>
       </div>
 
