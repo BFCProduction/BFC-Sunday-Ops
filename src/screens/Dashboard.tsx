@@ -16,14 +16,16 @@ interface DashboardProps {
 }
 
 const SCHEDULE = [
-  { time: '7:30 AM',  label: 'Crew Arrival',       key: 'crew'       },
-  { time: '8:00 AM',  label: 'Checklist Opens',     key: 'checklist'  },
-  { time: '8:15 AM',  label: 'Projectors On',       key: 'proj'       },
-  { time: '8:45 AM',  label: 'Rehearsal Begins',    key: 'rehearsal'  },
-  { time: '9:00 AM',  label: '1st Service',         key: 'service1'   },
-  { time: '10:30 AM', label: 'Flip Time',            key: 'flip'       },
-  { time: '11:00 AM', label: '2nd Service',         key: 'service2'   },
-  { time: '12:30 PM', label: 'Post-Evaluation Due', key: 'eval'       },
+  { time: '7:00 AM',  label: 'Production Meeting', key: 'meeting'    },
+  { time: '7:45 AM',  label: 'Rehearsal Begins',   key: 'rehearsal1' },
+  { time: '8:15 AM',  label: 'Projectors On',      key: 'proj'       },
+  { time: '8:40 AM',  label: 'Encoders Start',     key: 'encoders1'  },
+  { time: '9:00 AM',  label: '1st Service',        key: 'service1'   },
+  { time: '10:00 AM', label: 'Flip Stage',         key: 'flip'       },
+  { time: '10:20 AM', label: 'Rehearsal Begins',   key: 'rehearsal2' },
+  { time: '10:40 AM', label: 'Encoders Start',     key: 'encoders2'  },
+  { time: '11:00 AM', label: '2nd Service',        key: 'service2'   },
+  { time: '12:00 PM', label: 'Release',            key: 'release'    },
 ]
 
 function getScheduleStatus(key: string): 'done' | 'active' | 'upcoming' {
@@ -32,8 +34,10 @@ function getScheduleStatus(key: string): 'done' | 'active' | 'upcoming' {
   const min = now.getMinutes()
   const totalMin = hour * 60 + min
   const times: Record<string, number> = {
-    crew: 7*60+30, checklist: 8*60, proj: 8*60+15, rehearsal: 8*60+45,
-    service1: 9*60, flip: 10*60+30, service2: 11*60, eval: 12*60+30,
+    meeting:   7*60,     rehearsal1: 7*60+45, proj:      8*60+15,
+    encoders1: 8*60+40,  service1:   9*60,    flip:      10*60,
+    rehearsal2: 10*60+20, encoders2: 10*60+40, service2: 11*60,
+    release:   12*60,
   }
   const t = times[key]
   if (totalMin > t + 30) return 'done'

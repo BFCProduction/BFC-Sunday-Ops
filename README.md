@@ -16,6 +16,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - Admin mode for checklist items, runtime definitions, issue cleanup, and weather settings
 - PDF service report export with logo, KPIs, issues, and evaluation responses
 - ProPresenter relay script for runtime capture
+- **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -60,9 +61,25 @@ Live now:
 - Loudness Log includes a "Full History PDF" button that generates a styled multi-year report matching the Sunday report aesthetic, grouped by year with per-year averages and goal exceedance flags.
 - Sidebar date block has `‹` / `›` chevron arrows to step backward and forward through past Sundays. All screens reload with the selected Sunday's data. Past Sundays show an amber "Historical View" badge and a "Back to Today" link.
 
+- RESI analytics importer (`scripts/fetch-resi.js`) — logs in via Playwright, downloads the session CSV for the target Sunday, computes per-service stats, and writes to Supabase. Supports `--now`, `--date`, and `--dry-run` flags.
+
+- **Analytics screen** (`src/screens/Analytics/`) — three-tab layout:
+  - **Dashboard**: 6 KPI cards (Avg Attendance, Avg Service Runtime, Avg Message Runtime, Avg Loudness, Avg Stream Views, Total Sundays), each with 9am/11am breakdown and period-over-period delta arrows. Date-range filter. All time values rounded to whole seconds.
+  - **Data Explorer**: filterable table view of `service_records` with column-level sorting.
+  - **Ask a Question**: placeholder for a future AI natural-language query interface.
+
+- **`service_records` table** (`supabase/migrations/012_create_service_records.sql`) — unified analytics table with one row per service per Sunday, storing attendance, runtimes, loudness, weather, and stream analytics in one place.
+
+- **Historical Gameday Checklist PDF extraction** (`scripts/extract-checklist-runtimes.js`) — one-shot script that scans 242 PDFs from the local Google Drive archive (Jun 2021–Mar 2026), extracts service runtime, message runtime, and stage flip time from each, and upserts into `service_records`. 465 rows backfilled.
+
 Still pending:
-- Real YouTube / RESI analytics importers
+- Real YouTube analytics importer (`scripts/fetch-youtube.js` is a stub)
+- AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
+- Operational screens writing to `service_records` in addition to legacy tables
 - Any downstream reporting beyond the Sunday summary email
+
+Completed (previously listed as pending):
+- Attendance and loudness data backfilled into `service_records` from legacy tables.
 
 ## Tech Stack
 
@@ -91,6 +108,7 @@ Still pending:
 - `report_email_recipients`
 - `report_email_runs`
 - `app_config`
+- `service_records` — unified analytics table (one row per service per Sunday)
 
 Fresh schema setup is represented by:
 - `supabase/migrations/001_initial_schema.sql`
@@ -102,6 +120,10 @@ Fresh schema setup is represented by:
 - `supabase/migrations/007_add_issue_resolution.sql`
 - `supabase/migrations/008_add_app_config.sql`
 - `supabase/migrations/009_add_issue_photos.sql`
+- `supabase/migrations/010_add_resi_events.sql`
+- `supabase/migrations/011_security_hardening.sql`
+- `supabase/migrations/012_create_service_records.sql`
+- `supabase/migrations/013_add_c_weighted_loudness.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -320,7 +342,19 @@ supabase functions deploy summary-email-admin
 - Scheduled analytics should stay disabled until their backing code exists.
 - A session-level change summary is tracked in `CHANGELOG.md`.
 
+## Credentials and Security
+
+**Never commit real credentials, passwords, or API keys to this repo.**
+
+- `.env.local` is gitignored and must stay that way. All real secrets live there or in Supabase project secrets — never in committed files.
+- `VITE_ADMIN_PASSWORD` and `ADMIN_PASSWORD` must always be set via environment variables. There is no hardcoded fallback.
+- The Supabase anon key (`VITE_SUPABASE_ANON_KEY`) is intentionally public — it is embedded in the built frontend and is safe to expose because all sensitive tables are protected by RLS. Do not confuse it with the service role key (`SUPABASE_SERVICE_KEY`), which must never be committed or exposed to the frontend.
+- All other secrets (Monday API token, Google service account key, Gmail delegated credentials) must be added to Supabase project secrets for edge functions and to GitHub Actions secrets for workflows — never hardcoded.
+- When in doubt, treat a value as a secret. If it's genuinely non-sensitive (a feature flag, a public URL, a display name), it's fine in committed config.
+
 ## Future Session Notes
 
-- Set up the YouTube and RESI analytics importers and enable the supporting workflow (`scripts/fetch-youtube.js` and `scripts/fetch-resi.js` are stubs).
-- Build a historical data dashboard — trend graphs across loudness, attendance, and stream analytics by Sunday.
+- Set up the YouTube analytics importer and enable the supporting workflow (`scripts/fetch-youtube.js` is a stub).
+- Build the AI "Ask a Question" Analytics tab — natural-language queries against `service_records` via Claude API / Supabase Edge Function.
+- Update operational input screens (Loudness Log, Attendance, Runtimes) to write to `service_records` alongside the existing legacy tables.
+- ~~Backfill attendance and loudness into `service_records` from legacy data.~~ (completed)

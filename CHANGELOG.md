@@ -1,5 +1,102 @@
 # Changelog
 
+## 2026-03-28 (Session 2)
+
+### Summary
+
+Built the Analytics screen (Dashboard + Data Explorer), refined Dashboard KPIs, and backfilled four years of historical service runtime data by extracting it from the Gameday Checklist PDF archive.
+
+### Completed
+
+- **Analytics screen** (`src/screens/Analytics/index.tsx`, `src/screens/Analytics/Dashboard.tsx`, `src/screens/Analytics/Explorer.tsx`):
+  - Full Analytics section added to the app with three tabs: Dashboard, Data Explorer, and Ask a Question (placeholder).
+  - Dashboard is the default tab.
+
+- **Dashboard KPI cards** (`src/screens/Analytics/Dashboard.tsx`):
+  - Six KPI cards: Avg Attendance, Avg Service Runtime, Avg Message Runtime, Avg Loudness (LAeq 15), Avg Stream Views, and Total Sundays in range.
+  - Each card shows an overall value, a 9am / 11am breakdown where applicable, and a delta arrow comparing the selected range to the prior equivalent period.
+  - `fmtSecs()` rounds to the nearest whole second before formatting so averages never display decimal seconds (e.g. "53m 9s" not "53m 8.7s").
+  - Removed the District Report banner that previously occupied the top of the Dashboard.
+  - Added **Avg Message Runtime** as the 6th KPI card — overall average plus separate 9am and 11am breakdowns — sourced from the new `message_run_time_secs` column in `service_records`.
+  - KPI grid updated from 5 to 6 columns (`xl:grid-cols-6`).
+
+- **`service_records` table** (`supabase/migrations/012_create_service_records.sql`):
+  - New unified analytics table: one row per service per Sunday.
+  - Stores attendance, runtime, message runtime, stage flip time, loudness, weather, and stream analytics in one place.
+  - Replaces the patchwork of individual operational tables for reporting purposes (those tables remain intact during the transition).
+  - C-weighted loudness columns added in `013_add_c_weighted_loudness.sql` (`max_db_c_slow`, `lc_eq_15`).
+
+- **Historical Gameday Checklist PDF extraction** (`scripts/extract-checklist-runtimes.js`):
+  - One-shot Node.js script that scans all Sunday folders in the local Google Drive archive (`~/Library/CloudStorage/…/01 Prod Doc Archive`).
+  - Finds each `*Gameday Checklist*.pdf`, extracts text with `pdftotext` (falling back to Python `pdfplumber`), and parses three fields:
+    - **Service runtimes** (9am + 11am): first and second standalone time values in the Service Data block.
+    - **Message runtimes** (9am + 11am): first and second lines in the Service Data block containing "message" + a time value.
+    - **Stage flip time**: any line in the document containing "Stage Flip" + a time value.
+  - Handles the full format evolution across PDF generations (2021–2025): labels before values, labels after values, message times in comment fields, "1st Message" / "2nd Message" labeling, `MM:SS` vs `H:MM:SS` time formats.
+  - Dry-run by default; pass `--write` to upsert into Supabase.
+  - Run result: **242 PDFs scanned → 240 parsed → 465 service rows updated** (0 errors, 0 unmatched dates). 2 blank forms (Aug/Sep 2022) correctly skipped.
+  - Coverage: service runtimes for all 240 dates (Jun 2021–Mar 2026); message runtimes for 63 dates (mid-2024 onward); stage flip times for 8 dates (Jan 2025 onward).
+
+### In Queue for Next Session
+
+- YouTube analytics importer (`scripts/fetch-youtube.js` is still a stub).
+- AI "Ask a Question" tab — natural-language queries against `service_records` via Claude API / Supabase Edge Function.
+- Update operational input screens (Loudness Log, Attendance, Runtimes) to write to `service_records` as well as the legacy tables.
+- ~~Backfill attendance and loudness into `service_records` from existing legacy tables.~~ (completed)
+
+---
+
+## 2026-03-28
+
+### Summary
+
+Completed the RESI analytics importer, performed a full security audit, and implemented all identified fixes. Updated the README and CHANGELOG to reflect current project state.
+
+### Completed
+
+- **RESI analytics importer** (`scripts/fetch-resi.js`):
+  - Fully implemented — no longer a stub.
+  - Logs into RESI via Playwright, downloads the session-level CSV for the target Sunday, computes per-service stats, and writes to Supabase.
+  - Assigns service names by temporal order of viewer sessions (Traditional / Contemporary).
+  - Optional Google Sheets write-back for Church Online unique viewer totals.
+  - Supports `--now`, `--date`, and `--dry-run` flags.
+  - README updated to reflect completion.
+
+- **Security audit and hardening**:
+  - Audited the full codebase for security vulnerabilities. Five issues identified and fixed; three others acknowledged as acceptable trade-offs for a shared internal tool.
+
+  - **Hardcoded fallback admin password removed** (`src/lib/adminApi.ts`):
+    - The default fallback `'bfcadmin'` was embedded in compiled frontend JavaScript. Replaced with an empty string so no password can ever match if `VITE_ADMIN_PASSWORD` is not set.
+
+  - **File type validation on photo uploads** (`src/screens/IssueLog.tsx`):
+    - The file picker already had `accept="image/*"` on the HTML element. Added a `.filter(f => f.type.startsWith('image/'))` guard in `handleFileChange` so non-image files are also rejected at the JavaScript layer, not just the browser UI.
+
+  - **Storage delete policy tightened** (`supabase/migrations/011_security_hardening.sql`):
+    - The original setup allowed any anonymous user to delete any file in the `issue-photos` bucket. The public delete policy has been dropped. Only the service role (edge functions / server-side scripts) can now delete storage objects.
+
+  - **Email table RLS policies made explicit** (`supabase/migrations/011_security_hardening.sql`):
+    - `report_email_settings`, `report_email_recipients`, and `report_email_runs` had RLS enabled but no policies defined (Supabase denies all by default in this state, so these were already locked down). Added explicit `as restrictive` deny-all policies for `anon` and `authenticated` roles to make the intent undeniable and guard against accidental future policy additions opening access.
+
+  - **CORS restricted to known origins** (`supabase/functions/*/index.ts`):
+    - All three edge functions (`admin-session`, `summary-email-admin`, `push-monday-issue`) previously returned `Access-Control-Allow-Origin: *`. Replaced with a `getCorsHeaders(request)` helper that checks the request `Origin` against an allowlist (`https://bfcproduction.github.io`, `http://localhost:5173`) and echoes back only a matching origin.
+
+  - **Edge functions redeployed** via Supabase CLI to make CORS changes live.
+
+  - **Migration 011 applied** in the Supabase SQL editor.
+
+### Intentionally Not Changed
+
+- `public_all` RLS policies on operational tables (`sundays`, `issues`, `checklist_items`, etc.) — this app has no user accounts by design; the anon key is the intended access method for operators.
+- Admin password stored in React state — expected for a shared-password model; the password is never written to `localStorage` or disk.
+- CORS not restricting operator access — operators access the app from the same GitHub Pages origin.
+
+### In Queue for Next Session
+
+- YouTube analytics importer (`scripts/fetch-youtube.js` is still a stub).
+- Historical data dashboard — trend graphs across loudness, attendance, and stream analytics by Sunday.
+
+---
+
 ## 2026-03-23 (Session 2)
 
 ### Summary

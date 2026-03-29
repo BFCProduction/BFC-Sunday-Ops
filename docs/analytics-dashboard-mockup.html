@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BFC Sunday Ops Analytics Mockup</title>
+  <style>
+    :root {
+      --bg: #f2eee7;
+      --paper: #fffdf9;
+      --ink: #14213d;
+      --muted: #6b7280;
+      --line: #e7dfd2;
+      --blue: #146ef5;
+      --teal: #0f766e;
+      --gold: #c77d16;
+      --red: #c2410c;
+      --mint: #e4f3ef;
+      --sky: #e4eefc;
+      --rose: #f7e5dd;
+      --shadow: 0 24px 48px rgba(20, 33, 61, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(20, 110, 245, 0.12), transparent 30%),
+        radial-gradient(circle at top right, rgba(15, 118, 110, 0.10), transparent 24%),
+        var(--bg);
+      color: var(--ink);
+    }
+
+    .page {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      margin-bottom: 20px;
+    }
+
+    .hero-main {
+      padding: 26px 28px;
+      background:
+        linear-gradient(135deg, rgba(20, 110, 245, 0.08), rgba(15, 118, 110, 0.03)),
+        var(--paper);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: white;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    h1, h2, h3, p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 38px;
+      line-height: 1.05;
+      margin-top: 18px;
+      margin-bottom: 10px;
+    }
+
+    .hero-copy {
+      max-width: 900px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 15px;
+      margin-bottom: 22px;
+    }
+
+    .service-tabs {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 22px;
+    }
+
+    .pill {
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: white;
+    }
+
+    .pill.active {
+      background: var(--blue);
+      color: white;
+      border-color: var(--blue);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: white;
+    }
+
+    .metric .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .metric .value {
+      font-size: 30px;
+      line-height: 1;
+      margin-bottom: 8px;
+      font-weight: 800;
+    }
+
+    .metric .sub {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .section {
+      padding: 22px;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .section-head h2 {
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+
+    .section-head p {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 800;
+    }
+
+    .status.good {
+      background: var(--mint);
+      color: var(--teal);
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .chip {
+      border-radius: 999px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .chip.active {
+      background: #14213d;
+      border-color: #14213d;
+      color: white;
+    }
+
+    .history-layout {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 16px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      background: white;
+      min-height: 220px;
+    }
+
+    .panel h3 {
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .history-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: white;
+    }
+
+    .history-table th,
+    .history-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      font-size: 13px;
+      vertical-align: top;
+    }
+
+    .history-table th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: #fbfaf7;
+    }
+
+    .history-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .history-table tr.featured {
+      background: #f7fbff;
+    }
+
+    .date-cell {
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .tiny {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+
+    .delta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .delta.up {
+      background: var(--mint);
+      color: var(--teal);
+    }
+
+    .delta.flat {
+      background: #eef2f7;
+      color: #516074;
+    }
+
+    .delta.down {
+      background: var(--rose);
+      color: var(--red);
+    }
+
+    .compare {
+      display: grid;
+      gap: 10px;
+    }
+
+    .compare-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      background: white;
+    }
+
+    .compare-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .compare-values {
+      display: flex;
+      gap: 18px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+
+    .compare-values strong {
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .compare-values span {
+      font-size: 12px;
+      color: var(--muted);
+      display: block;
+      margin-top: 4px;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+    }
+
+    .chart {
+      height: 160px;
+      border-radius: 14px;
+      background:
+        linear-gradient(to top, rgba(20, 110, 245, 0.08), rgba(20, 110, 245, 0.01)),
+        repeating-linear-gradient(to top, transparent, transparent 31px, rgba(20, 33, 61, 0.06) 31px, rgba(20, 33, 61, 0.06) 32px),
+        repeating-linear-gradient(to right, transparent, transparent 48px, rgba(20, 33, 61, 0.05) 48px, rgba(20, 33, 61, 0.05) 49px),
+        #fbfaf7;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .legend {
+      display: flex;
+      gap: 14px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .legend .blue::before {
+      background: var(--blue);
+    }
+
+    .legend .teal::before {
+      background: var(--teal);
+    }
+
+    .legend .gold::before {
+      background: var(--gold);
+    }
+
+    .kpi-band {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .rows {
+      display: grid;
+      gap: 10px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fffdfa;
+    }
+
+    .row .name {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .row .meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .row .big {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .bar {
+      width: 120px;
+      height: 10px;
+      border-radius: 999px;
+      background: #edf0f3;
+      overflow: hidden;
+    }
+
+    .bar > span {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--blue), var(--teal));
+    }
+
+    .insight {
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: var(--sky);
+      border: 1px solid #d4e2fb;
+      color: #244782;
+      font-size: 13px;
+      line-height: 1.45;
+      margin-top: 12px;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      text-align: center;
+    }
+
+    @media (max-width: 1100px) {
+      .metrics,
+      .history-layout,
+      .mini-grid,
+      .kpi-band {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="card hero-main">
+        <div class="eyebrow">Sunday Ops Analytics Concept</div>
+        <h1>Workbook-First Stream Reporting</h1>
+        <p class="hero-copy">
+          This mockup is based on the fields in the Stream Analytics Master workbook. The surface is centered on the weekly reporting table,
+          with the required viewer-oriented reporting fields first. Extra analysis exists, but it stays secondary to the workbook model.
+        </p>
+        <div class="service-tabs">
+          <div class="pill active">Weekly Log</div>
+          <div class="pill">Service Detail</div>
+          <div class="pill">Sunday Rollup</div>
+          <div class="pill">Derived Trends</div>
+          <div class="pill">Compare Years</div>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="label">Selected Week</div>
+            <div class="value">Mar 15</div>
+            <div class="sub">Current weekly record in focus.</div>
+          </div>
+          <div class="metric">
+            <div class="label">Attendance</div>
+            <div class="value">908</div>
+            <div class="sub">Required reporting field from the existing workbook flow.</div>
+          </div>
+          <div class="metric">
+            <div class="label">Church Online Viewers</div>
+            <div class="value">235</div>
+            <div class="sub">Viewer-oriented metric emphasized over generic views.</div>
+          </div>
+          <div class="metric">
+            <div class="label">Peak Live Viewers</div>
+            <div class="value">98</div>
+            <div class="sub">Matches the kind of peak-viewer reporting already tracked.</div>
+          </div>
+          <div class="metric">
+            <div class="label">Avg Watch Time</div>
+            <div class="value">37m 49s</div>
+            <div class="sub">Still tracked because it already exists in the workbook.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="card section">
+        <div class="section-head">
+          <div>
+            <h2>Week-by-Week History</h2>
+            <p>The core replacement for the Excel file. One row per service-week, built around the workbook fields you already maintain and report.</p>
+          </div>
+          <div class="status good">Primary Working View</div>
+        </div>
+        <div class="toolbar">
+          <div class="chip active">2026</div>
+          <div class="chip">2025</div>
+          <div class="chip">9am</div>
+          <div class="chip">11am</div>
+          <div class="chip">Normal Sundays</div>
+          <div class="chip">Required Fields</div>
+        </div>
+        <div class="history-layout">
+          <div class="panel" style="min-height:0;">
+            <table class="history-table" aria-label="Week by week analytics history">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Attendance</th>
+                  <th>Runtime</th>
+                  <th>Weather</th>
+                  <th>Church Online Viewers</th>
+                  <th>Peak Live Viewers</th>
+                  <th>Avg Watch Time</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <span class="date-cell">Mar 1, 2026</span>
+                    <span class="tiny">9am service</span>
+                  </td>
+                  <td>882 <span class="tiny">reported</span></td>
+                  <td>64m <span class="tiny">service run time</span></td>
+                  <td>52F <span class="tiny">clear</span></td>
+                  <td>214 <span class="tiny">viewers</span></td>
+                  <td>84 <span class="tiny">peak</span></td>
+                  <td>31m <span class="tiny">avg</span></td>
+                  <td><span class="delta flat">Normal</span></td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="date-cell">Mar 8, 2026</span>
+                    <span class="tiny">9am service</span>
+                  </td>
+                  <td>901 <span class="tiny">reported</span></td>
+                  <td>63m <span class="tiny">service run time</span></td>
+                  <td>48F <span class="tiny">windy</span></td>
+                  <td>221 <span class="tiny">viewers</span></td>
+                  <td>90 <span class="tiny">peak</span></td>
+                  <td>34m <span class="tiny">avg</span></td>
+                  <td><span class="delta up">Strong</span></td>
+                </tr>
+                <tr class="featured">
+                  <td>
+                    <span class="date-cell">Mar 15, 2026</span>
+                    <span class="tiny">9am service · selected week</span>
+                  </td>
+                  <td>908 <span class="tiny">reported</span></td>
+                  <td>65m <span class="tiny">service run time</span></td>
+                  <td>56F <span class="tiny">clear</span></td>
+                  <td>235 <span class="tiny">viewer count</span></td>
+                  <td>98 <span class="tiny">peak</span></td>
+                  <td>37m 49s <span class="tiny">avg</span></td>
+                  <td><span class="delta up">Positive</span></td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="date-cell">Mar 22, 2026</span>
+                    <span class="tiny">9am service</span>
+                  </td>
+                  <td>876 <span class="tiny">reported</span></td>
+                  <td>61m <span class="tiny">service run time</span></td>
+                  <td>39F <span class="tiny">stormy</span></td>
+                  <td>193 <span class="tiny">viewers</span></td>
+                  <td>71 <span class="tiny">peak</span></td>
+                  <td>29m <span class="tiny">avg</span></td>
+                  <td><span class="delta down">Weather</span></td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="date-cell">Mar 29, 2026</span>
+                    <span class="tiny">9am service</span>
+                  </td>
+                  <td>924 <span class="tiny">reported</span></td>
+                  <td>66m <span class="tiny">service run time</span></td>
+                  <td>61F <span class="tiny">clear</span></td>
+                  <td>244 <span class="tiny">viewers</span></td>
+                  <td>103 <span class="tiny">peak</span></td>
+                  <td>39m <span class="tiny">avg</span></td>
+                  <td><span class="delta up">Retention</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="panel" style="min-height:0;">
+            <h3>Selected Week Detail</h3>
+            <div class="compare">
+              <div class="compare-card">
+                <div class="compare-label">Required Report Data</div>
+                <div class="compare-values">
+                  <div><strong>235</strong><span>church online viewers</span></div>
+                  <div><strong>98</strong><span>peak live viewers</span></div>
+                  <div><strong>908</strong><span>attendance</span></div>
+                </div>
+              </div>
+              <div class="compare-card">
+                <div class="compare-label">Workbook Fields Still Tracked</div>
+                <div class="compare-values">
+                  <div><strong>65m</strong><span>service runtime</span></div>
+                  <div><strong>56F</strong><span>weather</span></div>
+                  <div><strong>37m 49s</strong><span>avg watch time</span></div>
+                </div>
+              </div>
+              <div class="compare-card">
+                <div class="compare-label">Additional Analysis</div>
+                <div style="font-size:13px; line-height:1.45; color:var(--muted);">
+                  Four-week baseline deltas, year-over-year comparison, device mix, geography, and anomaly flags are additive analysis.
+                  They are available, but they do not replace the workbook’s required reporting basis.
+                </div>
+              </div>
+            </div>
+            <div class="insight">
+              This panel is deliberately ordered so the denominational reporting fields appear first, and internal analysis appears second.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section">
+        <div class="section-head">
+          <div>
+            <h2>Derived Analysis</h2>
+            <p>Optional analysis built on top of the workbook fields, not a replacement for them.</p>
+          </div>
+          <div class="status good">Secondary Layer</div>
+        </div>
+        <div class="mini-grid">
+          <div class="panel">
+            <h3>Trend Analysis</h3>
+            <div class="chart">
+              <svg viewBox="0 0 400 160" preserveAspectRatio="none" aria-hidden="true">
+                <polyline fill="none" stroke="#146ef5" stroke-width="4" points="8,126 58,118 108,101 158,96 208,72 258,84 308,60 358,44 392,40" />
+                <polyline fill="none" stroke="#0f766e" stroke-width="4" points="8,142 58,137 108,132 158,118 208,108 258,98 308,94 358,88 392,82" />
+                <circle cx="392" cy="40" r="5" fill="#146ef5" />
+                <circle cx="392" cy="82" r="5" fill="#0f766e" />
+              </svg>
+            </div>
+            <div class="legend">
+              <span class="blue">Viewer Count</span>
+              <span class="teal">Avg Watch Time</span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Baseline Comparisons</h3>
+            <div class="compare">
+              <div class="compare-card">
+                <div class="compare-label">vs Last 4 Weeks</div>
+                <div class="compare-values">
+                  <div><strong>+12%</strong><span>viewer count</span></div>
+                  <div><strong>+8m</strong><span>avg watch time</span></div>
+                </div>
+              </div>
+              <div class="compare-card">
+                <div class="compare-label">vs Same Sunday Last Year</div>
+                <div class="compare-values">
+                  <div><strong>+21%</strong><span>viewer count</span></div>
+                  <div><strong>-3%</strong><span>attendance</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="insight">
+              These comparisons are useful, but they are downstream of the required workbook data and should stay visually secondary.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section">
+        <div class="section-head">
+          <div>
+            <h2>Supplemental Dimensions</h2>
+            <p>Helpful internal analysis that can be added without changing the workbook’s reporting basis.</p>
+          </div>
+        </div>
+        <div class="kpi-band">
+          <div class="panel">
+            <h3>Device Mix</h3>
+            <div class="rows">
+              <div class="row">
+                <div>
+                  <div class="name">Mobile</div>
+                  <div class="meta">111 viewer sessions</div>
+                </div>
+                <div class="big">46%</div>
+                <div class="bar"><span style="width:46%"></span></div>
+              </div>
+              <div class="row">
+                <div>
+                  <div class="name">Desktop</div>
+                  <div class="meta">98 viewer sessions</div>
+                </div>
+                <div class="big">41%</div>
+                <div class="bar"><span style="width:41%"></span></div>
+              </div>
+              <div class="row">
+                <div>
+                  <div class="name">Tablet + TV</div>
+                  <div class="meta">30 viewer sessions combined</div>
+                </div>
+                <div class="big">13%</div>
+                <div class="bar"><span style="width:13%"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Top Cities</h3>
+            <div class="rows">
+              <div class="row">
+                <div>
+                  <div class="name">Oklahoma City</div>
+                  <div class="meta">Largest location bucket</div>
+                </div>
+                <div class="big">154</div>
+                <div class="meta">viewers</div>
+              </div>
+              <div class="row">
+                <div>
+                  <div class="name">Bethany</div>
+                  <div class="meta">Secondary local cluster</div>
+                </div>
+                <div class="big">14</div>
+                <div class="meta">viewers</div>
+              </div>
+              <div class="row">
+                <div>
+                  <div class="name">Kansas City</div>
+                  <div class="meta">Top non-local city</div>
+                </div>
+                <div class="big">7</div>
+                <div class="meta">viewers</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Workbook Alignment</h3>
+            <div class="rows">
+              <div class="row">
+                <div>
+                  <div class="name">Required Viewer Fields</div>
+                  <div class="meta">Viewer-oriented reporting stays primary</div>
+                </div>
+                <div class="big">Core</div>
+                <div class="meta">basis</div>
+              </div>
+              <div class="row">
+                <div>
+                  <div class="name">Views</div>
+                  <div class="meta">Can still be tracked, but not emphasized</div>
+                </div>
+                <div class="big">Secondary</div>
+                <div class="meta">metric</div>
+              </div>
+              <div class="row">
+                <div>
+                  <div class="name">Extra Analysis</div>
+                  <div class="meta">Only added on top of the workbook model</div>
+                </div>
+                <div class="big">Add-On</div>
+                <div class="meta">layer</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <p class="footer-note">
+      Mockup only. Numbers are illustrative except where noted from the March 15, 2026 RESI CSV sample.
+    </p>
+  </div>
+</body>
+</html>

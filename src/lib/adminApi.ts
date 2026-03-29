@@ -1,4 +1,4 @@
-const FALLBACK_ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'bfcadmin'
+const FALLBACK_ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || ''
 
 function getFunctionUrl(name: string) {
   return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`

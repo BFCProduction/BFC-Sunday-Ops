@@ -1,0 +1,1823 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BFC Sunday Ops — Analytics</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #fff;
+      color: #111827;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── App shell ─────────────────────────────── */
+    .shell {
+      display: grid;
+      grid-template-columns: 216px 1fr;
+      grid-template-rows: 48px 1fr;
+      height: 100vh;
+    }
+
+    /* Top bar */
+    .topbar {
+      grid-column: 1 / -1;
+      background: #111;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .topbar-logo {
+      background: white;
+      border-radius: 5px;
+      padding: 3px 6px;
+      font-size: 11px;
+      font-weight: 900;
+      color: #111;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .topbar-dot { color: #4b5563; font-size: 12px; margin: 0 4px; }
+    .topbar-name { color: #e5e7eb; font-size: 14px; font-weight: 600; }
+    .topbar-date {
+      margin-left: auto;
+      color: #6b7280;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: #111;
+      color: #9ca3af;
+      overflow-y: auto;
+      padding: 12px 0 16px;
+      border-right: 1px solid #222;
+    }
+    .sidebar-section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #4b5563;
+      padding: 14px 16px 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sidebar-date-block {
+      padding: 6px 16px 12px;
+      border-bottom: 1px solid #1f2937;
+    }
+    .sidebar-nav-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 8px;
+      font-size: 10px;
+      color: #4b5563;
+      margin-bottom: 2px;
+    }
+    .sidebar-date {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px;
+    }
+    .sidebar-date span {
+      font-size: 15px;
+      font-weight: 800;
+      color: #f9fafb;
+    }
+    .sidebar-date button {
+      background: none;
+      border: none;
+      color: #4b5563;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+    .sidebar-time-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #1f2937;
+      color: #9ca3af;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      margin: 4px 8px;
+    }
+    .sidebar-hint {
+      font-size: 10px;
+      color: #374151;
+      padding: 4px 16px 0;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      margin: 1px 8px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #9ca3af;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .nav-item:hover { background: #1f2937; color: #e5e7eb; }
+    .nav-item.active {
+      background: #1f2937;
+      color: #f9fafb;
+      font-weight: 600;
+    }
+    .nav-item svg { flex-shrink: 0; opacity: 0.7; }
+    .nav-item.active svg { opacity: 1; }
+    .nav-divider { height: 1px; background: #1f2937; margin: 8px 16px; }
+
+    /* Main content */
+    .main {
+      overflow-y: auto;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── Page header ────────────────────────────── */
+    .page-header {
+      padding: 20px 24px 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    .page-header h1 {
+      font-size: 22px;
+      font-weight: 800;
+      color: #111827;
+      line-height: 1.1;
+    }
+    .page-header p {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 3px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    /* ─── Tab bar ─────────────────────────────────── */
+    .tab-bar-wrap {
+      padding: 14px 24px 0;
+      flex-shrink: 0;
+    }
+    .tab-bar {
+      display: inline-flex;
+      background: #f3f4f6;
+      border-radius: 10px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .tab {
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #6b7280;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .tab.active {
+      background: white;
+      color: #111827;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* ─── Tab panels ────────────────────────────── */
+    .tab-panels { flex: 1; overflow-y: auto; }
+    .tab-panel { display: none; padding: 18px 24px 32px; }
+    .tab-panel.active { display: block; }
+
+    /* ─── Shared components ─────────────────────── */
+    .card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+    }
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      margin-bottom: 10px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      line-height: 1;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-secondary { background: white; color: #374151; border: 1px solid #d1d5db; }
+    .btn-ghost { background: none; color: #6b7280; border: 1px solid #e5e7eb; font-size: 12px; padding: 5px 10px; }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .filter-chip {
+      padding: 5px 11px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid #e5e7eb;
+      background: white;
+      color: #6b7280;
+      cursor: pointer;
+    }
+    .filter-chip.active {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+    .filter-divider { width: 1px; height: 18px; background: #e5e7eb; margin: 0 2px; }
+
+    /* Delta badges */
+    .delta {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .delta-up { background: #f0fdf4; color: #15803d; }
+    .delta-down { background: #fef2f2; color: #b91c1c; }
+    .delta-flat { background: #f9fafb; color: #6b7280; border: 1px solid #e5e7eb; }
+
+    /* ══════════════════════════════════════════════
+       DASHBOARD TAB
+    ══════════════════════════════════════════════ */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .kpi-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: white;
+    }
+    .kpi-card.highlight { border-color: #bfdbfe; background: #eff6ff; }
+    .kpi-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      margin-bottom: 7px;
+    }
+    .kpi-card.highlight .kpi-label { color: #1d4ed8; }
+    .kpi-value {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1;
+      color: #111827;
+      letter-spacing: -0.02em;
+    }
+    .kpi-card.highlight .kpi-value { color: #1d4ed8; }
+    .kpi-footer {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 7px;
+    }
+    .kpi-sub { font-size: 11px; color: #9ca3af; }
+
+    .mid-row {
+      display: grid;
+      grid-template-columns: 1.7fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .chart-placeholder {
+      height: 170px;
+      background: #f9fafb;
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+    .chart-placeholder svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .chart-legend {
+      display: flex;
+      gap: 14px;
+      margin-top: 10px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #6b7280;
+      font-weight: 600;
+    }
+    .legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+
+    .yoy-bar-row {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .yoy-row { }
+    .yoy-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 4px;
+    }
+    .yoy-head span { color: #6b7280; font-weight: 500; }
+    .bar-track {
+      height: 6px;
+      background: #f3f4f6;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: #3b82f6;
+    }
+
+    /* District report */
+    .district-banner {
+      background: #1e3a5f;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .district-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.45);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .district-label a {
+      color: rgba(255,255,255,0.55);
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .district-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .district-metric {
+      background: rgba(255,255,255,0.07);
+      border-radius: 8px;
+      padding: 11px 13px;
+    }
+    .district-metric .label {
+      font-size: 10px;
+      color: rgba(255,255,255,0.4);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 5px;
+    }
+    .district-metric.star .label { color: rgba(147,197,253,0.8); }
+    .district-metric .val {
+      font-size: 24px;
+      font-weight: 800;
+      color: white;
+      line-height: 1;
+    }
+    .district-metric.star .val { color: #93c5fd; }
+    .district-metric .note {
+      font-size: 10px;
+      color: rgba(255,255,255,0.3);
+      margin-top: 3px;
+    }
+
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .card-inner { padding: 16px; }
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 2px;
+    }
+    .card-sub { font-size: 12px; color: #9ca3af; margin-bottom: 12px; }
+
+    .stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 13px;
+    }
+    .stat-row:last-child { border-bottom: 0; }
+    .stat-label { color: #374151; font-weight: 500; display: flex; align-items: center; gap: 7px; }
+    .stat-dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
+    .stat-value { font-weight: 700; color: #111827; font-size: 13px; }
+
+    .inline-notice {
+      margin-top: 10px;
+      padding: 8px 11px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+    .notice-green { background: #f0fdf4; color: #166534; }
+    .notice-amber { background: #fffbeb; color: #92400e; }
+    .notice-blue  { background: #eff6ff; color: #1e40af; }
+    .notice-red   { background: #fef2f2; color: #991b1b; }
+
+    /* ══════════════════════════════════════════════
+       EXPLORER TAB
+    ══════════════════════════════════════════════ */
+    .explorer-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 200px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 13px;
+      color: #9ca3af;
+      font-family: inherit;
+    }
+
+    .table-wrap {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 12px;
+    }
+    .data-table th {
+      padding: 9px 13px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6b7280;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    .data-table th:hover { color: #111827; }
+    .data-table td {
+      padding: 9px 13px;
+      border-bottom: 1px solid #f3f4f6;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .data-table tr:last-child td { border-bottom: 0; }
+    .data-table tr:hover td { background: #f9fafb; }
+    .td-date { font-weight: 700; font-size: 13px; color: #111827; }
+    .td-sub { display: block; font-size: 10px; color: #9ca3af; margin-top: 1px; }
+    .td-num { font-weight: 600; color: #111827; }
+    .td-loud-ok { color: #16a34a; font-weight: 600; }
+    .td-loud-over { color: #dc2626; font-weight: 700; }
+    .weather-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #f3f4f6;
+      color: #374151;
+    }
+    .weather-cold { background: #eff6ff; color: #1d4ed8; }
+    .weather-rain { background: #f0f9ff; color: #0369a1; }
+
+    .table-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 14px;
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+    }
+    .table-foot span { font-size: 11px; color: #9ca3af; }
+
+    .active-filters {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .filter-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #1d4ed8;
+    }
+    .filter-tag-x { opacity: 0.5; cursor: pointer; margin-left: 1px; }
+    .filter-count { font-size: 11px; color: #9ca3af; align-self: center; }
+
+    /* ══════════════════════════════════════════════
+       INSIGHTS TAB
+    ══════════════════════════════════════════════ */
+    .insights-layout {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 16px;
+    }
+
+    .query-area textarea {
+      width: 100%;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #111827;
+      resize: none;
+      line-height: 1.5;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+    .query-area textarea:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+      background: white;
+    }
+    .query-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+    .query-hint { font-size: 11px; color: #9ca3af; }
+
+    .examples-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #6b7280;
+      margin: 16px 0 8px;
+    }
+    .example-list { display: flex; flex-direction: column; gap: 5px; }
+    .example-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 12px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #374151;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .example-item:hover { border-color: #93c5fd; color: #1d4ed8; }
+    .example-icon { font-size: 14px; flex-shrink: 0; }
+
+    /* AI response */
+    .ai-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .ai-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .ai-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #1d4ed8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .ai-question {
+      font-size: 14px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 14px;
+      line-height: 1.4;
+    }
+
+    .answer-stat-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .answer-stat {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 11px 12px;
+      text-align: center;
+    }
+    .answer-stat .n {
+      font-size: 24px;
+      font-weight: 800;
+      color: #111827;
+      line-height: 1;
+    }
+    .answer-stat.highlight .n { color: #1d4ed8; }
+    .answer-stat.neg .n { color: #dc2626; }
+    .answer-stat .l {
+      font-size: 10px;
+      color: #9ca3af;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
+
+    .result-chart {
+      height: 130px;
+      background: #f9fafb;
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .result-chart svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .ai-prose {
+      font-size: 13px;
+      color: #374151;
+      line-height: 1.65;
+      margin-bottom: 14px;
+    }
+    .ai-prose strong { color: #111827; font-weight: 700; }
+
+    .follow-ups-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #9ca3af;
+      margin-bottom: 7px;
+    }
+    .follow-up-list { display: flex; flex-wrap: wrap; gap: 5px; }
+    .follow-up-chip {
+      padding: 4px 10px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #374151;
+      cursor: pointer;
+    }
+    .follow-up-chip:hover { border-color: #93c5fd; color: #1d4ed8; }
+
+    .mockup-bar {
+      text-align: center;
+      font-size: 11px;
+      color: #d1d5db;
+      padding: 10px;
+      background: #f9fafb;
+      border-top: 1px solid #f3f4f6;
+      flex-shrink: 0;
+    }
+
+    /* ─── Service inner tabs (Explorer) ─────────── */
+    .service-tab {
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #6b7280;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .service-tab.active {
+      color: #111827;
+      border-bottom-color: #3b82f6;
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-logo">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="3" stroke="#111" stroke-width="2"/><path d="M6 14V10M10 14V6M14 14v-4" stroke="#111" stroke-width="2" stroke-linecap="round"/></svg>
+      BFC Production
+    </div>
+    <span class="topbar-dot">·</span>
+    <span class="topbar-name">Sunday Ops</span>
+    <div class="topbar-date">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
+      Saturday, March 28, 2026
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section-label">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>
+      This Sunday
+    </div>
+    <div class="sidebar-date-block">
+      <div class="sidebar-date">
+        <button>‹</button>
+        <span>March 29, 2026</span>
+        <button>›</button>
+      </div>
+      <div class="sidebar-time-pill">8:30 · 10:15</div>
+      <div class="sidebar-hint">Use arrows to view past Sundays</div>
+    </div>
+
+    <div style="height: 8px;"></div>
+
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 8h6M5 5h6M5 11h4"/></svg>
+      Gameday Checklist
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v5l3 2"/><circle cx="8" cy="8" r="6"/></svg>
+      Issue Log
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 13L5 8l3 2.5 3-4.5 3 3"/><path d="M2 15h12"/></svg>
+      Service Data
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="8 2 10 6.5 15 7.3 11.5 10.7 12.4 15.5 8 13 3.6 15.5 4.5 10.7 1 7.3 6 6.5"/></svg>
+      Post-Service Evaluation
+    </div>
+
+    <div class="nav-divider"></div>
+
+    <div class="nav-item active">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12l3-4 3 2.5 3-5 3 3"/><path d="M2 14h12"/></svg>
+      Analytics
+    </div>
+
+    <div class="nav-divider"></div>
+
+    <div class="nav-item" style="color: #4b5563;">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 1a3 3 0 100 6 3 3 0 000-6zM3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
+      <span style="color:#4b5563;">Admin</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="page-header">
+      <div>
+        <h1>Analytics</h1>
+        <p>5 years of data · 260 Sundays · through March 29, 2026</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary">↓ Export CSV</button>
+        <button class="btn btn-primary">📋 District Report</button>
+      </div>
+    </div>
+
+    <div class="tab-bar-wrap">
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('dashboard', this)">Dashboard</div>
+        <div class="tab" onclick="switchTab('explorer', this)">Data Explorer</div>
+        <div class="tab" onclick="switchTab('insights', this)">Ask a Question</div>
+      </div>
+    </div>
+
+    <div class="tab-panels">
+
+      <!-- ══════════════════ DASHBOARD ══════════════════ -->
+      <div class="tab-panel active" id="tab-dashboard">
+
+        <!-- Controls -->
+        <div class="filter-row">
+          <div class="filter-chip active">2026</div>
+          <div class="filter-chip">2025</div>
+          <div class="filter-chip">2024</div>
+          <div class="filter-chip">2023</div>
+          <div class="filter-chip">2022</div>
+          <div class="filter-chip">All Time</div>
+          <div class="filter-divider"></div>
+          <div class="filter-chip active">Both Services</div>
+          <div class="filter-chip">9am</div>
+          <div class="filter-chip">11am</div>
+          <div class="filter-divider"></div>
+          <div class="filter-chip">Excl. Special Sundays</div>
+        </div>
+
+        <!-- KPI band -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Avg Total Attendance</div>
+            <div class="kpi-value">2,247</div>
+            <div class="kpi-footer">
+              <span class="delta delta-up">▲ 2.8%</span>
+              <span class="kpi-sub">vs 2025</span>
+            </div>
+            <div class="kpi-sub" style="margin-top:4px;">12 Sundays so far in 2026</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Avg In-Person</div>
+            <div class="kpi-value">1,612</div>
+            <div class="kpi-footer">
+              <span class="delta delta-up">▲ 2.7%</span>
+              <span class="kpi-sub">vs 2025</span>
+            </div>
+            <div class="kpi-sub" style="margin-top:4px;">71.7% of total · 9am 932, 11am 680</div>
+          </div>
+          <div class="kpi-card highlight">
+            <div class="kpi-label">Concurrent Viewers ★</div>
+            <div class="kpi-value">298</div>
+            <div class="kpi-footer">
+              <span class="delta delta-up">▲ 5.7%</span>
+              <span class="kpi-sub">vs 2025</span>
+            </div>
+            <div class="kpi-sub" style="margin-top:4px;">Church Online unique — denominational metric</div>
+            <div class="kpi-sub" style="margin-top:3px; font-weight:700; color:#1d4ed8;">9am 184 · 11am 114</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Loudness Compliance</div>
+            <div class="kpi-value">83<span style="font-size:16px;font-weight:600;">%</span></div>
+            <div class="kpi-footer">
+              <span class="delta delta-flat">→ flat</span>
+              <span class="kpi-sub">vs 2025</span>
+            </div>
+            <div class="kpi-sub" style="margin-top:4px;">2 exceedances in 2026</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Avg Service Runtime</div>
+            <div class="kpi-value">63<span style="font-size:16px;font-weight:600;">m</span></div>
+            <div class="kpi-footer">
+              <span class="delta delta-down">▼ 1m</span>
+              <span class="kpi-sub">vs 2025</span>
+            </div>
+            <div class="kpi-sub" style="margin-top:4px;">9am avg 61m · 11am avg 65m</div>
+          </div>
+        </div>
+
+        <!-- Trend + YoY -->
+        <div class="mid-row">
+          <div class="card card-inner">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px;">
+              <div>
+                <div class="card-title">Attendance Trend — 2026</div>
+                <div class="card-sub">Weekly totals, both services</div>
+              </div>
+              <div style="display:flex; gap:5px;">
+                <div class="filter-chip active" style="font-size:11px; padding:3px 9px;">Total</div>
+                <div class="filter-chip" style="font-size:11px; padding:3px 9px;">In-Person</div>
+                <div class="filter-chip" style="font-size:11px; padding:3px 9px;">Online</div>
+              </div>
+            </div>
+            <div class="chart-placeholder">
+              <svg viewBox="0 0 560 170" preserveAspectRatio="none">
+                <line x1="0" y1="34" x2="560" y2="34" stroke="#e5e7eb" stroke-width="1"/>
+                <line x1="0" y1="85" x2="560" y2="85" stroke="#e5e7eb" stroke-width="1"/>
+                <line x1="0" y1="136" x2="560" y2="136" stroke="#e5e7eb" stroke-width="1"/>
+                <!-- total (light blue) -->
+                <polygon fill="rgba(59,130,246,0.06)" points="20,64 68,55 116,80 164,48 212,58 260,68 308,44 356,62 404,92 452,54 500,64 548,49 548,170 20,170"/>
+                <polyline fill="none" stroke="#93c5fd" stroke-width="2"
+                  points="20,64 68,55 116,80 164,48 212,58 260,68 308,44 356,62 404,92 452,54 500,64 548,49"/>
+                <!-- in-person (blue solid) -->
+                <polyline fill="none" stroke="#3b82f6" stroke-width="2.5"
+                  points="20,90 68,80 116,108 164,74 212,84 260,96 308,70 356,88 404,120 452,80 500,90 548,74"/>
+                <circle cx="548" cy="49" r="3.5" fill="#93c5fd"/>
+                <circle cx="548" cy="74" r="3.5" fill="#3b82f6"/>
+              </svg>
+            </div>
+            <div class="chart-legend">
+              <div class="legend-item"><div class="legend-dot" style="background:#93c5fd;"></div>Total</div>
+              <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div>In-Person</div>
+            </div>
+          </div>
+
+          <div class="card card-inner">
+            <div class="card-title" style="margin-bottom:4px;">Year over Year</div>
+            <div class="card-sub">Average weekly attendance</div>
+            <div class="yoy-bar-row">
+              <div class="yoy-row">
+                <div class="yoy-head">2026 <span class="delta delta-up" style="font-size:10px;">▲</span> <span style="margin-left:auto;">2,247</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:72%;"></div></div>
+              </div>
+              <div class="yoy-row">
+                <div class="yoy-head">2025 <span style="margin-left:auto;">2,305</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:74%;opacity:0.7;"></div></div>
+              </div>
+              <div class="yoy-row">
+                <div class="yoy-head">2024 <span style="margin-left:auto;">2,185</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:70%;opacity:0.55;"></div></div>
+              </div>
+              <div class="yoy-row">
+                <div class="yoy-head">2023 <span style="margin-left:auto;">2,086</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:67%;opacity:0.4;"></div></div>
+              </div>
+              <div class="yoy-row">
+                <div class="yoy-head">2022 <span style="margin-left:auto;">1,903</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:61%;opacity:0.3;"></div></div>
+              </div>
+              <div class="yoy-row">
+                <div class="yoy-head">2021 <span style="margin-left:auto;">1,842</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:59%;opacity:0.2;"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- District report banner -->
+        <div class="district-banner">
+          <div class="district-label">
+            📋 District Report Numbers — 2026 YTD
+            <a>Export for District →</a>
+          </div>
+          <div class="district-metrics">
+            <div class="district-metric">
+              <div class="label">Avg Weekly Attendance</div>
+              <div class="val">2,247</div>
+              <div class="note">In-person + concurrent online</div>
+            </div>
+            <div class="district-metric star">
+              <div class="label">Concurrent Online Viewers ★</div>
+              <div class="val">298</div>
+              <div class="note">Unique viewers, not peak views</div>
+            </div>
+            <div class="district-metric">
+              <div class="label">Highest Sunday</div>
+              <div class="val">3,412</div>
+              <div class="note">Jan 5, 2026 (New Year)</div>
+            </div>
+            <div class="district-metric">
+              <div class="label">Sundays Reported</div>
+              <div class="val">12</div>
+              <div class="note">Jan 5 – Mar 29, 2026</div>
+            </div>
+          </div>
+          <div class="district-metrics" style="margin-top:10px;">
+            <div class="district-metric">
+              <div class="label">9am Concurrent Viewers</div>
+              <div class="val">184</div>
+              <div class="note">Church Online unique</div>
+            </div>
+            <div class="district-metric">
+              <div class="label">11am Concurrent Viewers</div>
+              <div class="val">114</div>
+              <div class="note">Church Online unique</div>
+            </div>
+            <div class="district-metric">
+              <div class="label">9am RESI Concurrent</div>
+              <div class="val">102</div>
+              <div class="note">Avg per Sunday · 2026</div>
+            </div>
+            <div class="district-metric">
+              <div class="label">11am RESI Concurrent</div>
+              <div class="val">82</div>
+              <div class="note">Avg per Sunday · 2026</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom cards -->
+        <div class="bottom-grid">
+          <div class="card card-inner">
+            <div class="card-title">Loudness</div>
+            <div class="card-sub">Compliance vs LAeq 15 target · 2026</div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#16a34a;"></span>9am Avg LAeq 15</span>
+              <span class="stat-value td-loud-ok">81.2 dB</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#3b82f6;"></span>11am Avg LAeq 15</span>
+              <span class="stat-value td-loud-ok">82.8 dB</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#dc2626;"></span>Exceedances</span>
+              <span class="stat-value td-loud-over">2 of 12</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#9ca3af;"></span>Goal target</span>
+              <span class="stat-value">82 dB</span>
+            </div>
+            <div class="inline-notice notice-green">Last clean Sunday: Mar 22. Last exceedance: Mar 1, 9am (84.1 dB).</div>
+          </div>
+
+          <div class="card card-inner">
+            <div class="card-title">Online Streaming</div>
+            <div class="card-sub">All platforms · 2026 avg per Sunday</div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#3b82f6;"></span>9am Church Online (unique)</span>
+              <span class="stat-value" style="color:#1d4ed8;">184</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#60a5fa;"></span>11am Church Online (unique)</span>
+              <span class="stat-value" style="color:#1d4ed8;">114</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label" style="padding-left:14px; color:#6b7280; font-size:11px;">Combined</span>
+              <span class="stat-value" style="color:#1d4ed8; font-size:13px;">298 <span style="font-size:10px; font-weight:500; color:#6b7280;">denominational total</span></span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#16a34a;"></span>RESI Concurrent</span>
+              <span class="stat-value" style="font-size:12px; color:#374151;">9am 102 · 11am 82 <span style="color:#9ca3af;">(184)</span></span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#d97706;"></span>YouTube Peak</span>
+              <span class="stat-value" style="font-size:12px; color:#374151;">9am 134 · 11am 86 <span style="color:#9ca3af;">(220)</span></span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#9ca3af;"></span>Avg Watch Time</span>
+              <span class="stat-value" style="font-size:12px; color:#374151;">9am 31m · 11am 38m</span>
+            </div>
+            <div class="inline-notice notice-blue">Church Online unique viewers is the denominational reporting number. Peak views tracked separately.</div>
+          </div>
+
+          <div class="card card-inner">
+            <div class="card-title">Post-Service Evaluations</div>
+            <div class="card-sub">Crew sentiment · 2026 (12 Sundays)</div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#16a34a;"></span>Excellent / Solid</span>
+              <span class="stat-value" style="color:#16a34a;">78%</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#d97706;"></span>Rough Spots</span>
+              <span class="stat-value" style="color:#d97706;">17%</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#dc2626;"></span>Significant Issues</span>
+              <span class="stat-value" style="color:#dc2626;">5%</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label"><span class="stat-dot" style="background:#9ca3af;"></span>Broken Moment Reports</span>
+              <span class="stat-value">3</span>
+            </div>
+            <div class="inline-notice notice-amber">Top theme in rough-spot reports: "audio clarity during message" (3 mentions).</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ══════════════════ EXPLORER ══════════════════ -->
+      <div class="tab-panel" id="tab-explorer">
+
+        <div class="explorer-toolbar">
+          <input class="search-input" type="text" placeholder="Filter by year, date range, temp below 32°F, loudness above target…" />
+          <div class="filter-divider"></div>
+          <div class="filter-chip active">2025</div>
+          <div class="filter-chip">2024</div>
+          <div class="filter-chip">All Years</div>
+          <div class="filter-divider"></div>
+          <div class="filter-chip active">Both Services</div>
+          <div class="filter-chip">9am</div>
+          <div class="filter-chip">11am</div>
+          <div class="filter-divider"></div>
+          <button class="btn btn-secondary">⚙ Columns</button>
+          <button class="btn btn-secondary">↓ Export CSV</button>
+        </div>
+
+        <div class="active-filters">
+          <div class="filter-tag">Year: 2025 <span class="filter-tag-x">✕</span></div>
+          <div class="filter-tag">Both Services <span class="filter-tag-x">✕</span></div>
+          <span class="filter-count">Showing 52 of 260 Sundays</span>
+        </div>
+
+        <!-- Service inner tab bar -->
+        <div style="border-bottom:1px solid #e5e7eb; margin-bottom:12px; display:flex; gap:0;">
+          <div class="service-tab active" onclick="switchService('9am', this)">9:00 AM</div>
+          <div class="service-tab" onclick="switchService('11am', this)">11:00 AM</div>
+          <div class="service-tab" onclick="switchService('combined', this)">Combined</div>
+          <div class="service-tab" onclick="switchService('special', this)">Special Services</div>
+        </div>
+
+        <!-- Shared table header template -->
+        <!-- Column order: Date · Combined Attendance · In-Person · CO Views · CO Unique · CO AVG Watch · YT Unique · Service Run · Message Run · Stage Flip · Weather · Max dB A · Max dB C · LA EQ 15 · LC EQ 15 -->
+
+        <!-- 9am table -->
+        <div class="table-wrap">
+          <table id="explorer-9am" class="data-table service-table">
+            <thead>
+              <tr>
+                <th>Date ↕</th>
+                <th>Combined Att. ↕</th>
+                <th>In-Person ↕</th>
+                <th>CO Views ↕</th>
+                <th>CO Unique ↕</th>
+                <th>CO AVG Watch ↕</th>
+                <th>YT Unique ↕</th>
+                <th>Service Run ↕</th>
+                <th>Message Run ↕</th>
+                <th>Stage Flip ↕</th>
+                <th>Weather ↕</th>
+                <th>Max dB A ↕</th>
+                <th>Max dB C ↕</th>
+                <th>LA EQ 15 ↕</th>
+                <th>LC EQ 15 ↕</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="td-date">Mar 15, 2025</span></td>
+                <td><span class="td-num">1,396</span></td>
+                <td><span class="td-num">1,096</span></td>
+                <td><span class="td-num">402</span></td>
+                <td><span class="td-num">284</span></td>
+                <td><span class="td-num">34m</span></td>
+                <td><span class="td-num">16</span></td>
+                <td><span class="td-num">64m 32s</span></td>
+                <td><span class="td-num">38m 14s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill">58°F Sunny</span></td>
+                <td><span class="td-loud-ok">80.1</span></td>
+                <td><span class="td-loud-ok">94.2</span></td>
+                <td><span class="td-loud-ok">78.4</span></td>
+                <td><span class="td-loud-ok">91.8</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Mar 8, 2025</span></td>
+                <td><span class="td-num">1,340</span></td>
+                <td><span class="td-num">1,058</span></td>
+                <td><span class="td-num">388</span></td>
+                <td><span class="td-num">268</span></td>
+                <td><span class="td-num">32m</span></td>
+                <td><span class="td-num">14</span></td>
+                <td><span class="td-num">62m 18s</span></td>
+                <td><span class="td-num">36m 02s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill weather-rain">44°F Rain</span></td>
+                <td><span class="td-loud-ok">79.8</span></td>
+                <td><span class="td-loud-ok">93.1</span></td>
+                <td><span class="td-loud-ok">77.9</span></td>
+                <td><span class="td-loud-ok">90.4</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Mar 1, 2025</span></td>
+                <td><span class="td-num">1,348</span></td>
+                <td><span class="td-num">1,032</span></td>
+                <td><span class="td-num">368</span></td>
+                <td><span class="td-num">252</span></td>
+                <td><span class="td-num">31m</span></td>
+                <td><span class="td-num">64</span></td>
+                <td><span class="td-num">61m 44s</span></td>
+                <td><span class="td-num">35m 28s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill weather-cold">28°F ❄️</span></td>
+                <td><span class="td-loud-ok">81.0</span></td>
+                <td><span class="td-loud-ok">95.1</span></td>
+                <td><span class="td-loud-ok">79.1</span></td>
+                <td><span class="td-loud-ok">92.3</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Feb 22, 2025</span></td>
+                <td><span class="td-num">1,370</span></td>
+                <td><span class="td-num">1,072</span></td>
+                <td><span class="td-num">374</span></td>
+                <td><span class="td-num">260</span></td>
+                <td><span class="td-num">33m</span></td>
+                <td><span class="td-num">38</span></td>
+                <td><span class="td-num">63m 05s</span></td>
+                <td><span class="td-num">37m 41s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill">52°F Cloudy</span></td>
+                <td><span class="td-loud-ok">80.6</span></td>
+                <td><span class="td-loud-ok">94.7</span></td>
+                <td><span class="td-loud-ok">78.8</span></td>
+                <td><span class="td-loud-ok">92.0</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Feb 16, 2025</span></td>
+                <td><span class="td-num">1,322</span></td>
+                <td><span class="td-num">1,010</span></td>
+                <td><span class="td-num">358</span></td>
+                <td><span class="td-num">246</span></td>
+                <td><span class="td-num">30m</span></td>
+                <td><span class="td-num">66</span></td>
+                <td><span class="td-num">59m 51s</span></td>
+                <td><span class="td-num">34m 09s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill weather-cold">24°F ❄️</span></td>
+                <td><span class="td-loud-over">83.5 ⚠</span></td>
+                <td><span class="td-loud-ok">97.2</span></td>
+                <td><span class="td-loud-over">81.8 ⚠</span></td>
+                <td><span class="td-loud-ok">95.1</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Jan 5, 2025</span></td>
+                <td><span class="td-num">2,312</span></td>
+                <td><span class="td-num">1,680</span></td>
+                <td><span class="td-num">944</span></td>
+                <td><span class="td-num">582</span></td>
+                <td><span class="td-num">41m</span></td>
+                <td><span class="td-num">50</span></td>
+                <td><span class="td-num">67m 22s</span></td>
+                <td><span class="td-num">42m 33s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill">38°F Cloudy</span></td>
+                <td><span class="td-loud-ok">81.4</span></td>
+                <td><span class="td-loud-ok">95.8</span></td>
+                <td><span class="td-loud-ok">79.6</span></td>
+                <td><span class="td-loud-ok">93.2</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="table-foot">
+            <span id="explorer-footer-text">Showing 52 of 260 rows · 9:00 AM service</span>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-ghost">← Prev</button>
+              <button class="btn btn-ghost">Next →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 11am table (hidden by default) -->
+        <div class="table-wrap">
+          <table id="explorer-11am" class="data-table service-table" style="display:none;">
+            <thead>
+              <tr>
+                <th>Date ↕</th>
+                <th>Combined Att. ↕</th>
+                <th>In-Person ↕</th>
+                <th>CO Views ↕</th>
+                <th>CO Unique ↕</th>
+                <th>CO AVG Watch ↕</th>
+                <th>YT Unique ↕</th>
+                <th>Service Run ↕</th>
+                <th>Message Run ↕</th>
+                <th>Stage Flip ↕</th>
+                <th>Weather ↕</th>
+                <th>Max dB A ↕</th>
+                <th>Max dB C ↕</th>
+                <th>LA EQ 15 ↕</th>
+                <th>LC EQ 15 ↕</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="td-date">Mar 15, 2025</span></td>
+                <td><span class="td-num">858</span></td>
+                <td><span class="td-num">742</span></td>
+                <td><span class="td-num">285</span></td>
+                <td><span class="td-num">102</span></td>
+                <td><span class="td-num">38m</span></td>
+                <td><span class="td-num">14</span></td>
+                <td><span class="td-num">66m 48s</span></td>
+                <td><span class="td-num">40m 22s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill">62°F Sunny</span></td>
+                <td><span class="td-loud-ok">81.2</span></td>
+                <td><span class="td-loud-ok">95.4</span></td>
+                <td><span class="td-loud-ok">79.6</span></td>
+                <td><span class="td-loud-ok">92.8</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Mar 8, 2025</span></td>
+                <td><span class="td-num">847</span></td>
+                <td><span class="td-num">733</span></td>
+                <td><span class="td-num">278</span></td>
+                <td><span class="td-num">98</span></td>
+                <td><span class="td-num">36m</span></td>
+                <td><span class="td-num">16</span></td>
+                <td><span class="td-num">67m 11s</span></td>
+                <td><span class="td-num">41m 38s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill weather-rain">48°F Rain</span></td>
+                <td><span class="td-loud-ok">80.9</span></td>
+                <td><span class="td-loud-ok">94.8</span></td>
+                <td><span class="td-loud-ok">79.2</span></td>
+                <td><span class="td-loud-ok">92.1</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Mar 1, 2025</span></td>
+                <td><span class="td-num">838</span></td>
+                <td><span class="td-num">724</span></td>
+                <td><span class="td-num">272</span></td>
+                <td><span class="td-num">96</span></td>
+                <td><span class="td-num">35m</span></td>
+                <td><span class="td-num">18</span></td>
+                <td><span class="td-num">64m 57s</span></td>
+                <td><span class="td-num">38m 44s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill weather-cold">32°F ❄️</span></td>
+                <td><span class="td-loud-ok">82.1</span></td>
+                <td><span class="td-loud-ok">96.0</span></td>
+                <td><span class="td-loud-ok">80.3</span></td>
+                <td><span class="td-loud-ok">93.5</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Feb 22, 2025</span></td>
+                <td><span class="td-num">860</span></td>
+                <td><span class="td-num">748</span></td>
+                <td><span class="td-num">281</span></td>
+                <td><span class="td-num">100</span></td>
+                <td><span class="td-num">37m</span></td>
+                <td><span class="td-num">12</span></td>
+                <td><span class="td-num">66m 29s</span></td>
+                <td><span class="td-num">39m 17s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill">55°F Cloudy</span></td>
+                <td><span class="td-loud-ok">81.9</span></td>
+                <td><span class="td-loud-ok">95.7</span></td>
+                <td><span class="td-loud-ok">80.1</span></td>
+                <td><span class="td-loud-ok">93.2</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Feb 16, 2025</span></td>
+                <td><span class="td-num">827</span></td>
+                <td><span class="td-num">699</span></td>
+                <td><span class="td-num">264</span></td>
+                <td><span class="td-num">94</span></td>
+                <td><span class="td-num">34m</span></td>
+                <td><span class="td-num">34</span></td>
+                <td><span class="td-num">63m 04s</span></td>
+                <td><span class="td-num">37m 52s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill weather-cold">28°F ❄️</span></td>
+                <td><span class="td-loud-ok">81.7</span></td>
+                <td><span class="td-loud-ok">95.3</span></td>
+                <td><span class="td-loud-ok">79.9</span></td>
+                <td><span class="td-loud-ok">92.7</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Jan 5, 2025</span></td>
+                <td><span class="td-num">1,391</span></td>
+                <td><span class="td-num">1,159</span></td>
+                <td><span class="td-num">480</span></td>
+                <td><span class="td-num">198</span></td>
+                <td><span class="td-num">44m</span></td>
+                <td><span class="td-num">34</span></td>
+                <td><span class="td-num">70m 36s</span></td>
+                <td><span class="td-num">44m 08s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill">40°F Cloudy</span></td>
+                <td><span class="td-loud-ok">81.9</span></td>
+                <td><span class="td-loud-ok">95.9</span></td>
+                <td><span class="td-loud-ok">80.2</span></td>
+                <td><span class="td-loud-ok">93.4</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Combined table (hidden by default) -->
+        <div class="table-wrap">
+          <table id="explorer-combined" class="data-table service-table" style="display:none;">
+            <thead>
+              <tr>
+                <th>Date ↕</th>
+                <th>Combined Att. ↕</th>
+                <th>In-Person ↕</th>
+                <th>CO Views ↕</th>
+                <th>CO Unique ↕</th>
+                <th>CO AVG Watch ↕</th>
+                <th>YT Unique ↕</th>
+                <th>Service Run ↕</th>
+                <th>Message Run ↕</th>
+                <th>Stage Flip ↕</th>
+                <th>Weather ↕</th>
+                <th>Max dB A ↕</th>
+                <th>Max dB C ↕</th>
+                <th>LA EQ 15 ↕</th>
+                <th>LC EQ 15 ↕</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="td-date">Mar 15, 2025</span></td>
+                <td><span class="td-num">2,254</span></td>
+                <td><span class="td-num">1,838</span></td>
+                <td><span class="td-num">687</span></td>
+                <td><span class="td-num">386</span></td>
+                <td><span class="td-num">36m</span></td>
+                <td><span class="td-num">30</span></td>
+                <td><span class="td-num">64m 32s / 66m 48s</span></td>
+                <td><span class="td-num">38m 14s / 40m 22s</span></td>
+                <td><span class="td-num">28m 12s</span></td>
+                <td><span class="weather-pill">58°F→62°F Sunny</span></td>
+                <td><span class="td-loud-ok">80.1 / 81.2</span></td>
+                <td><span class="td-loud-ok">94.2 / 95.4</span></td>
+                <td><span class="td-loud-ok">78.4 / 79.6</span></td>
+                <td><span class="td-loud-ok">91.8 / 92.8</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Mar 8, 2025</span></td>
+                <td><span class="td-num">2,187</span></td>
+                <td><span class="td-num">1,791</span></td>
+                <td><span class="td-num">666</span></td>
+                <td><span class="td-num">366</span></td>
+                <td><span class="td-num">34m</span></td>
+                <td><span class="td-num">30</span></td>
+                <td><span class="td-num">62m 18s / 67m 11s</span></td>
+                <td><span class="td-num">36m 02s / 41m 38s</span></td>
+                <td><span class="td-num">26m 44s</span></td>
+                <td><span class="weather-pill weather-rain">44°F→48°F Rain</span></td>
+                <td><span class="td-loud-ok">79.8 / 80.9</span></td>
+                <td><span class="td-loud-ok">93.1 / 94.8</span></td>
+                <td><span class="td-loud-ok">77.9 / 79.2</span></td>
+                <td><span class="td-loud-ok">90.4 / 92.1</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Mar 1, 2025</span></td>
+                <td><span class="td-num">2,186</span></td>
+                <td><span class="td-num">1,756</span></td>
+                <td><span class="td-num">640</span></td>
+                <td><span class="td-num">348</span></td>
+                <td><span class="td-num">33m</span></td>
+                <td><span class="td-num">82</span></td>
+                <td><span class="td-num">61m 44s / 64m 57s</span></td>
+                <td><span class="td-num">35m 28s / 38m 44s</span></td>
+                <td><span class="td-num">24m 08s</span></td>
+                <td><span class="weather-pill weather-cold">28°F ❄️</span></td>
+                <td><span class="td-loud-ok">81.0 / 82.1</span></td>
+                <td><span class="td-loud-ok">95.1 / 96.0</span></td>
+                <td><span class="td-loud-ok">79.1 / 80.3</span></td>
+                <td><span class="td-loud-ok">92.3 / 93.5</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Feb 22, 2025</span></td>
+                <td><span class="td-num">2,230</span></td>
+                <td><span class="td-num">1,820</span></td>
+                <td><span class="td-num">655</span></td>
+                <td><span class="td-num">360</span></td>
+                <td><span class="td-num">35m</span></td>
+                <td><span class="td-num">50</span></td>
+                <td><span class="td-num">63m 05s / 66m 29s</span></td>
+                <td><span class="td-num">37m 41s / 39m 17s</span></td>
+                <td><span class="td-num">27m 33s</span></td>
+                <td><span class="weather-pill">52°F→55°F Cloudy</span></td>
+                <td><span class="td-loud-ok">80.6 / 81.9</span></td>
+                <td><span class="td-loud-ok">94.7 / 95.7</span></td>
+                <td><span class="td-loud-ok">78.8 / 80.1</span></td>
+                <td><span class="td-loud-ok">92.0 / 93.2</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Feb 16, 2025</span></td>
+                <td><span class="td-num">2,149</span></td>
+                <td><span class="td-num">1,709</span></td>
+                <td><span class="td-num">622</span></td>
+                <td><span class="td-num">340</span></td>
+                <td><span class="td-num">32m</span></td>
+                <td><span class="td-num">100</span></td>
+                <td><span class="td-num">59m 51s / 63m 04s</span></td>
+                <td><span class="td-num">34m 09s / 37m 52s</span></td>
+                <td><span class="td-num">22m 17s</span></td>
+                <td><span class="weather-pill weather-cold">24°F ❄️</span></td>
+                <td><span class="td-loud-ok"><span class="td-loud-over">83.5⚠</span> / 81.7</span></td>
+                <td><span class="td-loud-ok">97.2 / 95.3</span></td>
+                <td><span class="td-loud-ok"><span class="td-loud-over">81.8⚠</span> / 79.9</span></td>
+                <td><span class="td-loud-ok">95.1 / 92.7</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Jan 5, 2025</span></td>
+                <td><span class="td-num">3,703</span></td>
+                <td><span class="td-num">2,839</span></td>
+                <td><span class="td-num">1,424</span></td>
+                <td><span class="td-num">780</span></td>
+                <td><span class="td-num">43m</span></td>
+                <td><span class="td-num">84</span></td>
+                <td><span class="td-num">67m 22s / 70m 36s</span></td>
+                <td><span class="td-num">42m 33s / 44m 08s</span></td>
+                <td><span class="td-num">31m 54s</span></td>
+                <td><span class="weather-pill">38°F→40°F Cloudy</span></td>
+                <td><span class="td-loud-ok">81.4 / 81.9</span></td>
+                <td><span class="td-loud-ok">95.8 / 95.9</span></td>
+                <td><span class="td-loud-ok">79.6 / 80.2</span></td>
+                <td><span class="td-loud-ok">93.2 / 93.4</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Special Services table (hidden by default) -->
+        <div class="table-wrap">
+          <table id="explorer-special" class="data-table service-table" style="display:none;">
+            <thead>
+              <tr>
+                <th>Date ↕</th>
+                <th>Combined Att. ↕</th>
+                <th>In-Person ↕</th>
+                <th>CO Views ↕</th>
+                <th>CO Unique ↕</th>
+                <th>CO AVG Watch ↕</th>
+                <th>YT Unique ↕</th>
+                <th>Service Run ↕</th>
+                <th>Message Run ↕</th>
+                <th>Stage Flip ↕</th>
+                <th>Weather ↕</th>
+                <th>Max dB A ↕</th>
+                <th>Max dB C ↕</th>
+                <th>LA EQ 15 ↕</th>
+                <th>LC EQ 15 ↕</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="td-date">Apr 20, 2025</span><span class="td-sub">Easter · 8:00 AM</span></td>
+                <td><span class="td-num">1,612</span></td>
+                <td><span class="td-num">1,244</span></td>
+                <td><span class="td-num">520</span></td>
+                <td><span class="td-num">318</span></td>
+                <td><span class="td-num">44m 12s</span></td>
+                <td><span class="td-num">50</span></td>
+                <td><span class="td-num">72m 14s</span></td>
+                <td><span class="td-num">48m 02s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill">58°F Sunny</span></td>
+                <td><span class="td-loud-ok">81.2</span></td>
+                <td><span class="td-loud-ok">95.1</span></td>
+                <td><span class="td-loud-ok">79.4</span></td>
+                <td><span class="td-loud-ok">92.6</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Apr 20, 2025</span><span class="td-sub">Easter · 9:30 AM</span></td>
+                <td><span class="td-num">1,798</span></td>
+                <td><span class="td-num">1,406</span></td>
+                <td><span class="td-num">612</span></td>
+                <td><span class="td-num">342</span></td>
+                <td><span class="td-num">46m 08s</span></td>
+                <td><span class="td-num">50</span></td>
+                <td><span class="td-num">71m 44s</span></td>
+                <td><span class="td-num">47m 28s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill">62°F Sunny</span></td>
+                <td><span class="td-loud-over">82.4 ⚠</span></td>
+                <td><span class="td-loud-ok">96.2</span></td>
+                <td><span class="td-loud-over">80.6 ⚠</span></td>
+                <td><span class="td-loud-ok">93.8</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Dec 29, 2024</span><span class="td-sub">Combined · 10:30 AM</span></td>
+                <td><span class="td-num">2,102</span></td>
+                <td><span class="td-num">1,788</span></td>
+                <td><span class="td-num">724</span></td>
+                <td><span class="td-num">284</span></td>
+                <td><span class="td-num">39m 22s</span></td>
+                <td><span class="td-num">30</span></td>
+                <td><span class="td-num">68m 38s</span></td>
+                <td><span class="td-num">44m 51s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill weather-cold">42°F Cloudy</span></td>
+                <td><span class="td-loud-ok">80.8</span></td>
+                <td><span class="td-loud-ok">94.6</span></td>
+                <td><span class="td-loud-ok">79.1</span></td>
+                <td><span class="td-loud-ok">92.4</span></td>
+              </tr>
+              <tr>
+                <td><span class="td-date">Dec 24, 2024</span><span class="td-sub">Christmas Eve · 4:00 PM</span></td>
+                <td><span class="td-num">1,842</span></td>
+                <td><span class="td-num">1,612</span></td>
+                <td><span class="td-num">480</span></td>
+                <td><span class="td-num">204</span></td>
+                <td><span class="td-num">36m 44s</span></td>
+                <td><span class="td-num">26</span></td>
+                <td><span class="td-num">64m 22s</span></td>
+                <td><span class="td-num">38m 18s</span></td>
+                <td><span class="td-num">—</span></td>
+                <td><span class="weather-pill weather-cold">38°F Cloudy</span></td>
+                <td><span class="td-loud-ok">80.2</span></td>
+                <td><span class="td-loud-ok">94.1</span></td>
+                <td><span class="td-loud-ok">78.8</span></td>
+                <td><span class="td-loud-ok">91.9</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Shared table footer (outside all table-wrap divs, updated by JS) -->
+        <div class="table-foot" style="border:1px solid #e5e7eb; border-top:0; border-radius:0 0 12px 12px; margin-top:-1px;">
+          <span id="explorer-footer-text2">Showing 52 of 260 rows · 9:00 AM service</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost">← Prev</button>
+            <button class="btn btn-ghost">Next →</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ══════════════════ INSIGHTS ══════════════════ -->
+      <div class="tab-panel" id="tab-insights">
+        <div class="insights-layout">
+
+          <!-- Left: input + examples -->
+          <div>
+            <div class="card card-inner" style="margin-bottom:14px;">
+              <div class="card-title" style="margin-bottom:4px;">Ask a Question</div>
+              <div class="card-sub" style="margin-bottom:10px;">Ask anything about your Sunday data in plain English. Uses your full history back to 2020.</div>
+              <div class="query-area">
+                <textarea rows="3">Average in-person attendance when the temperature was below 32°F</textarea>
+              </div>
+              <div class="query-foot">
+                <span class="query-hint">Searches 260 Sundays · 2020–2026</span>
+                <button class="btn btn-primary">Run →</button>
+              </div>
+            </div>
+
+            <div class="card card-inner">
+              <div class="examples-label">Example Questions</div>
+              <div class="example-list">
+                <div class="example-item"><span class="example-icon">🌡️</span>Average in-person vs online when temp was below 32°F</div>
+                <div class="example-item"><span class="example-icon">🔊</span>Attendance the Sunday after we exceeded the loudness target</div>
+                <div class="example-item"><span class="example-icon">📅</span>Which month of the year has the highest average attendance?</div>
+                <div class="example-item"><span class="example-icon">⛈️</span>How does rain affect in-person attendance vs clear Sundays?</div>
+                <div class="example-item"><span class="example-icon">🎄</span>Average Easter vs average regular Sunday attendance</div>
+                <div class="example-item"><span class="example-icon">📺</span>Is there a correlation between service runtime and online viewers?</div>
+                <div class="example-item"><span class="example-icon">🏆</span>Top 10 Sundays by total attendance all time</div>
+                <div class="example-item"><span class="example-icon">📈</span>Year-over-year growth rate in concurrent online viewers</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: AI response -->
+          <div class="ai-card">
+            <div class="ai-header">
+              <span class="ai-badge">✦ AI Analysis</span>
+            </div>
+            <div class="ai-question">Average in-person attendance when the temperature was below 32°F</div>
+
+            <div class="answer-stat-row">
+              <div class="answer-stat neg">
+                <div class="n">1,498</div>
+                <div class="l">Below 32°F avg</div>
+              </div>
+              <div class="answer-stat highlight">
+                <div class="n">1,612</div>
+                <div class="l">All-Sunday avg</div>
+              </div>
+              <div class="answer-stat neg">
+                <div class="n">−7.1%</div>
+                <div class="l">Cold-weather impact</div>
+              </div>
+            </div>
+
+            <div class="result-chart">
+              <svg viewBox="0 0 480 130" preserveAspectRatio="none">
+                <line x1="0" y1="26" x2="480" y2="26" stroke="#e5e7eb" stroke-width="1"/>
+                <line x1="0" y1="65" x2="480" y2="65" stroke="#e5e7eb" stroke-width="1"/>
+                <line x1="0" y1="104" x2="480" y2="104" stroke="#e5e7eb" stroke-width="1"/>
+                <!-- All-Sunday trend -->
+                <polyline fill="none" stroke="#93c5fd" stroke-width="2" opacity="0.8"
+                  points="10,68 50,58 90,72 130,55 170,64 210,50 250,56 290,70 330,48 370,58 410,72 450,54"/>
+                <!-- All avg dashed line -->
+                <line x1="10" y1="62" x2="470" y2="62" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="5 3" opacity="0.5"/>
+                <!-- Cold weather dots -->
+                <circle cx="130" cy="86" r="5" fill="#dc2626" opacity="0.75"/>
+                <circle cx="50" cy="90" r="5" fill="#dc2626" opacity="0.75"/>
+                <circle cx="290" cy="88" r="5" fill="#dc2626" opacity="0.75"/>
+                <circle cx="210" cy="83" r="5" fill="#dc2626" opacity="0.75"/>
+                <circle cx="410" cy="88" r="5" fill="#dc2626" opacity="0.75"/>
+                <!-- Cold avg dashed line -->
+                <line x1="10" y1="87" x2="470" y2="87" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5 3" opacity="0.5"/>
+              </svg>
+            </div>
+
+            <div class="chart-legend" style="margin-bottom:12px;">
+              <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div>All-Sunday avg (1,612)</div>
+              <div class="legend-item"><div class="legend-dot" style="background:#dc2626;"></div>Freezing Sundays avg (1,498)</div>
+            </div>
+
+            <div class="ai-prose">
+              Across <strong>38 Sundays</strong> since 2021 where temperature at service time was below 32°F, average in-person attendance was <strong>1,498</strong> — about <strong>114 fewer people</strong> than the all-Sunday average of 1,612.
+
+              <br><br>Church Online unique viewers on those same Sundays averaged <strong>342</strong>, vs. the overall average of <strong>282</strong> — suggesting about <strong>60 additional online viewers</strong> on freezing Sundays. The drop is partly a shift, not a pure loss.
+
+              <br><br>The effect is stronger for 9am (−9.2%) than 11am (−4.8%), likely because 9am attendees face the coldest part of the morning.
+            </div>
+
+            <div class="follow-ups-label">Follow-up questions</div>
+            <div class="follow-up-list">
+              <div class="follow-up-chip">Same analysis for below 20°F?</div>
+              <div class="follow-up-chip">Does snow vs dry-cold matter?</div>
+              <div class="follow-up-chip">Show this by year</div>
+              <div class="follow-up-chip">9am vs 11am breakdown</div>
+              <div class="follow-up-chip">Compare to rainy Sundays</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /tab-panels -->
+
+    <div class="mockup-bar">Design mockup — numbers drawn from actual 2025 Google Sheet data. Tab switching is interactive.</div>
+  </div><!-- /main -->
+
+</div><!-- /shell -->
+
+<script>
+  function switchTab(id, el) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('tab-' + id).classList.add('active');
+  }
+
+  function switchService(id, el) {
+    document.querySelectorAll('.service-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.querySelectorAll('.service-table').forEach(t => t.style.display = 'none');
+    document.getElementById('explorer-' + id).style.display = 'table';
+    const footerTexts = {
+      '9am':      'Showing 52 of 260 rows · 9:00 AM service',
+      '11am':     'Showing 52 of 260 rows · 11:00 AM service',
+      'combined': 'Showing 52 of 260 rows · both services combined',
+      'special':  'Showing 4 of 24 rows · special services'
+    };
+    document.getElementById('explorer-footer-text').textContent = footerTexts[id];
+    document.getElementById('explorer-footer-text2').textContent = footerTexts[id];
+  }
+</script>
+</body>
+</html>

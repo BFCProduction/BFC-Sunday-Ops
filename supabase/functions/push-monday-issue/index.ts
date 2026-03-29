@@ -1,8 +1,16 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const ALLOWED_ORIGINS = [
+  'https://bfcproduction.github.io',
+  'http://localhost:5173',
+]
+
+function getCorsHeaders(request: Request) {
+  const origin = request.headers.get('Origin') ?? ''
+  return {
+    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 interface PushIssuePayload {
@@ -76,6 +84,8 @@ async function mondayRequest<T>(query: string, variables: Record<string, unknown
 }
 
 Deno.serve(async request => {
+  const corsHeaders = getCorsHeaders(request)
+
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }

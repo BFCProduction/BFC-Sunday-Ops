@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sunday Ops — Icon Concepts</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #1a1a1a;
+      font-family: "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+      color: #fff;
+      padding: 48px 40px 80px;
+    }
+    h1 { font-size: 13px; font-weight: 600; letter-spacing: .15em; text-transform: uppercase; color: #555; margin-bottom: 48px; }
+    .row {
+      display: flex;
+      gap: 48px;
+      flex-wrap: wrap;
+      margin-bottom: 72px;
+    }
+    .concept { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+    .concept-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #555;
+    }
+    .concept-desc {
+      font-size: 12px;
+      color: #444;
+      text-align: center;
+      max-width: 180px;
+      line-height: 1.6;
+    }
+    /* iOS simulation */
+    .ios-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .ios-label { font-size: 10px; color: #444; letter-spacing: .08em; }
+    svg.icon-lg { border-radius: 22.5%; display: block; }
+    svg.icon-sm { border-radius: 17.5%; display: block; }
+    svg.icon-xs { border-radius: 15%; display: block; }
+    .sizes { display: flex; align-items: flex-end; gap: 16px; }
+    section { margin-bottom: 80px; }
+    section h2 {
+      font-size: 11px;
+      color: #444;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      margin-bottom: 32px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #2a2a2a;
+    }
+  </style>
+</head>
+<body>
+
+<h1>BFC Sunday Ops — Icon Concepts</h1>
+
+<section>
+  <h2>Concept A — "S" Lettermark with Waveform · Family Match</h2>
+  <div class="row">
+    <div class="concept">
+      <div class="sizes">
+        <!-- 180px -->
+        <div class="ios-wrap">
+          <svg class="icon-lg" width="180" height="180" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <!-- Gradient bar at top -->
+            <defs>
+              <linearGradient id="gA" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#2563eb"/>
+                <stop offset="100%" stop-color="#10b981"/>
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="180" height="5" fill="url(#gA)"/>
+            <!-- Bold S -->
+            <text x="90" y="118" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif"
+              font-size="118" font-weight="900" fill="white"
+              text-anchor="middle" dominant-baseline="auto"
+              letter-spacing="-4">S</text>
+            <!-- Waveform lines at bottom — matching BFC production icon motif -->
+            <g fill="white" opacity="0.55">
+              <!-- center peak -->
+              <rect x="86" y="138" width="8" height="28" rx="2"/>
+              <!-- flanking -->
+              <rect x="72" y="144" width="6" height="18" rx="2"/>
+              <rect x="102" y="144" width="6" height="18" rx="2"/>
+              <rect x="58" y="149" width="5" height="12" rx="2"/>
+              <rect x="115" y="149" width="5" height="12" rx="2"/>
+              <rect x="45" y="152" width="4" height="8" rx="2"/>
+              <rect x="127" y="152" width="4" height="8" rx="2"/>
+              <rect x="33" y="154" width="3" height="6" rx="2"/>
+              <rect x="139" y="154" width="3" height="6" rx="2"/>
+              <rect x="22" y="156" width="3" height="5" rx="2"/>
+              <rect x="149" y="156" width="3" height="5" rx="2"/>
+              <rect x="13" y="157" width="2" height="4" rx="1"/>
+              <rect x="158" y="157" width="2" height="4" rx="1"/>
+            </g>
+          </svg>
+          <span class="ios-label">180 × 180</span>
+        </div>
+        <!-- 80px -->
+        <div class="ios-wrap">
+          <svg class="icon-sm" width="80" height="80" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <defs><linearGradient id="gA2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient></defs>
+            <rect x="0" y="0" width="180" height="5" fill="url(#gA2)"/>
+            <text x="90" y="118" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-size="118" font-weight="900" fill="white" text-anchor="middle" dominant-baseline="auto" letter-spacing="-4">S</text>
+            <g fill="white" opacity="0.55">
+              <rect x="86" y="138" width="8" height="28" rx="2"/>
+              <rect x="72" y="144" width="6" height="18" rx="2"/>
+              <rect x="102" y="144" width="6" height="18" rx="2"/>
+              <rect x="58" y="149" width="5" height="12" rx="2"/>
+              <rect x="115" y="149" width="5" height="12" rx="2"/>
+              <rect x="45" y="152" width="4" height="8" rx="2"/>
+              <rect x="127" y="152" width="4" height="8" rx="2"/>
+              <rect x="33" y="154" width="3" height="6" rx="2"/>
+              <rect x="139" y="154" width="3" height="6" rx="2"/>
+            </g>
+          </svg>
+          <span class="ios-label">80 × 80</span>
+        </div>
+        <!-- 44px -->
+        <div class="ios-wrap">
+          <svg class="icon-xs" width="44" height="44" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <defs><linearGradient id="gA3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient></defs>
+            <rect x="0" y="0" width="180" height="5" fill="url(#gA3)"/>
+            <text x="90" y="118" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-size="118" font-weight="900" fill="white" text-anchor="middle" dominant-baseline="auto" letter-spacing="-4">S</text>
+            <g fill="white" opacity="0.55">
+              <rect x="86" y="138" width="8" height="28" rx="2"/>
+              <rect x="72" y="144" width="6" height="18" rx="2"/>
+              <rect x="102" y="144" width="6" height="18" rx="2"/>
+            </g>
+          </svg>
+          <span class="ios-label">44 × 44</span>
+        </div>
+      </div>
+      <div class="concept-desc">Bold "S" lettermark, waveform motif from the BFC Production icon. Direct family match.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Concept B — Gradient "S" on Dark · App Color Language</h2>
+  <div class="row">
+    <div class="concept">
+      <div class="sizes">
+        <div class="ios-wrap">
+          <svg class="icon-lg" width="180" height="180" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gB" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#2563eb"/>
+                <stop offset="100%" stop-color="#10b981"/>
+              </linearGradient>
+              <linearGradient id="gBtop" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#2563eb"/>
+                <stop offset="100%" stop-color="#10b981"/>
+              </linearGradient>
+            </defs>
+            <rect width="180" height="180" fill="#111827"/>
+            <!-- Subtle gradient vignette -->
+            <rect width="180" height="180" fill="url(#gB)" opacity="0.08"/>
+            <!-- Gradient bar -->
+            <rect x="0" y="0" width="180" height="4" fill="url(#gBtop)"/>
+            <!-- S in gradient -->
+            <text x="90" y="122" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif"
+              font-size="130" font-weight="900" fill="url(#gB)"
+              text-anchor="middle" dominant-baseline="auto">S</text>
+            <!-- Small dot indicator bottom right — "live" -->
+            <circle cx="148" cy="148" r="10" fill="#10b981"/>
+            <circle cx="148" cy="148" r="5" fill="#0d0d0d"/>
+          </svg>
+          <span class="ios-label">180 × 180</span>
+        </div>
+        <div class="ios-wrap">
+          <svg class="icon-sm" width="80" height="80" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gB2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+              <linearGradient id="gBtop2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+            </defs>
+            <rect width="180" height="180" fill="#111827"/>
+            <rect width="180" height="180" fill="url(#gB2)" opacity="0.08"/>
+            <rect x="0" y="0" width="180" height="4" fill="url(#gBtop2)"/>
+            <text x="90" y="122" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-size="130" font-weight="900" fill="url(#gB2)" text-anchor="middle" dominant-baseline="auto">S</text>
+            <circle cx="148" cy="148" r="10" fill="#10b981"/>
+            <circle cx="148" cy="148" r="5" fill="#0d0d0d"/>
+          </svg>
+          <span class="ios-label">80 × 80</span>
+        </div>
+        <div class="ios-wrap">
+          <svg class="icon-xs" width="44" height="44" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gB3" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+              <linearGradient id="gBtop3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+            </defs>
+            <rect width="180" height="180" fill="#111827"/>
+            <rect width="180" height="180" fill="url(#gB3)" opacity="0.08"/>
+            <rect x="0" y="0" width="180" height="4" fill="url(#gBtop3)"/>
+            <text x="90" y="122" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-size="130" font-weight="900" fill="url(#gB3)" text-anchor="middle" dominant-baseline="auto">S</text>
+            <circle cx="148" cy="148" r="10" fill="#10b981"/>
+            <circle cx="148" cy="148" r="5" fill="#0d0d0d"/>
+          </svg>
+          <span class="ios-label">44 × 44</span>
+        </div>
+      </div>
+      <div class="concept-desc">Gradient "S" matching the app's blue→green accent. Dot indicator nods to a "live" status. Distinct from the BFC Production all-white icon.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Concept C — Checklist + Broadcast · Literal Ops Symbol</h2>
+  <div class="row">
+    <div class="concept">
+      <div class="sizes">
+        <div class="ios-wrap">
+          <svg class="icon-lg" width="180" height="180" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gC" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#2563eb"/>
+                <stop offset="100%" stop-color="#10b981"/>
+              </linearGradient>
+            </defs>
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <rect x="0" y="0" width="180" height="5" fill="url(#gC)"/>
+            <!-- Clipboard body -->
+            <rect x="44" y="42" width="92" height="108" rx="8" fill="none" stroke="white" stroke-width="5"/>
+            <!-- Clipboard clip -->
+            <rect x="66" y="34" width="48" height="16" rx="6" fill="#0d0d0d" stroke="white" stroke-width="4.5"/>
+            <!-- Checklist lines with checks -->
+            <!-- Row 1 - checked -->
+            <rect x="60" y="73" width="12" height="12" rx="3" fill="none" stroke="#10b981" stroke-width="3"/>
+            <polyline points="62,79 65,83 70,75" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="80" y="75" width="44" height="5" rx="2.5" fill="white" opacity="0.7"/>
+            <!-- Row 2 - checked -->
+            <rect x="60" y="93" width="12" height="12" rx="3" fill="none" stroke="#10b981" stroke-width="3"/>
+            <polyline points="62,99 65,103 70,95" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="80" y="95" width="36" height="5" rx="2.5" fill="white" opacity="0.7"/>
+            <!-- Row 3 - in progress / blue -->
+            <rect x="60" y="113" width="12" height="12" rx="3" fill="none" stroke="#2563eb" stroke-width="3"/>
+            <rect x="80" y="115" width="50" height="5" rx="2.5" fill="white" opacity="0.4"/>
+            <!-- Broadcast arc bottom right -->
+            <g transform="translate(116, 124)">
+              <path d="M0,0 A18,18 0 0,1 18,18" fill="none" stroke="#2563eb" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+              <path d="M0,0 A10,10 0 0,1 10,10" fill="none" stroke="#2563eb" stroke-width="3.5" stroke-linecap="round" opacity="0.7"/>
+              <circle cx="0" cy="0" r="3" fill="#2563eb"/>
+            </g>
+          </svg>
+          <span class="ios-label">180 × 180</span>
+        </div>
+        <div class="ios-wrap">
+          <svg class="icon-sm" width="80" height="80" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gC2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient></defs>
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <rect x="0" y="0" width="180" height="5" fill="url(#gC2)"/>
+            <rect x="44" y="42" width="92" height="108" rx="8" fill="none" stroke="white" stroke-width="5"/>
+            <rect x="66" y="34" width="48" height="16" rx="6" fill="#0d0d0d" stroke="white" stroke-width="4.5"/>
+            <rect x="60" y="73" width="12" height="12" rx="3" fill="none" stroke="#10b981" stroke-width="3"/>
+            <polyline points="62,79 65,83 70,75" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="80" y="75" width="44" height="5" rx="2.5" fill="white" opacity="0.7"/>
+            <rect x="60" y="93" width="12" height="12" rx="3" fill="none" stroke="#10b981" stroke-width="3"/>
+            <polyline points="62,99 65,103 70,95" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="80" y="95" width="36" height="5" rx="2.5" fill="white" opacity="0.7"/>
+            <rect x="60" y="113" width="12" height="12" rx="3" fill="none" stroke="#2563eb" stroke-width="3"/>
+            <rect x="80" y="115" width="50" height="5" rx="2.5" fill="white" opacity="0.4"/>
+            <g transform="translate(116, 124)">
+              <path d="M0,0 A18,18 0 0,1 18,18" fill="none" stroke="#2563eb" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+              <path d="M0,0 A10,10 0 0,1 10,10" fill="none" stroke="#2563eb" stroke-width="3.5" stroke-linecap="round" opacity="0.7"/>
+              <circle cx="0" cy="0" r="3" fill="#2563eb"/>
+            </g>
+          </svg>
+          <span class="ios-label">80 × 80</span>
+        </div>
+        <div class="ios-wrap">
+          <svg class="icon-xs" width="44" height="44" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="gC3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient></defs>
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <rect x="0" y="0" width="180" height="5" fill="url(#gC3)"/>
+            <rect x="44" y="42" width="92" height="108" rx="8" fill="none" stroke="white" stroke-width="5"/>
+            <rect x="66" y="34" width="48" height="16" rx="6" fill="#0d0d0d" stroke="white" stroke-width="4.5"/>
+            <rect x="60" y="73" width="12" height="12" rx="3" fill="none" stroke="#10b981" stroke-width="3"/>
+            <polyline points="62,79 65,83 70,75" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="80" y="75" width="44" height="5" rx="2.5" fill="white" opacity="0.7"/>
+            <rect x="60" y="93" width="12" height="12" rx="3" fill="none" stroke="#10b981" stroke-width="3"/>
+            <rect x="80" y="95" width="36" height="5" rx="2.5" fill="white" opacity="0.4"/>
+            <rect x="60" y="113" width="12" height="12" rx="3" fill="none" stroke="#2563eb" stroke-width="3"/>
+            <rect x="80" y="115" width="50" height="5" rx="2.5" fill="white" opacity="0.3"/>
+          </svg>
+          <span class="ios-label">44 × 44</span>
+        </div>
+      </div>
+      <div class="concept-desc">Clipboard checklist with broadcast arcs. Literal representation of "production ops." Gets complex at small sizes.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Concept D — "S" + Checkmark Fusion · Bold & Clean</h2>
+  <div class="row">
+    <div class="concept">
+      <div class="sizes">
+        <div class="ios-wrap">
+          <svg class="icon-lg" width="180" height="180" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gD" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#2563eb"/>
+                <stop offset="100%" stop-color="#10b981"/>
+              </linearGradient>
+              <linearGradient id="gDfill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#ffffff"/>
+                <stop offset="100%" stop-color="#cccccc"/>
+              </linearGradient>
+            </defs>
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <!-- Gradient accent bar -->
+            <rect x="0" y="0" width="180" height="5" fill="url(#gD)"/>
+            <!-- Large S -->
+            <text x="82" y="116" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif"
+              font-size="115" font-weight="900" fill="url(#gDfill)"
+              text-anchor="middle" dominant-baseline="auto">S</text>
+            <!-- Bold checkmark overlaid bottom-right of S -->
+            <g transform="translate(103, 92)">
+              <polyline points="0,14 10,24 30,0"
+                fill="none" stroke="url(#gD)" stroke-width="9"
+                stroke-linecap="round" stroke-linejoin="round"/>
+            </g>
+            <!-- Waveform -->
+            <g fill="white" opacity="0.3">
+              <rect x="86" y="142" width="8" height="22" rx="2"/>
+              <rect x="73" y="148" width="6" height="14" rx="2"/>
+              <rect x="101" y="148" width="6" height="14" rx="2"/>
+              <rect x="61" y="152" width="5" height="10" rx="2"/>
+              <rect x="114" y="152" width="5" height="10" rx="2"/>
+              <rect x="50" y="155" width="4" height="8" rx="2"/>
+              <rect x="126" y="155" width="4" height="8" rx="2"/>
+              <rect x="40" y="157" width="3" height="6" rx="2"/>
+              <rect x="137" y="157" width="3" height="6" rx="2"/>
+              <rect x="30" y="158" width="3" height="5" rx="2"/>
+              <rect x="147" y="158" width="3" height="5" rx="2"/>
+              <rect x="20" y="159" width="2" height="4" rx="1"/>
+              <rect x="157" y="159" width="2" height="4" rx="1"/>
+            </g>
+          </svg>
+          <span class="ios-label">180 × 180</span>
+        </div>
+        <div class="ios-wrap">
+          <svg class="icon-sm" width="80" height="80" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gD2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+              <linearGradient id="gDf2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#cccccc"/></linearGradient>
+            </defs>
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <rect x="0" y="0" width="180" height="5" fill="url(#gD2)"/>
+            <text x="82" y="116" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-size="115" font-weight="900" fill="url(#gDf2)" text-anchor="middle" dominant-baseline="auto">S</text>
+            <g transform="translate(103, 92)">
+              <polyline points="0,14 10,24 30,0" fill="none" stroke="url(#gD2)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+            </g>
+            <g fill="white" opacity="0.3">
+              <rect x="86" y="142" width="8" height="22" rx="2"/>
+              <rect x="73" y="148" width="6" height="14" rx="2"/>
+              <rect x="101" y="148" width="6" height="14" rx="2"/>
+              <rect x="61" y="152" width="5" height="10" rx="2"/>
+              <rect x="114" y="152" width="5" height="10" rx="2"/>
+            </g>
+          </svg>
+          <span class="ios-label">80 × 80</span>
+        </div>
+        <div class="ios-wrap">
+          <svg class="icon-xs" width="44" height="44" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gD3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+              <linearGradient id="gDf3" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#cccccc"/></linearGradient>
+            </defs>
+            <rect width="180" height="180" fill="#0d0d0d"/>
+            <rect x="0" y="0" width="180" height="5" fill="url(#gD3)"/>
+            <text x="82" y="116" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-size="115" font-weight="900" fill="url(#gDf3)" text-anchor="middle" dominant-baseline="auto">S</text>
+            <g transform="translate(103, 92)">
+              <polyline points="0,14 10,24 30,0" fill="none" stroke="url(#gD3)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+            </g>
+          </svg>
+          <span class="ios-label">44 × 44</span>
+        </div>
+      </div>
+      <div class="concept-desc">"S" lettermark with gradient checkmark overlay — fuses "Sunday" + "Ops done." Waveform at bottom ties back to BFC Production family. Reads well at all sizes.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Side by side comparison at iPhone home screen scale -->
+<section>
+  <h2>All Four at Home Screen Scale (60px)</h2>
+  <div class="row" style="align-items:center; gap:24px;">
+    <!-- A -->
+    <div class="ios-wrap">
+      <svg style="border-radius:13px;display:block;" width="60" height="60" viewBox="0 0 180 180">
+        <defs><linearGradient id="cA" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient></defs>
+        <rect width="180" height="180" fill="#0d0d0d"/>
+        <rect x="0" y="0" width="180" height="5" fill="url(#cA)"/>
+        <text x="90" y="118" font-family="'Arial Black',Arial,sans-serif" font-size="118" font-weight="900" fill="white" text-anchor="middle" dominant-baseline="auto">S</text>
+        <g fill="white" opacity="0.55">
+          <rect x="86" y="138" width="8" height="28" rx="2"/>
+          <rect x="72" y="144" width="6" height="18" rx="2"/>
+          <rect x="102" y="144" width="6" height="18" rx="2"/>
+          <rect x="58" y="149" width="5" height="12" rx="2"/>
+          <rect x="115" y="149" width="5" height="12" rx="2"/>
+          <rect x="45" y="152" width="4" height="8" rx="2"/>
+          <rect x="127" y="152" width="4" height="8" rx="2"/>
+        </g>
+      </svg>
+      <span class="ios-label">A</span>
+    </div>
+    <!-- B -->
+    <div class="ios-wrap">
+      <svg style="border-radius:13px;display:block;" width="60" height="60" viewBox="0 0 180 180">
+        <defs>
+          <linearGradient id="cB" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+          <linearGradient id="cBt" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+        </defs>
+        <rect width="180" height="180" fill="#111827"/>
+        <rect width="180" height="180" fill="url(#cB)" opacity="0.08"/>
+        <rect x="0" y="0" width="180" height="4" fill="url(#cBt)"/>
+        <text x="90" y="122" font-family="'Arial Black',Arial,sans-serif" font-size="130" font-weight="900" fill="url(#cB)" text-anchor="middle" dominant-baseline="auto">S</text>
+        <circle cx="148" cy="148" r="10" fill="#10b981"/>
+        <circle cx="148" cy="148" r="5" fill="#0d0d0d"/>
+      </svg>
+      <span class="ios-label">B</span>
+    </div>
+    <!-- C -->
+    <div class="ios-wrap">
+      <svg style="border-radius:13px;display:block;" width="60" height="60" viewBox="0 0 180 180">
+        <defs><linearGradient id="cC" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient></defs>
+        <rect width="180" height="180" fill="#0d0d0d"/>
+        <rect x="0" y="0" width="180" height="5" fill="url(#cC)"/>
+        <rect x="44" y="42" width="92" height="108" rx="8" fill="none" stroke="white" stroke-width="5"/>
+        <rect x="66" y="34" width="48" height="16" rx="6" fill="#0d0d0d" stroke="white" stroke-width="4.5"/>
+        <rect x="60" y="73" width="12" height="12" rx="3" fill="none" stroke="#10b981" stroke-width="3"/>
+        <polyline points="62,79 65,83 70,75" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="80" y="75" width="44" height="5" rx="2.5" fill="white" opacity="0.7"/>
+        <rect x="60" y="93" width="12" height="12" rx="3" fill="none" stroke="#10b981" stroke-width="3"/>
+        <polyline points="62,99 65,103 70,95" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="80" y="95" width="36" height="5" rx="2.5" fill="white" opacity="0.7"/>
+        <rect x="60" y="113" width="12" height="12" rx="3" fill="none" stroke="#2563eb" stroke-width="3"/>
+        <rect x="80" y="115" width="50" height="5" rx="2.5" fill="white" opacity="0.4"/>
+      </svg>
+      <span class="ios-label">C</span>
+    </div>
+    <!-- D -->
+    <div class="ios-wrap">
+      <svg style="border-radius:13px;display:block;" width="60" height="60" viewBox="0 0 180 180">
+        <defs>
+          <linearGradient id="cD" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+          <linearGradient id="cDf" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#cccccc"/></linearGradient>
+        </defs>
+        <rect width="180" height="180" fill="#0d0d0d"/>
+        <rect x="0" y="0" width="180" height="5" fill="url(#cD)"/>
+        <text x="82" y="116" font-family="'Arial Black',Arial,sans-serif" font-size="115" font-weight="900" fill="url(#cDf)" text-anchor="middle" dominant-baseline="auto">S</text>
+        <g transform="translate(103, 92)">
+          <polyline points="0,14 10,24 30,0" fill="none" stroke="url(#cD)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+        <g fill="white" opacity="0.3">
+          <rect x="86" y="142" width="8" height="22" rx="2"/>
+          <rect x="73" y="148" width="6" height="14" rx="2"/>
+          <rect x="101" y="148" width="6" height="14" rx="2"/>
+          <rect x="61" y="152" width="5" height="10" rx="2"/>
+          <rect x="114" y="152" width="5" height="10" rx="2"/>
+        </g>
+      </svg>
+      <span class="ios-label">D</span>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

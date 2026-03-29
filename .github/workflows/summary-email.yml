@@ -1,0 +1,27 @@
+name: Sunday Summary Email
+on:
+  schedule:
+    - cron: '*/15 * * * 0'
+  workflow_dispatch:
+
+jobs:
+  send-summary-email:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - name: Send Sunday summary email if scheduled
+        run: node scripts/send-sunday-summary.js
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          GMAIL_DELEGATED_USER: ${{ secrets.GMAIL_DELEGATED_USER }}
+          REPORT_EMAIL_FROM_NAME: ${{ secrets.REPORT_EMAIL_FROM_NAME }}
+          REPORT_EMAIL_FROM_ADDRESS: ${{ secrets.REPORT_EMAIL_FROM_ADDRESS }}
+          REPORT_EMAIL_REPLY_TO: ${{ secrets.REPORT_EMAIL_REPLY_TO }}

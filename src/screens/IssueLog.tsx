@@ -189,7 +189,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const chosen = Array.from(e.target.files ?? [])
+    const chosen = Array.from(e.target.files ?? []).filter(f => f.type.startsWith('image/'))
     if (chosen.length === 0) return
     setPendingFiles(prev => [...prev, ...chosen])
     chosen.forEach(file => {
@@ -283,18 +283,30 @@ export function IssueLog({ sundayId }: IssueLogProps) {
         const result = await response.json().catch(() => ({}))
         const mondayItemId = typeof result?.itemId === 'string' ? result.itemId : null
 
-        // Mark as pushed regardless of response status — if the item appeared
-        // in Monday the push worked even if the function returned a non-2xx.
-        await supabase.from('issues').update({
+        // Belt-and-suspenders: edge function also updates pushed_to_monday server-side.
+        const { error: markError } = await supabase.from('issues').update({
           pushed_to_monday: true,
           monday_item_id: mondayItemId,
         }).eq('id', data.id)
 
-        setIssues(prev => prev.map(entry => (
+        if (markError) {
+          console.error('Failed to update pushed_to_monday in DB:', markError.message)
+        }
+
+        // Re-fetch the issue so state reflects whatever the DB actually has.
+        // Handles cases where only one of the two DB updates (edge fn vs. frontend)
+        // succeeded, and avoids "Logged only" showing after navigating away and back.
+        const { data: refreshed } = await supabase
+          .from('issues')
+          .select('*')
+          .eq('id', data.id)
+          .single()
+
+        setIssues(prev => prev.map(entry =>
           entry.id === data.id
-            ? { ...entry, pushed_to_monday: true, monday_item_id: mondayItemId }
+            ? refreshed ? (refreshed as Issue) : { ...entry, pushed_to_monday: true, monday_item_id: mondayItemId }
             : entry
-        )))
+        ))
       } catch (err) {
         // Only fires on network-level failure (can't reach the edge function at all)
         console.error(err)
