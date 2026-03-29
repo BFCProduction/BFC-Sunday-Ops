@@ -89,8 +89,8 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
 
   const [history, setHistory] = useState<Array<{
     date: string
-    s1Max: number; s1LAeq: number; s1LCeq: number
-    s2Max: number; s2LAeq: number; s2LCeq: number
+    s1Max: number; s1MaxC: number; s1LAeq: number; s1LCeq: number
+    s2Max: number; s2MaxC: number; s2LAeq: number; s2LCeq: number
   }>>([])
 
   const [s1Saving, setS1Saving] = useState(false)
@@ -119,12 +119,12 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
         if (data) {
           setHistory(data.map((r: {
             sundays: { date: string }
-            service_1_max_db: number; service_1_laeq: number; service_1_lceq: number
-            service_2_max_db: number; service_2_laeq: number; service_2_lceq: number
+            service_1_max_db: number; service_1_max_db_c: number; service_1_laeq: number; service_1_lceq: number
+            service_2_max_db: number; service_2_max_db_c: number; service_2_laeq: number; service_2_lceq: number
           }) => ({
             date: new Date(r.sundays.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-            s1Max: r.service_1_max_db, s1LAeq: r.service_1_laeq, s1LCeq: r.service_1_lceq,
-            s2Max: r.service_2_max_db, s2LAeq: r.service_2_laeq, s2LCeq: r.service_2_lceq,
+            s1Max: r.service_1_max_db, s1MaxC: r.service_1_max_db_c, s1LAeq: r.service_1_laeq, s1LCeq: r.service_1_lceq,
+            s2Max: r.service_2_max_db, s2MaxC: r.service_2_max_db_c, s2LAeq: r.service_2_laeq, s2LCeq: r.service_2_lceq,
           })))
         }
       })
@@ -304,21 +304,23 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
           </div>
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full" style={{ minWidth: 560 }}>
+              <table className="w-full" style={{ minWidth: 720 }}>
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
                     <th className="px-4 py-2 text-gray-400 text-[10px] font-semibold text-left whitespace-nowrap">Date</th>
                     <th className="px-3 py-2 text-cyan-600  text-[10px] font-semibold text-right whitespace-nowrap">9am Max A</th>
+                    <th className="px-3 py-2 text-violet-400 text-[10px] font-semibold text-right whitespace-nowrap">9am Max C</th>
                     <th className="px-3 py-2 text-pink-600  text-[10px] font-semibold text-right whitespace-nowrap">9am LAeq</th>
                     <th className="px-3 py-2 text-violet-500 text-[10px] font-semibold text-right whitespace-nowrap">9am LCeq</th>
                     <th className="px-3 py-2 text-orange-600 text-[10px] font-semibold text-right whitespace-nowrap">11am Max A</th>
+                    <th className="px-3 py-2 text-amber-500 text-[10px] font-semibold text-right whitespace-nowrap">11am Max C</th>
                     <th className="px-3 py-2 text-purple-600 text-[10px] font-semibold text-right whitespace-nowrap">11am LAeq</th>
                     <th className="px-3 py-2 text-amber-600  text-[10px] font-semibold text-right whitespace-nowrap">11am LCeq</th>
                   </tr>
                 </thead>
                 <tbody>
                   {history.length === 0 && (
-                    <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400 text-xs">No history yet</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-6 text-center text-gray-400 text-xs">No history yet</td></tr>
                   )}
                   {history.map((row, i) => {
                     const r9  = row.s1LAeq > GOAL_9AM
@@ -326,10 +328,12 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
                     return (
                       <tr key={i} className={`border-b border-gray-50 ${r9 || r11 ? 'bg-red-50' : ''}`}>
                         <td className="px-4 py-2.5 text-gray-600 text-xs whitespace-nowrap">{row.date}</td>
-                        <td className="px-3 py-2.5 text-cyan-600   text-xs font-mono text-right">{row.s1Max   || '—'}</td>
+                        <td className="px-3 py-2.5 text-cyan-600    text-xs font-mono text-right">{row.s1Max   || '—'}</td>
+                        <td className="px-3 py-2.5 text-violet-400  text-xs font-mono text-right">{row.s1MaxC  || '—'}</td>
                         <td className={`px-3 py-2.5 text-xs font-mono font-semibold text-right ${r9  ? 'text-red-600' : 'text-pink-600'}`}>{row.s1LAeq  || '—'}{r9  && ' !'}</td>
                         <td className="px-3 py-2.5 text-violet-500  text-xs font-mono text-right">{row.s1LCeq  || '—'}</td>
                         <td className="px-3 py-2.5 text-orange-600  text-xs font-mono text-right">{row.s2Max   || '—'}</td>
+                        <td className="px-3 py-2.5 text-amber-500   text-xs font-mono text-right">{row.s2MaxC  || '—'}</td>
                         <td className={`px-3 py-2.5 text-xs font-mono font-semibold text-right ${r11 ? 'text-red-600' : 'text-purple-600'}`}>{row.s2LAeq  || '—'}{r11 && ' !'}</td>
                         <td className="px-3 py-2.5 text-amber-600   text-xs font-mono text-right">{row.s2LCeq  || '—'}</td>
                       </tr>
@@ -340,7 +344,9 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
                   <tr className="border-t border-gray-100 bg-gray-50">
                     <td className="px-4 py-2 text-gray-500 text-[10px] font-bold">Goal</td>
                     <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
+                    <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
                     <td className="px-3 py-2 text-gray-500 text-[10px] font-bold text-right">≤{GOAL_9AM}</td>
+                    <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
                     <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
                     <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
                     <td className="px-3 py-2 text-gray-500 text-[10px] font-bold text-right">≤{GOAL_11AM}</td>
