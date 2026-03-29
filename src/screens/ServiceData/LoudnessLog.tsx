@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useSunday } from '../../context/SundayContext'
 import { Card } from '../../components/ui/Card'
 import { generateLoudnessReportHtml } from '../../lib/generateLoudnessReportHtml'
 import bfcLogo from '../../assets/BFC_Production_Logo_Hor reverse.png'
 
 interface LoudnessProps { sundayId: string }
 
-const GOAL_9AM = 88
+const GOAL_9AM  = 88
 const GOAL_11AM = 94
 
 interface NumFieldProps {
@@ -39,17 +40,63 @@ function NumField({ label, value, onChange, goal, accent }: NumFieldProps) {
   )
 }
 
+// ── Sync loudness readings into service_records so the Data Explorer stays current ──
+
+async function syncToServiceRecords(
+  sundayId: string,
+  sundayDate: string,
+  serviceType: 'regular_9am' | 'regular_11am',
+  fields: {
+    max_db_a_slow: number | null
+    la_eq_15: number | null
+    max_db_c_slow: number | null
+    lc_eq_15: number | null
+  },
+) {
+  const { data: existing } = await supabase
+    .from('service_records')
+    .select('id')
+    .eq('service_date', sundayDate)
+    .eq('service_type', serviceType)
+    .maybeSingle()
+
+  if (existing) {
+    await supabase
+      .from('service_records')
+      .update(fields)
+      .eq('id', existing.id)
+  } else {
+    await supabase
+      .from('service_records')
+      .insert({ service_date: sundayDate, service_type: serviceType, sunday_id: sundayId, ...fields })
+  }
+}
+
 export function LoudnessLog({ sundayId }: LoudnessProps) {
-  const [s1Max, setS1Max] = useState('')
+  const { sundayDate } = useSunday()
+
+  // A-weighted
+  const [s1Max,  setS1Max]  = useState('')
   const [s1LAeq, setS1LAeq] = useState('')
-  const [s2Max, setS2Max] = useState('')
+  const [s2Max,  setS2Max]  = useState('')
   const [s2LAeq, setS2LAeq] = useState('')
-  const [history, setHistory] = useState<Array<{ date: string; s1Max: number; s1LAeq: number; s2Max: number; s2LAeq: number }>>([])
+
+  // C-weighted
+  const [s1MaxC,  setS1MaxC]  = useState('')
+  const [s1LCeq,  setS1LCeq]  = useState('')
+  const [s2MaxC,  setS2MaxC]  = useState('')
+  const [s2LCeq,  setS2LCeq]  = useState('')
+
+  const [history, setHistory] = useState<Array<{
+    date: string
+    s1Max: number; s1LAeq: number; s1LCeq: number
+    s2Max: number; s2LAeq: number; s2LCeq: number
+  }>>([])
 
   const [s1Saving, setS1Saving] = useState(false)
-  const [s1Saved, setS1Saved] = useState(false)
+  const [s1Saved,  setS1Saved]  = useState(false)
   const [s2Saving, setS2Saving] = useState(false)
-  const [s2Saved, setS2Saved] = useState(false)
+  const [s2Saved,  setS2Saved]  = useState(false)
   const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
@@ -60,16 +107,24 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
           setS1LAeq(data.service_1_laeq?.toString() || '')
           setS2Max(data.service_2_max_db?.toString() || '')
           setS2LAeq(data.service_2_laeq?.toString() || '')
+          setS1MaxC(data.service_1_max_db_c?.toString() || '')
+          setS1LCeq(data.service_1_lceq?.toString() || '')
+          setS2MaxC(data.service_2_max_db_c?.toString() || '')
+          setS2LCeq(data.service_2_lceq?.toString() || '')
         }
       })
     supabase.from('loudness').select('*, sundays(date)')
       .order('logged_at', { ascending: false }).limit(8)
       .then(({ data }) => {
         if (data) {
-          setHistory(data.map((r: { sundays: { date: string }; service_1_max_db: number; service_1_laeq: number; service_2_max_db: number; service_2_laeq: number }) => ({
+          setHistory(data.map((r: {
+            sundays: { date: string }
+            service_1_max_db: number; service_1_laeq: number; service_1_lceq: number
+            service_2_max_db: number; service_2_laeq: number; service_2_lceq: number
+          }) => ({
             date: new Date(r.sundays.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-            s1Max: r.service_1_max_db, s1LAeq: r.service_1_laeq,
-            s2Max: r.service_2_max_db, s2LAeq: r.service_2_laeq,
+            s1Max: r.service_1_max_db, s1LAeq: r.service_1_laeq, s1LCeq: r.service_1_lceq,
+            s2Max: r.service_2_max_db, s2LAeq: r.service_2_laeq, s2LCeq: r.service_2_lceq,
           })))
         }
       })
@@ -79,10 +134,18 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
     setS1Saving(true)
     await supabase.from('loudness').upsert({
       sunday_id: sundayId,
-      service_1_max_db: s1Max ? parseFloat(s1Max) : null,
-      service_1_laeq: s1LAeq ? parseFloat(s1LAeq) : null,
+      service_1_max_db:   s1Max   ? parseFloat(s1Max)   : null,
+      service_1_laeq:     s1LAeq  ? parseFloat(s1LAeq)  : null,
+      service_1_max_db_c: s1MaxC  ? parseFloat(s1MaxC)  : null,
+      service_1_lceq:     s1LCeq  ? parseFloat(s1LCeq)  : null,
       logged_at: new Date().toISOString(),
     }, { onConflict: 'sunday_id' })
+    await syncToServiceRecords(sundayId, sundayDate, 'regular_9am', {
+      max_db_a_slow: s1Max   ? parseFloat(s1Max)   : null,
+      la_eq_15:      s1LAeq  ? parseFloat(s1LAeq)  : null,
+      max_db_c_slow: s1MaxC  ? parseFloat(s1MaxC)  : null,
+      lc_eq_15:      s1LCeq  ? parseFloat(s1LCeq)  : null,
+    })
     setS1Saving(false)
     setS1Saved(true)
     setTimeout(() => setS1Saved(false), 2500)
@@ -92,10 +155,18 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
     setS2Saving(true)
     await supabase.from('loudness').upsert({
       sunday_id: sundayId,
-      service_2_max_db: s2Max ? parseFloat(s2Max) : null,
-      service_2_laeq: s2LAeq ? parseFloat(s2LAeq) : null,
+      service_2_max_db:   s2Max   ? parseFloat(s2Max)   : null,
+      service_2_laeq:     s2LAeq  ? parseFloat(s2LAeq)  : null,
+      service_2_max_db_c: s2MaxC  ? parseFloat(s2MaxC)  : null,
+      service_2_lceq:     s2LCeq  ? parseFloat(s2LCeq)  : null,
       logged_at: new Date().toISOString(),
     }, { onConflict: 'sunday_id' })
+    await syncToServiceRecords(sundayId, sundayDate, 'regular_11am', {
+      max_db_a_slow: s2Max   ? parseFloat(s2Max)   : null,
+      la_eq_15:      s2LAeq  ? parseFloat(s2LAeq)  : null,
+      max_db_c_slow: s2MaxC  ? parseFloat(s2MaxC)  : null,
+      lc_eq_15:      s2LCeq  ? parseFloat(s2LCeq)  : null,
+    })
     setS2Saving(false)
     setS2Saved(true)
     setTimeout(() => setS2Saved(false), 2500)
@@ -111,9 +182,9 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
       const rows = (data ?? []).map((r: {
         sundays: { date: string }
         service_1_max_db: number | null
-        service_1_laeq: number | null
+        service_1_laeq:   number | null
         service_2_max_db: number | null
-        service_2_laeq: number | null
+        service_2_laeq:   number | null
       }) => ({
         date: r.sundays.date,
         service_1_max_db: r.service_1_max_db,
@@ -145,18 +216,22 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
   const s2Over = parseFloat(s2LAeq) > GOAL_11AM
 
   const avg = (vals: number[]) => vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—'
-  const avg9LAeq = avg(history.filter(r => r.s1LAeq).map(r => r.s1LAeq))
+  const avg9LAeq  = avg(history.filter(r => r.s1LAeq).map(r => r.s1LAeq))
   const avg11LAeq = avg(history.filter(r => r.s2LAeq).map(r => r.s2LAeq))
+  const avg9LCeq  = avg(history.filter(r => r.s1LCeq).map(r => r.s1LCeq))
+  const avg11LCeq = avg(history.filter(r => r.s2LCeq).map(r => r.s2LCeq))
 
   return (
     <div className="space-y-5 fade-in">
       {/* Running averages */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
           { label: '9am Avg Max dB A',  value: avg(history.map(r => r.s1Max)),  color: '#06b6d4' },
-          { label: '9am Avg LAeq 15',   value: avg9LAeq, color: '#ec4899', goal: GOAL_9AM,  over: parseFloat(avg9LAeq) > GOAL_9AM },
+          { label: '9am Avg LAeq 15',   value: avg9LAeq,  color: '#ec4899', goal: GOAL_9AM,  over: parseFloat(avg9LAeq)  > GOAL_9AM  },
+          { label: '9am Avg LCeq 15',   value: avg9LCeq,  color: '#8b5cf6' },
           { label: '11am Avg Max dB A', value: avg(history.map(r => r.s2Max)), color: '#f97316' },
-          { label: '11am Avg LAeq 15',  value: avg11LAeq,color: '#a855f7', goal: GOAL_11AM, over: parseFloat(avg11LAeq) > GOAL_11AM },
+          { label: '11am Avg LAeq 15',  value: avg11LAeq, color: '#a855f7', goal: GOAL_11AM, over: parseFloat(avg11LAeq) > GOAL_11AM },
+          { label: '11am Avg LCeq 15',  value: avg11LCeq, color: '#d97706' },
         ].map(s => (
           <Card key={s.label} className={`p-4 ${s.over ? 'border-red-200 bg-red-50' : ''}`}>
             <p className="text-gray-400 text-[10px] font-medium mb-1">{s.label}</p>
@@ -168,7 +243,7 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[400px_1fr] gap-5 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5 items-start">
         {/* Entry forms */}
         <div className="space-y-4">
           {/* 9am Service */}
@@ -178,8 +253,10 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
               <span className="text-cyan-600 text-xs font-semibold">9:00 AM Service</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <NumField label="Max dB A Slow" value={s1Max} onChange={setS1Max} accent="#06b6d4" />
-              <NumField label="LAeq 15" value={s1LAeq} onChange={setS1LAeq} goal={GOAL_9AM} accent="#ec4899" />
+              <NumField label="Max dB A Slow" value={s1Max}   onChange={setS1Max}   accent="#06b6d4" />
+              <NumField label="LAeq 15"        value={s1LAeq}  onChange={setS1LAeq}  goal={GOAL_9AM} accent="#ec4899" />
+              <NumField label="Max dB C Slow"  value={s1MaxC}  onChange={setS1MaxC}  accent="#8b5cf6" />
+              <NumField label="LCeq 15"        value={s1LCeq}  onChange={setS1LCeq}  accent="#8b5cf6" />
             </div>
             {s1Over && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 leading-relaxed">
@@ -199,8 +276,10 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
               <span className="text-orange-600 text-xs font-semibold">11:00 AM Service</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <NumField label="Max dB A Slow" value={s2Max} onChange={setS2Max} accent="#f97316" />
-              <NumField label="LAeq 15" value={s2LAeq} onChange={setS2LAeq} goal={GOAL_11AM} accent="#a855f7" />
+              <NumField label="Max dB A Slow" value={s2Max}   onChange={setS2Max}   accent="#f97316" />
+              <NumField label="LAeq 15"        value={s2LAeq}  onChange={setS2LAeq}  goal={GOAL_11AM} accent="#a855f7" />
+              <NumField label="Max dB C Slow"  value={s2MaxC}  onChange={setS2MaxC}  accent="#d97706" />
+              <NumField label="LCeq 15"        value={s2LCeq}  onChange={setS2LCeq}  accent="#d97706" />
             </div>
             {s2Over && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 leading-relaxed">
@@ -224,35 +303,51 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
             </button>
           </div>
           <Card className="overflow-hidden">
-            <div className="grid grid-cols-5 px-4 py-2 border-b border-gray-100 bg-gray-50">
-              <span className="text-gray-400 text-[10px] font-semibold">Date</span>
-              <span className="text-cyan-600 text-[10px] font-semibold text-right">9am Max</span>
-              <span className="text-pink-600 text-[10px] font-semibold text-right">9am LAeq</span>
-              <span className="text-orange-600 text-[10px] font-semibold text-right">11am Max</span>
-              <span className="text-purple-600 text-[10px] font-semibold text-right">11am LAeq</span>
-            </div>
-            {history.length === 0 && (
-              <div className="px-4 py-6 text-center text-gray-400 text-xs">No history yet</div>
-            )}
-            {history.map((row, i) => {
-              const r9 = row.s1LAeq > GOAL_9AM
-              const r11 = row.s2LAeq > GOAL_11AM
-              return (
-                <div key={i} className={`grid grid-cols-5 px-4 py-2.5 ${i < history.length - 1 ? 'border-b border-gray-50' : ''} ${r9 || r11 ? 'bg-red-50' : ''}`}>
-                  <span className="text-gray-600 text-xs">{row.date}</span>
-                  <span className="text-cyan-600 text-xs font-mono text-right">{row.s1Max || '—'}</span>
-                  <span className={`text-xs font-mono font-semibold text-right ${r9 ? 'text-red-600' : 'text-pink-600'}`}>{row.s1LAeq || '—'}{r9 && ' !'}</span>
-                  <span className="text-orange-600 text-xs font-mono text-right">{row.s2Max || '—'}</span>
-                  <span className={`text-xs font-mono font-semibold text-right ${r11 ? 'text-red-600' : 'text-purple-600'}`}>{row.s2LAeq || '—'}{r11 && ' !'}</span>
-                </div>
-              )
-            })}
-            <div className="grid grid-cols-5 px-4 py-2 bg-gray-50 border-t border-gray-100">
-              <span className="text-gray-500 text-[10px] font-bold">Goal</span>
-              <span className="text-gray-300 text-[10px] text-right">—</span>
-              <span className="text-gray-500 text-[10px] font-bold text-right">≤{GOAL_9AM}</span>
-              <span className="text-gray-300 text-[10px] text-right">—</span>
-              <span className="text-gray-500 text-[10px] font-bold text-right">≤{GOAL_11AM}</span>
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ minWidth: 560 }}>
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="px-4 py-2 text-gray-400 text-[10px] font-semibold text-left whitespace-nowrap">Date</th>
+                    <th className="px-3 py-2 text-cyan-600  text-[10px] font-semibold text-right whitespace-nowrap">9am Max A</th>
+                    <th className="px-3 py-2 text-pink-600  text-[10px] font-semibold text-right whitespace-nowrap">9am LAeq</th>
+                    <th className="px-3 py-2 text-violet-500 text-[10px] font-semibold text-right whitespace-nowrap">9am LCeq</th>
+                    <th className="px-3 py-2 text-orange-600 text-[10px] font-semibold text-right whitespace-nowrap">11am Max A</th>
+                    <th className="px-3 py-2 text-purple-600 text-[10px] font-semibold text-right whitespace-nowrap">11am LAeq</th>
+                    <th className="px-3 py-2 text-amber-600  text-[10px] font-semibold text-right whitespace-nowrap">11am LCeq</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.length === 0 && (
+                    <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400 text-xs">No history yet</td></tr>
+                  )}
+                  {history.map((row, i) => {
+                    const r9  = row.s1LAeq > GOAL_9AM
+                    const r11 = row.s2LAeq > GOAL_11AM
+                    return (
+                      <tr key={i} className={`border-b border-gray-50 ${r9 || r11 ? 'bg-red-50' : ''}`}>
+                        <td className="px-4 py-2.5 text-gray-600 text-xs whitespace-nowrap">{row.date}</td>
+                        <td className="px-3 py-2.5 text-cyan-600   text-xs font-mono text-right">{row.s1Max   || '—'}</td>
+                        <td className={`px-3 py-2.5 text-xs font-mono font-semibold text-right ${r9  ? 'text-red-600' : 'text-pink-600'}`}>{row.s1LAeq  || '—'}{r9  && ' !'}</td>
+                        <td className="px-3 py-2.5 text-violet-500  text-xs font-mono text-right">{row.s1LCeq  || '—'}</td>
+                        <td className="px-3 py-2.5 text-orange-600  text-xs font-mono text-right">{row.s2Max   || '—'}</td>
+                        <td className={`px-3 py-2.5 text-xs font-mono font-semibold text-right ${r11 ? 'text-red-600' : 'text-purple-600'}`}>{row.s2LAeq  || '—'}{r11 && ' !'}</td>
+                        <td className="px-3 py-2.5 text-amber-600   text-xs font-mono text-right">{row.s2LCeq  || '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-gray-100 bg-gray-50">
+                    <td className="px-4 py-2 text-gray-500 text-[10px] font-bold">Goal</td>
+                    <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
+                    <td className="px-3 py-2 text-gray-500 text-[10px] font-bold text-right">≤{GOAL_9AM}</td>
+                    <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
+                    <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
+                    <td className="px-3 py-2 text-gray-500 text-[10px] font-bold text-right">≤{GOAL_11AM}</td>
+                    <td className="px-3 py-2 text-gray-300 text-[10px] text-right">—</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </Card>
         </div>
