@@ -6,13 +6,13 @@ import { Dashboard } from './Dashboard'
 type AnalyticsTab = 'explorer' | 'dashboard' | 'ai'
 
 const TABS: { id: AnalyticsTab; label: string; icon: React.ElementType }[] = [
-  { id: 'explorer',   label: 'Data Explorer', icon: BarChart2      },
-  { id: 'dashboard',  label: 'Dashboard',     icon: LayoutDashboard },
-  { id: 'ai',         label: 'Ask a Question', icon: MessageSquare  },
+  { id: 'dashboard',  label: 'Dashboard',      icon: LayoutDashboard },
+  { id: 'explorer',   label: 'Data Explorer',  icon: BarChart2       },
+  { id: 'ai',         label: 'Ask a Question', icon: MessageSquare   },
 ]
 
 export function Analytics() {
-  const [tab, setTab] = useState<AnalyticsTab>('explorer')
+  const [tab, setTab] = useState<AnalyticsTab>('dashboard')
 
   return (
     <div className="fade-in">
