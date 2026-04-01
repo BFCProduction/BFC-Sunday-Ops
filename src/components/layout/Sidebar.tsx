@@ -98,7 +98,7 @@ export function Sidebar({ active, setActive, issueCount }: SidebarProps) {
             </span>
           ) : (
             <span className="bg-gray-800 text-gray-500 text-[10px] font-medium px-2 py-0.5 rounded-full">
-              8:30 · 10:15
+              9:00 · 11:00
             </span>
           )}
         </div>

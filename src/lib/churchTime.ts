@@ -43,6 +43,6 @@ export function getOperationalSundayDateString(date = new Date(), tz = CHURCH_TI
     return getChurchDateString(date, tz)
   }
 
-  const daysUntilSunday = (7 - dayOfWeek) % 7
-  return addDaysToDateString(getChurchDateString(date, tz), daysUntilSunday)
+  // Mon–Sat: look back to the most recent Sunday
+  return addDaysToDateString(getChurchDateString(date, tz), -dayOfWeek)
 }

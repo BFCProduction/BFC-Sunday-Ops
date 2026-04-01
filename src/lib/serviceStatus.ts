@@ -28,10 +28,10 @@ export function getServicePhase(date = new Date(), tz = CHURCH_TIME_ZONE): Servi
   const mins = minutesCT(date, tz)
 
   if (mins < t(7))     return null
-  if (mins < t(8, 30)) return { label: 'Pre-Service',       bg: 'bg-emerald-500/15', text: 'text-emerald-400', pulse: true  }
-  if (mins < t(9, 55)) return { label: 'Service 1 – Live',  bg: 'bg-red-500/20',     text: 'text-red-400',     pulse: true  }
-  if (mins < t(10,15)) return { label: 'Between Services',  bg: 'bg-amber-500/15',   text: 'text-amber-400',   pulse: false }
-  if (mins < t(11,45)) return { label: 'Service 2 – Live',  bg: 'bg-red-500/20',     text: 'text-red-400',     pulse: true  }
+  if (mins < t(9))     return { label: 'Pre-Service',       bg: 'bg-emerald-500/15', text: 'text-emerald-400', pulse: true  }
+  if (mins < t(10))    return { label: 'Service 1 – Live',  bg: 'bg-red-500/20',     text: 'text-red-400',     pulse: true  }
+  if (mins < t(11))    return { label: 'Between Services',  bg: 'bg-amber-500/15',   text: 'text-amber-400',   pulse: false }
+  if (mins < t(12))    return { label: 'Service 2 – Live',  bg: 'bg-red-500/20',     text: 'text-red-400',     pulse: true  }
   if (mins < t(18))    return { label: 'Post-Service',       bg: 'bg-blue-500/15',    text: 'text-blue-400',    pulse: false }
   return null
 }

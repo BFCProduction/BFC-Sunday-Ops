@@ -113,7 +113,7 @@ export function Evaluation({ sundayId }: EvaluationProps) {
   const submit = async () => {
     if (!canSubmit) return
     setSaving(true)
-    await supabase.from('evaluations').insert({
+    const { error } = await supabase.from('evaluations').insert({
       sunday_id:            sundayId,
       service_feel:         feel,
       broken_moment:        brokenMoment ?? false,
@@ -122,6 +122,11 @@ export function Evaluation({ sundayId }: EvaluationProps) {
       needed_attention:     neededAttention.trim() || null,
       area_notes:           areaNotes.trim() || null,
     })
+    if (error) {
+      setSaving(false)
+      alert(`Failed to save evaluation: ${error.message}`)
+      return
+    }
     await loadData()
     setSaving(false)
     setSubmitted(true)
