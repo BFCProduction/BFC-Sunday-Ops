@@ -517,7 +517,7 @@ async function run() {
     process.exit(1)
   }
 
-  const todayFields = pullNow
+  const todayFields = (pullNow || dumpTimers)
     ? allFields
     : allFields.filter(f => f.pull_day === todayDow)
   const autoFields = todayFields.filter(f => f.host)
