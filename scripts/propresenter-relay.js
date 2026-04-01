@@ -79,16 +79,26 @@ function parseTimeString(str) {
   return null
 }
 
-// Add a countdown target to an overrun value and return the total as a formatted string.
-// e.g. target="25:00", overrun="0:15" → "25:15"
-// If the captured value is negative or zero (timer didn't overrun), just return the target.
-// If either value can't be parsed, returns the raw captured value unchanged.
-function addCountdownTarget(target, captured) {
+// Compute the true elapsed time for a countdown-with-overrun timer.
+// Uses the ProPresenter state field so the math is always correct:
+//   "overran"  → time is negative (e.g. -0:00:58) → target + overrun
+//   "complete" → hit exactly 0                    → target
+//   "stopped"  → time is remaining (positive)     → target - remaining
+// Returns the raw captured value unchanged if target can't be parsed.
+function resolveCountdownTime(target, captured, state) {
   const targetSecs = parseTimeString(target)
   if (targetSecs == null) return captured
-  const capturedSecs = parseTimeString(captured)
+
+  if (state === 'complete') return formatSeconds(targetSecs)
+
+  const capturedSecs = parseTimeString(captured)  // always positive (strips leading -)
   if (capturedSecs == null) return captured
-  return formatSeconds(targetSecs + capturedSecs)
+
+  if (state === 'overran') return formatSeconds(targetSecs + capturedSecs)
+
+  // "stopped" or unknown: subtract remaining time from target
+  const elapsed = targetSecs - capturedSecs
+  return formatSeconds(Math.max(0, elapsed))
 }
 
 // ProPresenter returns time as a pre-formatted string e.g. "1:15:32" or "45:30"
@@ -473,10 +483,11 @@ async function pullFields(fields, sundayId) {
       }
       const rawValue = extractTime(timer)
       const timerName = timer.id?.name ?? timer.name ?? 'Unnamed'
+      const timerState = timer.state ?? 'stopped'
       let value = rawValue
       if (field.countdown_target && rawValue != null) {
-        value = addCountdownTarget(field.countdown_target, rawValue)
-        console.log(`  "${field.label}" → timer index ${field.clock_number} (${timerName}) = ${rawValue} + target ${field.countdown_target} = ${value}`)
+        value = resolveCountdownTime(field.countdown_target, rawValue, timerState)
+        console.log(`  "${field.label}" → timer index ${field.clock_number} (${timerName}) state=${timerState} raw=${rawValue} target=${field.countdown_target} → ${value}`)
       } else {
         console.log(`  "${field.label}" → timer index ${field.clock_number} (${timerName}) = ${value ?? 'no time'}`)
       }
