@@ -66,6 +66,30 @@ function formatSeconds(totalSeconds) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+// Parse a time string like "25:00", "1:05:30", or "-0:00:15" into total seconds.
+// Returns null if unparseable.
+function parseTimeString(str) {
+  if (!str) return null
+  const clean = str.replace(/^-/, '').trim()
+  const parts = clean.split(':').map(Number)
+  if (parts.some(isNaN)) return null
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  return null
+}
+
+// Add a countdown target to an overrun value and return the total as a formatted string.
+// e.g. target="25:00", overrun="0:15" → "25:15"
+// If the captured value is negative or zero (timer didn't overrun), just return the target.
+// If either value can't be parsed, returns the raw captured value unchanged.
+function addCountdownTarget(target, captured) {
+  const targetSecs = parseTimeString(target)
+  if (targetSecs == null) return captured
+  const capturedSecs = parseTimeString(captured)
+  if (capturedSecs == null) return captured
+  return formatSeconds(targetSecs + capturedSecs)
+}
+
 // ProPresenter returns time as a pre-formatted string e.g. "1:15:32" or "45:30"
 // Fall back to converting seconds if it's a number
 function extractTime(timerObj) {
@@ -446,9 +470,15 @@ async function pullFields(fields, sundayId) {
         console.warn(`  Warning: timer index ${field.clock_number} not found for "${field.label}" (only ${timers.length} available)`)
         continue
       }
-      const value = extractTime(timer)
+      const rawValue = extractTime(timer)
       const timerName = timer.id?.name ?? timer.name ?? 'Unnamed'
-      console.log(`  "${field.label}" → timer index ${field.clock_number} (${timerName}) = ${value ?? 'no time'}`)
+      let value = rawValue
+      if (field.countdown_target && rawValue != null) {
+        value = addCountdownTarget(field.countdown_target, rawValue)
+        console.log(`  "${field.label}" → timer index ${field.clock_number} (${timerName}) = ${rawValue} + target ${field.countdown_target} = ${value}`)
+      } else {
+        console.log(`  "${field.label}" → timer index ${field.clock_number} (${timerName}) = ${value ?? 'no time'}`)
+      }
       upserts.push({
         sunday_id: sundayId,
         field_id: field.id,

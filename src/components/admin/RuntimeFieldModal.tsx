@@ -11,6 +11,7 @@ export interface RuntimeField {
   pull_time: string
   pull_day: number
   sort_order: number
+  countdown_target: string | null
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -29,6 +30,7 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
   const [pullTime, setPullTime] = useState(field?.pull_time || '10:20')
   const [pullDay, setPullDay] = useState(field?.pull_day ?? 0)
   const [sortOrder, setSortOrder] = useState(field?.sort_order ?? 0)
+  const [countdownTarget, setCountdownTarget] = useState(field?.countdown_target || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -37,6 +39,7 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
     if (clockNumber < 0) { setError('Clock number must be 0 or greater'); return }
     setSaving(true)
     const trimmedHost = host.trim()
+    const trimmedTarget = countdownTarget.trim()
     const payload = {
       label: label.trim(),
       host: trimmedHost || null,
@@ -45,6 +48,7 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
       pull_time: pullTime,
       pull_day: pullDay,
       sort_order: sortOrder,
+      countdown_target: trimmedTarget || null,
     }
     let err: { message: string } | null = null
     if (field) {
@@ -119,6 +123,23 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
               {host.trim()
                 ? 'Zero-based index in ProPresenter&apos;s Clock module (0 = first clock)'
                 : 'Not used for manual-entry-only runtimes'}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              Countdown Target <span className="text-gray-400 normal-case font-normal">(optional)</span>
+            </label>
+            <input
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500"
+              value={countdownTarget}
+              onChange={e => setCountdownTarget(e.target.value)}
+              placeholder="e.g. 25:00"
+            />
+            <p className="text-gray-400 text-[10px] mt-1">
+              Set this if the ProPresenter clock is a countdown timer with &quot;Allow Overrun&quot; checked.
+              The relay will add this target duration to any captured overrun time to store the true total.
+              Leave blank for stopwatch / elapsed-time clocks.
             </p>
           </div>
 
