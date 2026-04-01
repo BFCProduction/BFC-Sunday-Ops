@@ -60,6 +60,12 @@ Live now:
 - Historical loudness data imported from the BFC Audio Loudness Log Google Sheet — 144 Sundays (March 2023 – March 2026) via `scripts/import-loudness-history.js`.
 - Loudness Log includes a "Full History PDF" button that generates a styled multi-year report matching the Sunday report aesthetic, grouped by year with per-year averages and goal exceedance flags.
 - Sidebar date block has `‹` / `›` chevron arrows to step backward and forward through past Sundays. All screens reload with the selected Sunday's data. Past Sundays show an amber "Historical View" badge and a "Back to Today" link.
+- On weekdays the app defaults to the most recent past Sunday rather than the upcoming one, so data entered during the week lands on the right record. The crossover point ("Sunday Focus Flip") is configurable in Settings.
+- Service phase indicator time boundaries corrected: Pre-Service 7–9am, Service 1 9–10am, Between Services 10–11am, Service 2 11am–noon, Post-Service noon–6pm.
+- Post-service evaluations now surface Supabase errors on submit instead of silently showing a false success screen.
+- Settings page reorganized into **App Settings** (Timezone, Sunday Focus Flip) and **Reporting** (PDF export, summary email) sections.
+- ProPresenter relay supports a `countdown_target` on any runtime field. When set, the relay reads ProPresenter's timer `state` (`overran` / `complete` / `stopped`) and computes the true elapsed time rather than storing the raw overrun value. Useful for message timers configured as countdown-with-overrun. Set once in the runtime field admin UI.
+- New `--dump-timers` flag on the relay prints the full raw JSON for every timer on every connected ProPresenter host (useful for debugging and field setup).
 
 - RESI analytics importer (`scripts/fetch-resi.js`) — logs in via Playwright, downloads the session CSV for the target Sunday, computes per-service stats, and writes to Supabase. Supports `--now`, `--date`, and `--dry-run` flags.
 
@@ -80,6 +86,8 @@ Still pending:
 
 Completed (previously listed as pending):
 - Attendance and loudness data backfilled into `service_records` from legacy tables.
+- Sunday focus direction corrected (app now defaults to most recent past Sunday on weekdays).
+- Evaluation submissions now fail loudly instead of silently.
 
 ## Tech Stack
 
@@ -209,7 +217,10 @@ Useful flags:
 ```bash
 node scripts/propresenter-relay.js --now
 node scripts/propresenter-relay.js --probe --now
+node scripts/propresenter-relay.js --dump-timers
 ```
+
+`--dump-timers` prints the full raw JSON for every timer on every connected ProPresenter host. Use it to find clock indexes and inspect available fields when setting up runtime field configs.
 
 Automatic start on the relay Mac:
 
@@ -224,12 +235,12 @@ Operational runbook:
 - `docs/relay-mac-setup.md`
 
 Runtime field notes:
-- `clock_number` is zero-based.
-- `0` is the first ProPresenter timer.
+- `clock_number` is zero-based. `0` is the first ProPresenter timer.
 - Leave the host blank for a manual-entry-only runtime field.
 - Runtime values are stored in `runtime_values`.
-- The relay now targets the operational Sunday date and creates that `sundays` row if needed.
+- The relay targets the operational Sunday date and creates that `sundays` row if needed.
 - The relay tries HTTP timer endpoints first and falls back to ProPresenter's TCP/IP API if HTTP fails.
+- Set `countdown_target` (e.g. `25:00`) on any field whose ProPresenter clock is a countdown-with-overrun timer. The relay uses ProPresenter's `state` field (`overran` / `complete` / `stopped`) to compute the true elapsed time. Leave blank for stopwatch/elapsed-time clocks.
 
 ## Weather Import
 

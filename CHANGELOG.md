@@ -1,5 +1,51 @@
 # Changelog
 
+## 2026-04-01 (Session 3)
+
+### Summary
+
+Fixed a root-cause bug where evaluations were being saved to the wrong Sunday's ID (app was defaulting to the *next* Sunday on weekdays instead of the most recent past Sunday). Added a configurable "Sunday Focus Flip" setting so the app knows when to shift attention from last Sunday to the upcoming one. Corrected service phase time boundaries. Cleaned up and reorganized the Settings page. Added countdown-target support to the ProPresenter relay so overrun message timers capture the true total runtime.
+
+### Completed
+
+- **Sunday focus direction fix** (`src/lib/churchTime.ts`):
+  - `getOperationalSundayDateString` previously looked *forward* to next Sunday on Mon–Sat. This caused all data entered during the week (evaluations, manual runtimes, etc.) to be saved against the upcoming Sunday rather than the one that just happened.
+  - Now defaults to looking *back* to the most recent Sunday on weekdays, flipping forward based on a configurable day + time.
+
+- **Configurable Sunday Focus Flip** (`src/lib/churchTime.ts`, `src/lib/supabase.ts`, `src/App.tsx`, `src/screens/Settings.tsx`):
+  - New `sunday_flip_day` and `sunday_flip_hour` keys in `app_config`.
+  - Default: Monday at noon — before noon Monday the app stays on last Sunday; after noon it shifts focus to next Sunday.
+  - Configurable in Settings → App Settings → Sunday Focus Flip (day dropdown + time dropdown).
+  - `loadFlipConfig()` added to `supabase.ts`; `getOrCreateSunday()` accepts `flipDay`/`flipHour` parameters.
+
+- **Service phase time corrections** (`src/lib/serviceStatus.ts`, `src/components/layout/Sidebar.tsx`):
+  - Updated phase boundaries to match actual service schedule: Pre-Service 7–9am, Service 1 9–10am, Between Services 10–11am, Service 2 11am–noon, Post-Service noon–6pm.
+  - Sidebar fallback hint updated from `8:30 · 10:15` to `9:00 · 11:00`.
+
+- **Evaluation submit error surfaced** (`src/screens/Evaluation.tsx`):
+  - `submit()` previously called `setSubmitted(true)` unconditionally regardless of whether the Supabase insert succeeded.
+  - Now checks the returned error and shows an alert on failure instead of falsely confirming submission.
+  - Fixed `evaluations` table permissions: added `GRANT select, insert ON TABLE evaluations TO anon, authenticated` (must be run manually in Supabase SQL editor).
+
+- **Settings page reorganization** (`src/screens/Settings.tsx`):
+  - Sections reordered and regrouped into two clear sections: **App Settings** (Timezone, Sunday Focus Flip) and **Reporting** (Most Recent Sunday PDF, Previous Sunday picker, Summary Email status + admin config).
+  - "PDF Export" and "Summary Email" no longer live in separate top-level sections — all reporting output is grouped together.
+  - Section header renamed from "Church Settings" to "App Settings".
+
+- **ProPresenter relay: countdown timer support** (`scripts/propresenter-relay.js`, `src/components/admin/RuntimeFieldModal.tsx`, `supabase/migrations/014_add_countdown_target.sql`):
+  - New optional `countdown_target` column on `runtime_fields` (e.g. `25:00`).
+  - When set, the relay uses ProPresenter's `state` field to compute the true elapsed time: `overran` → target + overrun; `complete` → target; `stopped` → target − remaining.
+  - This correctly handles the case where a message timer runs past its configured countdown and ProPresenter starts counting up from zero.
+  - Runtime field edit modal exposes the new "Countdown Target" field with explanatory copy.
+  - New `--dump-timers` flag added to the relay for inspecting raw ProPresenter timer objects (`node scripts/propresenter-relay.js --dump-timers`); also bypasses the day filter so it works any day of the week.
+
+### Notes
+
+- The `countdown_target` field must be set once per runtime field in the admin UI — ProPresenter's API does not expose the configured timer duration, only the current time and state.
+- The `evaluations` table GRANT needs to be run once manually in the Supabase SQL editor (see README).
+
+---
+
 ## 2026-03-28 (Session 2)
 
 ### Summary
