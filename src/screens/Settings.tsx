@@ -236,74 +236,22 @@ export function Settings() {
         <h2 className="text-gray-900 font-bold text-lg">Settings</h2>
       </div>
 
-      <div className="p-5 space-y-5 max-w-3xl">
+      <div className="p-5 space-y-8 max-w-3xl">
 
-        {/* ── PDF Export ── */}
+        {/* ── App Settings ── */}
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">PDF Export</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">App Settings</p>
 
-          {/* Current Sunday */}
-          <div className="rounded-xl p-5 flex items-center justify-between gap-4 mb-3"
-            style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)' }}>
-            <div>
-              <p className="text-white font-bold text-sm">This Sunday's Report</p>
-              <p className="text-blue-200 text-xs mt-1">{formatSundayDate(sundayDate)}</p>
-            </div>
-            <button onClick={exportCurrentPdf} disabled={exportingCurrent}
-              className="flex items-center gap-2 bg-white text-blue-700 font-bold text-xs px-4 py-2.5 rounded-lg
-                shadow-md hover:bg-blue-50 active:scale-95 transition-all disabled:opacity-60 flex-shrink-0 whitespace-nowrap">
-              {exportingCurrent
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-                : <><FileDown className="w-4 h-4" /> Export PDF</>
-              }
-            </button>
-          </div>
-
-          {/* Previous Sunday picker */}
-          <Card className="p-5">
-            <p className="text-gray-900 text-sm font-semibold mb-1">Export a Previous Sunday</p>
-            <p className="text-gray-400 text-xs mb-4">Pick any past Sunday to download its full report.</p>
-            <div className="flex gap-3 items-center flex-wrap">
-              <select
-                value={selectedPast?.id ?? ''}
-                onChange={e => {
-                  const found = pastSundays.find(s => s.id === e.target.value)
-                  setSelectedPast(found ?? null)
-                }}
-                className="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
-              >
-                <option value="" disabled>Select a Sunday…</option>
-                {pastSundays
-                  .filter(s => s.date !== sundayDate)
-                  .map(s => (
-                    <option key={s.id} value={s.id}>{formatSundayDate(s.date)}</option>
-                  ))
-                }
-              </select>
-              <button
-                onClick={exportPastPdf}
-                disabled={exportingPast || !selectedPast}
-                className="flex items-center gap-2 bg-gray-900 text-white font-semibold text-sm px-4 py-2.5 rounded-lg
-                  hover:bg-gray-800 active:scale-95 transition-all disabled:opacity-40 whitespace-nowrap">
-                {exportingPast
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-                  : <><FileDown className="w-4 h-4" /> Export PDF</>
-                }
-              </button>
-            </div>
-          </Card>
-        </div>
-
-        {/* ── Church Settings ── */}
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Church Settings</p>
-          <Card className="p-5">
+          {/* Timezone */}
+          <Card className="p-5 mb-3">
             <p className="text-gray-900 text-sm font-semibold flex items-center gap-2 mb-1">
               <Globe className="w-4 h-4 text-blue-600" />
               Church Timezone
             </p>
             <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-              Used for service-status display, captured-time labels, and PDF reports. Must be a valid <a href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">IANA timezone</a> (e.g. <code className="bg-gray-100 px-1 rounded text-[10px]">America/Chicago</code>).
+              Used for service-status display, captured-time labels, and PDF reports. Must be a valid{' '}
+              <a href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">IANA timezone</a>{' '}
+              (e.g. <code className="bg-gray-100 px-1 rounded text-[10px]">America/Chicago</code>).
             </p>
             <div className="flex gap-3 flex-wrap items-start">
               <div className="flex-1 min-w-[200px]">
@@ -378,15 +326,16 @@ export function Settings() {
             )}
           </Card>
 
-          <Card className="p-5 mt-3">
+          {/* Focus flip */}
+          <Card className="p-5">
             <p className="text-gray-900 text-sm font-semibold flex items-center gap-2 mb-1">
               <RefreshCw className="w-4 h-4 text-blue-600" />
               Sunday Focus Flip
             </p>
             <p className="text-gray-400 text-xs mb-4 leading-relaxed">
               Controls when the app switches from last Sunday to next Sunday as the active date.
-              Before this point the app stays focused on last Sunday for post-service review;
-              after it the focus moves forward to next Sunday.
+              Before this point the app stays on last Sunday for post-service review;
+              after it the focus moves forward to the upcoming Sunday.
             </p>
             <div className="flex gap-3 flex-wrap items-end">
               <div>
@@ -431,10 +380,62 @@ export function Settings() {
           </Card>
         </div>
 
-        {/* ── Summary Email ── */}
+        {/* ── Reporting ── */}
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Sunday Summary Email</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Reporting</p>
 
+          {/* Most recent Sunday PDF */}
+          <div className="rounded-xl p-5 flex items-center justify-between gap-4 mb-3"
+            style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)' }}>
+            <div>
+              <p className="text-white font-bold text-sm">Most Recent Sunday</p>
+              <p className="text-blue-200 text-xs mt-1">{formatSundayDate(sundayDate)}</p>
+            </div>
+            <button onClick={exportCurrentPdf} disabled={exportingCurrent}
+              className="flex items-center gap-2 bg-white text-blue-700 font-bold text-xs px-4 py-2.5 rounded-lg
+                shadow-md hover:bg-blue-50 active:scale-95 transition-all disabled:opacity-60 flex-shrink-0 whitespace-nowrap">
+              {exportingCurrent
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
+                : <><FileDown className="w-4 h-4" /> Export PDF</>
+              }
+            </button>
+          </div>
+
+          {/* Previous Sunday picker */}
+          <Card className="p-5 mb-3">
+            <p className="text-gray-900 text-sm font-semibold mb-1">Export a Previous Sunday</p>
+            <p className="text-gray-400 text-xs mb-4">Pick any past Sunday to download its full report.</p>
+            <div className="flex gap-3 items-center flex-wrap">
+              <select
+                value={selectedPast?.id ?? ''}
+                onChange={e => {
+                  const found = pastSundays.find(s => s.id === e.target.value)
+                  setSelectedPast(found ?? null)
+                }}
+                className="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value="" disabled>Select a Sunday…</option>
+                {pastSundays
+                  .filter(s => s.date !== sundayDate)
+                  .map(s => (
+                    <option key={s.id} value={s.id}>{formatSundayDate(s.date)}</option>
+                  ))
+                }
+              </select>
+              <button
+                onClick={exportPastPdf}
+                disabled={exportingPast || !selectedPast}
+                className="flex items-center gap-2 bg-gray-900 text-white font-semibold text-sm px-4 py-2.5 rounded-lg
+                  hover:bg-gray-800 active:scale-95 transition-all disabled:opacity-40 whitespace-nowrap">
+                {exportingPast
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
+                  : <><FileDown className="w-4 h-4" /> Export PDF</>
+                }
+              </button>
+            </div>
+          </Card>
+
+          {/* Summary email status */}
           <Card className="p-5 mb-3">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -471,13 +472,13 @@ export function Settings() {
             </div>
           </Card>
 
+          {/* Email admin (admin only) */}
           {!isAdmin ? (
             <Card className="p-5">
               <p className="text-gray-500 text-sm">Admin access required to edit email settings and recipients.</p>
             </Card>
           ) : (
             <>
-              {/* Email settings form */}
               <Card className="p-5 mb-3">
                 <div className="flex items-center justify-between gap-4 mb-4">
                   <div>
@@ -532,7 +533,6 @@ export function Settings() {
                 </div>
               </Card>
 
-              {/* Recipients */}
               <Card className="p-5">
                 <div className="flex items-center justify-between gap-4 mb-4">
                   <div>
