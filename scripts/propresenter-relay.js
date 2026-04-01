@@ -43,6 +43,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 const pullNow = process.argv.includes('--now')
+const dumpTimers = process.argv.includes('--dump-timers')
 const REQUEST_TIMEOUT_MS = 3500
 const PROBE_HTTP_PATHS = [
   '/v1/timers/current',
@@ -556,6 +557,22 @@ async function run() {
     for (const h of hosts) {
       const [host, port] = h.split(':')
       await probeProPresenter(host, parseInt(port))
+    }
+    return
+  }
+
+  if (dumpTimers) {
+    console.log('\nDumping full timer objects from all connected ProPresenter hosts...')
+    const hosts = [...new Set(autoFields.map(f => `${f.host}:${f.port}`))]
+    for (const h of hosts) {
+      const [host, port] = h.split(':')
+      console.log(`\n--- ${host}:${port} ---`)
+      try {
+        const { timers } = await loadTimers(host, parseInt(port))
+        console.log(JSON.stringify(timers, null, 2))
+      } catch (err) {
+        console.error(`  Error: ${err.message}`)
+      }
     }
     return
   }
