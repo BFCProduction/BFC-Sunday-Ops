@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, Globe, Loader2, Mail, Plus, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { FileDown, Globe, Loader2, Mail, Plus, RefreshCw, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
 import { requestSummaryEmailAdmin } from '../lib/adminApi'
@@ -68,6 +68,12 @@ export function Settings() {
   const [savingTz, setSavingTz]             = useState(false)
   const [tzNotice, setTzNotice]             = useState('')
 
+  // ── Focus flip state ──
+  const [flipDay,      setFlipDay]      = useState(1)
+  const [flipHour,     setFlipHour]     = useState(12)
+  const [savingFlip,   setSavingFlip]   = useState(false)
+  const [flipNotice,   setFlipNotice]   = useState('')
+
   // ── PDF Export state ──
   const [exportingCurrent, setExportingCurrent] = useState(false)
   const [exportingPast, setExportingPast]       = useState(false)
@@ -84,7 +90,7 @@ export function Settings() {
   const [newName, setNewName]             = useState('')
   const [newEmail, setNewEmail]           = useState('')
 
-  // Load past Sundays for the picker
+  // Load past Sundays for the picker + flip config
   useEffect(() => {
     supabase.from('sundays').select('id, date')
       .order('date', { ascending: false })
@@ -93,6 +99,14 @@ export function Settings() {
         setPastSundays(data || [])
         const prev = (data || []).find(s => s.date !== sundayDate)
         if (prev) setSelectedPast(prev)
+      })
+    supabase.from('app_config').select('key, value')
+      .in('key', ['sunday_flip_day', 'sunday_flip_hour'])
+      .then(({ data }) => {
+        const map: Record<string, string> = {}
+        ;(data || []).forEach((r: { key: string; value: string }) => { map[r.key] = r.value })
+        if (map['sunday_flip_day'])  setFlipDay(parseInt(map['sunday_flip_day'], 10))
+        if (map['sunday_flip_hour']) setFlipHour(parseInt(map['sunday_flip_hour'], 10))
       })
   }, [sundayDate])
 
@@ -184,6 +198,18 @@ export function Settings() {
     } catch {
       setRecipients(prev)
     }
+  }
+
+  const saveFlip = async () => {
+    setSavingFlip(true)
+    setFlipNotice('')
+    const { error } = await supabase.from('app_config').upsert([
+      { key: 'sunday_flip_day',  value: String(flipDay),  updated_at: new Date().toISOString() },
+      { key: 'sunday_flip_hour', value: String(flipHour), updated_at: new Date().toISOString() },
+    ])
+    setSavingFlip(false)
+    if (error) { setFlipNotice('Failed to save: ' + error.message); return }
+    setFlipNotice('Saved — takes effect on next page load.')
   }
 
   const saveTimezone = async () => {
@@ -348,6 +374,58 @@ export function Settings() {
             {tzNotice && (
               <p className={`text-xs mt-2 ${tzNotice.startsWith('Failed') ? 'text-red-600' : 'text-emerald-700'}`}>
                 {tzNotice}
+              </p>
+            )}
+          </Card>
+
+          <Card className="p-5 mt-3">
+            <p className="text-gray-900 text-sm font-semibold flex items-center gap-2 mb-1">
+              <RefreshCw className="w-4 h-4 text-blue-600" />
+              Sunday Focus Flip
+            </p>
+            <p className="text-gray-400 text-xs mb-4 leading-relaxed">
+              Controls when the app switches from last Sunday to next Sunday as the active date.
+              Before this point the app stays focused on last Sunday for post-service review;
+              after it the focus moves forward to next Sunday.
+            </p>
+            <div className="flex gap-3 flex-wrap items-end">
+              <div>
+                <label className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide block mb-1">Day</label>
+                <select
+                  value={flipDay}
+                  onChange={e => setFlipDay(Number(e.target.value))}
+                  className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+                >
+                  {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => (
+                    <option key={d} value={i + 1}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide block mb-1">Time</label>
+                <select
+                  value={flipHour}
+                  onChange={e => setFlipHour(Number(e.target.value))}
+                  className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+                >
+                  {Array.from({ length: 18 }, (_, i) => i + 6).map(h => {
+                    const label = h === 12 ? '12:00 PM (noon)'
+                      : h < 12 ? `${h}:00 AM`
+                      : `${h - 12}:00 PM`
+                    return <option key={h} value={h}>{label}</option>
+                  })}
+                </select>
+              </div>
+              <button
+                onClick={saveFlip}
+                disabled={savingFlip}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 whitespace-nowrap">
+                {savingFlip ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+            {flipNotice && (
+              <p className={`text-xs mt-2 ${flipNotice.startsWith('Failed') ? 'text-red-600' : 'text-emerald-700'}`}>
+                {flipNotice}
               </p>
             )}
           </Card>

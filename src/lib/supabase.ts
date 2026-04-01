@@ -15,6 +15,19 @@ export async function loadChurchTimezone(): Promise<string> {
   return data?.value || CHURCH_TIME_ZONE
 }
 
+export async function loadFlipConfig(): Promise<{ flipDay: number; flipHour: number }> {
+  const { data } = await supabase
+    .from('app_config')
+    .select('key, value')
+    .in('key', ['sunday_flip_day', 'sunday_flip_hour'])
+  const map: Record<string, string> = {}
+  ;(data || []).forEach((r: { key: string; value: string }) => { map[r.key] = r.value })
+  return {
+    flipDay:  parseInt(map['sunday_flip_day']  ?? '1',  10),
+    flipHour: parseInt(map['sunday_flip_hour'] ?? '12', 10),
+  }
+}
+
 export async function getSundayByDate(date: string): Promise<{ id: string; date: string } | null> {
   const { data } = await supabase
     .from('sundays')
@@ -24,8 +37,8 @@ export async function getSundayByDate(date: string): Promise<{ id: string; date:
   return data
 }
 
-export async function getOrCreateSunday(timezone = CHURCH_TIME_ZONE) {
-  const today = getOperationalSundayDateString(new Date(), timezone)
+export async function getOrCreateSunday(timezone = CHURCH_TIME_ZONE, flipDay = 1, flipHour = 12) {
+  const today = getOperationalSundayDateString(new Date(), timezone, flipDay, flipHour)
   const { data: existing } = await supabase
     .from('sundays')
     .select('*')

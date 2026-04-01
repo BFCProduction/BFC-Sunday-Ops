@@ -36,13 +36,33 @@ function addDaysToDateString(dateString: string, daysToAdd: number) {
   return base.toISOString().slice(0, 10)
 }
 
-export function getOperationalSundayDateString(date = new Date(), tz = CHURCH_TIME_ZONE) {
+export function getOperationalSundayDateString(
+  date = new Date(),
+  tz = CHURCH_TIME_ZONE,
+  flipDay = 1,   // day of week (1 = Monday) to flip focus to next Sunday
+  flipHour = 12  // hour in church timezone at which the flip happens
+): string {
   const dayOfWeek = getChurchDayOfWeek(date, tz)
 
   if (dayOfWeek === 0) {
     return getChurchDateString(date, tz)
   }
 
-  // Mon–Sat: look back to the most recent Sunday
-  return addDaysToDateString(getChurchDateString(date, tz), -dayOfWeek)
+  // Determine current hour in church timezone
+  const hourParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour: '2-digit', hour12: false,
+  }).formatToParts(date)
+  const currentHour = Number(hourParts.find(p => p.type === 'hour')?.value ?? 0)
+
+  const pastFlipPoint =
+    dayOfWeek > flipDay ||
+    (dayOfWeek === flipDay && currentHour >= flipHour)
+
+  if (pastFlipPoint) {
+    // Look forward to next Sunday
+    return addDaysToDateString(getChurchDateString(date, tz), 7 - dayOfWeek)
+  } else {
+    // Look back to last Sunday
+    return addDaysToDateString(getChurchDateString(date, tz), -dayOfWeek)
+  }
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AdminProvider } from './context/AdminContext'
 import { SundayContext } from './context/SundayContext'
-import { getOrCreateSunday, getSundayByDate, loadChurchTimezone } from './lib/supabase'
+import { getOrCreateSunday, getSundayByDate, loadChurchTimezone, loadFlipConfig } from './lib/supabase'
 import { CHURCH_TIME_ZONE } from './lib/churchTime'
 import { SiteHeader } from './components/layout/SiteHeader'
 import { Sidebar } from './components/layout/Sidebar'
@@ -34,10 +34,10 @@ export default function App() {
   const [error, setError]           = useState('')
 
   useEffect(() => {
-    loadChurchTimezone()
-      .then(tz => {
+    Promise.all([loadChurchTimezone(), loadFlipConfig()])
+      .then(([tz, { flipDay, flipHour }]) => {
         setTimezone(tz)
-        return getOrCreateSunday(tz)
+        return getOrCreateSunday(tz, flipDay, flipHour)
       })
       .then(sunday => {
         setTodaySundayId(sunday.id)
