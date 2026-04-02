@@ -49,7 +49,7 @@ function SectionHeader({ label, onAdd, addLabel }: { label: string; onAdd: () =>
 // ── Item editor (shared by templates and events) ──────────────────────────────
 
 interface ItemEditorProps {
-  items: Array<{ id: string; label: string; section: string; subsection: string | null; item_notes: string | null; sort_order: number }>
+  items: Array<{ id: string; label: string; section: string; subsection: string | null; item_notes: string | null; sort_order: number; source_checklist_item_id?: number | null }>
   sundayItems: ChecklistItem[]
   onAddSundayItem: (item: ChecklistItem) => void
   onAddCustom: () => void
@@ -66,7 +66,12 @@ function ItemEditor({
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const filteredSundayItems = sundayItems.filter(i =>
+  // IDs already present (either sourced from Sunday checklist or matched by label)
+  const addedSourceIds = new Set(items.map(i => i.source_checklist_item_id).filter(Boolean))
+
+  const availableSundayItems = sundayItems.filter(i => !addedSourceIds.has(i.id))
+
+  const filteredSundayItems = availableSundayItems.filter(i =>
     i.task.toLowerCase().includes(search.toLowerCase()) ||
     i.section.toLowerCase().includes(search.toLowerCase())
   )
@@ -122,25 +127,39 @@ function ItemEditor({
 
       {showPicker && (
         <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
-          <input
-            className="w-full text-xs border border-gray-200 rounded px-2 py-1 mb-2 focus:outline-none"
-            placeholder="Search Sunday checklist..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            autoFocus
-          />
+          <div className="flex gap-2 mb-2">
+            <input
+              className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none"
+              placeholder="Search Sunday checklist..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              autoFocus
+            />
+            {availableSundayItems.length > 0 && (
+              <button
+                onClick={() => { availableSundayItems.forEach(si => onAddSundayItem(si)) }}
+                className={btnCls('primary', 'text-xs whitespace-nowrap')}
+                title={`Add all ${availableSundayItems.length} remaining items`}
+              >
+                Add all ({availableSundayItems.length})
+              </button>
+            )}
+          </div>
           <div className="max-h-48 overflow-y-auto space-y-0.5">
             {filteredSundayItems.map(si => (
               <button
                 key={si.id}
-                onClick={() => { onAddSundayItem(si); setShowPicker(false); setSearch('') }}
+                onClick={() => onAddSundayItem(si)}
                 className="w-full text-left px-2 py-1.5 rounded hover:bg-white hover:shadow-sm text-xs text-gray-700 flex items-start gap-2"
               >
                 <span className="text-gray-400 flex-shrink-0 mt-0.5">{si.section}</span>
                 <span className="flex-1">{si.task}</span>
               </button>
             ))}
-            {filteredSundayItems.length === 0 && (
+            {filteredSundayItems.length === 0 && availableSundayItems.length === 0 && (
+              <p className="text-gray-400 text-xs text-center py-2">All Sunday checklist items have been added</p>
+            )}
+            {filteredSundayItems.length === 0 && availableSundayItems.length > 0 && (
               <p className="text-gray-400 text-xs text-center py-2">No matches</p>
             )}
           </div>
