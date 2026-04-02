@@ -316,8 +316,8 @@ function TemplateModal({ template, sundayItems, onClose, onSaved }: TemplateModa
               onNotesChange={(id, notes) => setItems(prev => prev.map(i => i.id === id ? { ...i, item_notes: notes || null } : i))}
             />
           </div>
-          {error && <p className="text-red-600 text-sm">{error}</p>}
         </div>
+        {error && <p className="text-red-600 text-sm px-5 py-2 border-t border-red-100 bg-red-50">{error}</p>}
         <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
           <button onClick={onClose} className={btnCls('secondary')}>Cancel</button>
           <button onClick={save} disabled={saving} className={btnCls('primary')}>
@@ -448,8 +448,8 @@ function EventItemsModal({ event, sundayItems, onClose }: EventItemsModalProps) 
             onLabelChange={(id, label) => setItems(prev => prev.map(i => i.id === id ? { ...i, label } : i))}
             onNotesChange={(id, notes) => setItems(prev => prev.map(i => i.id === id ? { ...i, item_notes: notes || null } : i))}
           />
-          {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
         </div>
+        {error && <p className="text-red-600 text-sm px-5 py-2 border-t border-red-100 bg-red-50">{error}</p>}
         <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
           <button onClick={onClose} className={btnCls('secondary')}>Close</button>
           <button onClick={save} disabled={saving} className={btnCls('primary')}>
