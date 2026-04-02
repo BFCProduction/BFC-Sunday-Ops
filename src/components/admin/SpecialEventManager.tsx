@@ -249,7 +249,7 @@ function TemplateModal({ template, sundayItems, onClose, onSaved }: TemplateModa
 
   function addSundayItem(si: ChecklistItem) {
     setItems(prev => [...prev, {
-      id: `new-${Date.now()}`,
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       template_id: template?.id ?? '',
       source_checklist_item_id: si.id,
       label: si.task,
@@ -263,7 +263,7 @@ function TemplateModal({ template, sundayItems, onClose, onSaved }: TemplateModa
 
   function addCustom() {
     setItems(prev => [...prev, {
-      id: `new-${Date.now()}`,
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       template_id: template?.id ?? '',
       source_checklist_item_id: null,
       label: '',
@@ -389,7 +389,7 @@ function EventItemsModal({ event, sundayItems, onClose }: EventItemsModalProps) 
 
   function addSundayItem(si: ChecklistItem) {
     setItems(prev => [...prev, {
-      id: `new-${Date.now()}`,
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       event_id: event.id,
       source_template_item_id: null,
       source_checklist_item_id: si.id,
@@ -404,7 +404,7 @@ function EventItemsModal({ event, sundayItems, onClose }: EventItemsModalProps) 
 
   function addCustom() {
     setItems(prev => [...prev, {
-      id: `new-${Date.now()}`,
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       event_id: event.id,
       source_template_item_id: null,
       source_checklist_item_id: null,
