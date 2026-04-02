@@ -241,7 +241,8 @@ function TemplateModal({ template, sundayItems, onClose, onSaved }: TemplateModa
       onSaved()
       onClose()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Save failed')
+      const msg = e instanceof Error ? e.message : (e as { message?: string })?.message
+      setError(msg || JSON.stringify(e))
     } finally {
       setSaving(false)
     }
@@ -381,7 +382,8 @@ function EventItemsModal({ event, sundayItems, onClose }: EventItemsModalProps) 
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Save failed')
+      const msg = e instanceof Error ? e.message : (e as { message?: string })?.message
+      setError(msg || JSON.stringify(e))
     } finally {
       setSaving(false)
     }
