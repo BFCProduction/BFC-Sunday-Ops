@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import type { StreamAnalytics } from '../types'
 
-interface EvaluationProps { sundayId: string }
+interface EvaluationProps { sundayId: string; eventId?: string | null }
 
 type ServiceFeel = 'excellent' | 'solid' | 'rough_spots' | 'significant_issues'
 
@@ -59,7 +59,7 @@ const FEEL_OPTIONS: {
 
 const feelMeta = Object.fromEntries(FEEL_OPTIONS.map(o => [o.value, o])) as Record<ServiceFeel, typeof FEEL_OPTIONS[number]>
 
-export function Evaluation({ sundayId }: EvaluationProps) {
+export function Evaluation({ sundayId, eventId }: EvaluationProps) {
   // ── Form state ──────────────────────────────────────────────────────────────
   const [feel,             setFeel]             = useState<ServiceFeel | null>(null)
   const [brokenMoment,     setBrokenMoment]     = useState<boolean | null>(null)
@@ -79,12 +79,10 @@ export function Evaluation({ sundayId }: EvaluationProps) {
   const [loading,     setLoading]     = useState(true)
 
   const loadData = async () => {
+    const evalQ = supabase.from('evaluations').select('*')
+    const evalFiltered = eventId ? evalQ.eq('event_id', eventId) : evalQ.eq('sunday_id', sundayId)
     const [subsRes, analyticsRes] = await Promise.all([
-      supabase
-        .from('evaluations')
-        .select('*')
-        .eq('sunday_id', sundayId)
-        .order('submitted_at', { ascending: false }),
+      evalFiltered.order('submitted_at', { ascending: false }),
       supabase
         .from('stream_analytics')
         .select('*')
@@ -96,7 +94,7 @@ export function Evaluation({ sundayId }: EvaluationProps) {
     setLoading(false)
   }
 
-  useEffect(() => { loadData() }, [sundayId])
+  useEffect(() => { loadData() }, [sundayId, eventId])
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const canSubmit =
@@ -114,7 +112,7 @@ export function Evaluation({ sundayId }: EvaluationProps) {
     if (!canSubmit) return
     setSaving(true)
     const { error } = await supabase.from('evaluations').insert({
-      sunday_id:            sundayId,
+      ...(eventId ? { event_id: eventId } : { sunday_id: sundayId }),
       service_feel:         feel,
       broken_moment:        brokenMoment ?? false,
       broken_moment_detail: brokenMoment ? (brokenDetail.trim() || null) : null,

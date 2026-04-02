@@ -6,7 +6,7 @@ import { useSunday } from '../../context/SundayContext'
 import { RuntimeFieldModal } from '../../components/admin/RuntimeFieldModal'
 import type { RuntimeField } from '../../components/admin/RuntimeFieldModal'
 
-interface RuntimesProps { sundayId: string }
+interface RuntimesProps { sundayId: string; eventId?: string | null }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -16,7 +16,7 @@ interface RuntimeValue {
   captured_at: string | null
 }
 
-export function Runtimes({ sundayId }: RuntimesProps) {
+export function Runtimes({ sundayId, eventId }: RuntimesProps) {
   const { isAdmin } = useAdmin()
   const { timezone } = useSunday()
   const [allFields, setAllFields] = useState<RuntimeField[]>([])
@@ -39,10 +39,8 @@ export function Runtimes({ sundayId }: RuntimesProps) {
   }, [])
 
   const loadValues = useCallback(async () => {
-    const { data } = await supabase
-      .from('runtime_values')
-      .select('field_id, value, captured_at')
-      .eq('sunday_id', sundayId)
+    const q = supabase.from('runtime_values').select('field_id, value, captured_at')
+    const { data } = await (eventId ? q.eq('event_id', eventId) : q.eq('sunday_id', sundayId))
     if (data) {
       const vals: Record<number, string> = {}
       const caps: Record<number, string> = {}
@@ -57,7 +55,7 @@ export function Runtimes({ sundayId }: RuntimesProps) {
       setValues(vals)
       setCaptured(caps)
     }
-  }, [sundayId])
+  }, [sundayId, eventId])
 
   useEffect(() => {
     let active = true
@@ -76,16 +74,28 @@ export function Runtimes({ sundayId }: RuntimesProps) {
 
   const save = async () => {
     setSaving(true)
-    const upserts = allFields
-      .filter(f => values[f.id] !== undefined)
-      .map(f => ({
-        sunday_id: sundayId,
-        field_id: f.id,
-        value: values[f.id] || null,
-        captured_at: new Date().toISOString(),
-      }))
-    if (upserts.length > 0) {
-      await supabase.from('runtime_values').upsert(upserts, { onConflict: 'sunday_id,field_id' })
+    const fields = allFields.filter(f => values[f.id] !== undefined)
+    if (fields.length > 0) {
+      if (eventId) {
+        // For events, use manual upsert to work around partial unique index
+        for (const f of fields) {
+          const { data: existing } = await supabase.from('runtime_values').select('id').eq('event_id', eventId).eq('field_id', f.id).maybeSingle()
+          const payload = { event_id: eventId, field_id: f.id, value: values[f.id] || null, captured_at: new Date().toISOString() }
+          if (existing) {
+            await supabase.from('runtime_values').update(payload).eq('id', existing.id)
+          } else {
+            await supabase.from('runtime_values').insert(payload)
+          }
+        }
+      } else {
+        const upserts = fields.map(f => ({
+          sunday_id: sundayId,
+          field_id: f.id,
+          value: values[f.id] || null,
+          captured_at: new Date().toISOString(),
+        }))
+        await supabase.from('runtime_values').upsert(upserts, { onConflict: 'sunday_id,field_id' })
+      }
     }
     setSaving(false)
     setSaved(true)

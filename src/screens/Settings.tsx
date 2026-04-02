@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, Globe, Loader2, Mail, Plus, RefreshCw, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { CalendarDays, FileDown, Globe, Loader2, Mail, Plus, RefreshCw, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
 import { requestSummaryEmailAdmin } from '../lib/adminApi'
@@ -7,8 +7,9 @@ import { useSunday } from '../context/SundayContext'
 import { fetchReportData } from '../lib/reportData'
 import { generateReportHtml } from '../lib/generateReportHtml'
 import { supabase } from '../lib/supabase'
-import type { ReportEmailRecipient, ReportEmailSettings } from '../types'
+import type { ReportEmailRecipient, ReportEmailSettings, Session } from '../types'
 import bfcLogo from '../assets/BFC_Production_Logo_Hor reverse.png'
+import { SpecialEventManager } from '../components/admin/SpecialEventManager'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -59,7 +60,11 @@ async function openPdf(sundayId: string, sundayDate: string) {
   setTimeout(() => win.print(), 600)
 }
 
-export function Settings() {
+interface SettingsProps {
+  onSessionsChange?: (sessions: Session[]) => void
+}
+
+export function Settings({ onSessionsChange }: SettingsProps = {}) {
   const { isAdmin, adminPassword } = useAdmin()
   const { sundayId, sundayDate, timezone } = useSunday()
 
@@ -601,6 +606,18 @@ export function Settings() {
           )}
         </div>
 
+        {/* ── Special Events ── */}
+        {isAdmin && (
+          <div className="mt-6">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
+              <CalendarDays className="w-3.5 h-3.5 text-purple-500" />
+              Special Events
+            </p>
+            <Card className="p-5">
+              <SpecialEventManager onSessionsChange={onSessionsChange ?? (() => {})} />
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   )

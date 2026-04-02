@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { Card } from '../../components/ui/Card'
 
-interface AttendanceProps { sundayId: string }
+interface AttendanceProps {
+  sundayId: string
+  eventId?: string | null
+}
 
-export function Attendance({ sundayId }: AttendanceProps) {
+export function Attendance({ sundayId, eventId }: AttendanceProps) {
   const [s1, setS1] = useState('')
   const [s2, setS2] = useState('')
   const [notes, setNotes] = useState('')
@@ -12,25 +15,43 @@ export function Attendance({ sundayId }: AttendanceProps) {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    supabase.from('attendance').select('*').eq('sunday_id', sundayId).single()
-      .then(({ data }) => {
-        if (data) {
-          setS1(data.service_1_count?.toString() || '')
-          setS2(data.service_2_count?.toString() || '')
-          setNotes(data.notes || '')
-        }
-      })
-  }, [sundayId])
+    const q = supabase.from('attendance').select('*')
+    const filtered = eventId ? q.eq('event_id', eventId) : q.eq('sunday_id', sundayId)
+    filtered.maybeSingle().then(({ data }) => {
+      if (data) {
+        setS1(data.service_1_count?.toString() || '')
+        setS2(data.service_2_count?.toString() || '')
+        setNotes(data.notes || '')
+      }
+    })
+  }, [sundayId, eventId])
 
   const submit = async () => {
     setSaving(true)
-    await supabase.from('attendance').upsert({
-      sunday_id: sundayId,
-      service_1_count: s1 ? parseInt(s1) : null,
-      service_2_count: s2 ? parseInt(s2) : null,
-      notes: notes || null,
-      submitted_at: new Date().toISOString(),
-    })
+    if (eventId) {
+      // Manual upsert for events (partial unique index can't be used with supabase upsert)
+      const { data: existing } = await supabase.from('attendance').select('id').eq('event_id', eventId).maybeSingle()
+      const payload = {
+        event_id: eventId,
+        service_1_count: s1 ? parseInt(s1) : null,
+        service_2_count: s2 ? parseInt(s2) : null,
+        notes: notes || null,
+        submitted_at: new Date().toISOString(),
+      }
+      if (existing) {
+        await supabase.from('attendance').update(payload).eq('id', existing.id)
+      } else {
+        await supabase.from('attendance').insert(payload)
+      }
+    } else {
+      await supabase.from('attendance').upsert({
+        sunday_id: sundayId,
+        service_1_count: s1 ? parseInt(s1) : null,
+        service_2_count: s2 ? parseInt(s2) : null,
+        notes: notes || null,
+        submitted_at: new Date().toISOString(),
+      })
+    }
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)

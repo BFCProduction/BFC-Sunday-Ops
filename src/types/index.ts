@@ -15,7 +15,8 @@ export interface ChecklistCompletion {
 
 export interface Issue {
   id: string
-  sunday_id: string
+  sunday_id: string | null
+  event_id?: string | null
   title: string
   description: string
   severity: 'Low' | 'Medium' | 'High' | 'Critical'
@@ -139,3 +140,61 @@ export interface ChecklistItem {
 }
 
 export type Role = 'All' | 'A1' | 'Video' | 'Graphics' | 'Lighting' | 'Stage'
+
+// ── Special Events ────────────────────────────────────────────────────────────
+
+export interface EventTemplate {
+  id: string
+  name: string
+  notes: string | null
+  created_at: string
+}
+
+export interface EventTemplateItem {
+  id: string
+  template_id: string
+  source_checklist_item_id: number | null
+  label: string
+  section: string
+  subsection: string | null
+  item_notes: string | null
+  sort_order: number
+  created_at: string
+}
+
+export interface SpecialEvent {
+  id: string
+  name: string
+  event_date: string   // YYYY-MM-DD
+  event_time: string | null  // HH:MM
+  template_id: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface EventChecklistItem {
+  id: string
+  event_id: string
+  source_template_item_id: string | null
+  source_checklist_item_id: number | null
+  label: string
+  section: string
+  subsection: string | null
+  item_notes: string | null
+  sort_order: number
+  created_at: string
+}
+
+export interface EventChecklistCompletion {
+  id: string
+  event_id: string
+  item_id: string
+  initials: string
+  completed_at: string
+}
+
+// A unified session: either a regular Sunday or a special event.
+// Used for chronological navigation across both types.
+export type Session =
+  | { type: 'sunday'; id: string; date: string }
+  | { type: 'event';  id: string; date: string; name: string; eventTime: string | null }

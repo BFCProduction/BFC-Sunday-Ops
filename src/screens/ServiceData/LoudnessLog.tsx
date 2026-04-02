@@ -5,7 +5,7 @@ import { Card } from '../../components/ui/Card'
 import { generateLoudnessReportHtml } from '../../lib/generateLoudnessReportHtml'
 import bfcLogo from '../../assets/BFC_Production_Logo_Hor reverse.png'
 
-interface LoudnessProps { sundayId: string }
+interface LoudnessProps { sundayId: string; eventId?: string | null }
 
 const GOAL_9AM  = 88
 const GOAL_11AM = 94
@@ -72,7 +72,7 @@ async function syncToServiceRecords(
   }
 }
 
-export function LoudnessLog({ sundayId }: LoudnessProps) {
+export function LoudnessLog({ sundayId, eventId }: LoudnessProps) {
   const { sundayDate } = useSunday()
 
   // A-weighted
@@ -100,8 +100,9 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
   const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
-    supabase.from('loudness').select('*').eq('sunday_id', sundayId).single()
-      .then(({ data }) => {
+    const q = supabase.from('loudness').select('*')
+    const filtered = eventId ? q.eq('event_id', eventId) : q.eq('sunday_id', sundayId)
+    filtered.maybeSingle().then(({ data }) => {
         if (data) {
           setS1Max(data.service_1_max_db?.toString() || '')
           setS1LAeq(data.service_1_laeq?.toString() || '')
@@ -128,18 +129,30 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
           })))
         }
       })
-  }, [sundayId])
+  }, [sundayId, eventId])
+
+  async function loudnessUpsert(fields: Record<string, unknown>) {
+    if (eventId) {
+      const { data: existing } = await supabase.from('loudness').select('id').eq('event_id', eventId).maybeSingle()
+      const payload = { event_id: eventId, ...fields, logged_at: new Date().toISOString() }
+      if (existing) {
+        await supabase.from('loudness').update(payload).eq('id', existing.id)
+      } else {
+        await supabase.from('loudness').insert(payload)
+      }
+    } else {
+      await supabase.from('loudness').upsert({ sunday_id: sundayId, ...fields, logged_at: new Date().toISOString() }, { onConflict: 'sunday_id' })
+    }
+  }
 
   const submitS1 = async () => {
     setS1Saving(true)
-    await supabase.from('loudness').upsert({
-      sunday_id: sundayId,
+    await loudnessUpsert({
       service_1_max_db:   s1Max   ? parseFloat(s1Max)   : null,
       service_1_laeq:     s1LAeq  ? parseFloat(s1LAeq)  : null,
       service_1_max_db_c: s1MaxC  ? parseFloat(s1MaxC)  : null,
       service_1_lceq:     s1LCeq  ? parseFloat(s1LCeq)  : null,
-      logged_at: new Date().toISOString(),
-    }, { onConflict: 'sunday_id' })
+    })
     await syncToServiceRecords(sundayId, sundayDate, 'regular_9am', {
       max_db_a_slow: s1Max   ? parseFloat(s1Max)   : null,
       la_eq_15:      s1LAeq  ? parseFloat(s1LAeq)  : null,
@@ -153,14 +166,12 @@ export function LoudnessLog({ sundayId }: LoudnessProps) {
 
   const submitS2 = async () => {
     setS2Saving(true)
-    await supabase.from('loudness').upsert({
-      sunday_id: sundayId,
+    await loudnessUpsert({
       service_2_max_db:   s2Max   ? parseFloat(s2Max)   : null,
       service_2_laeq:     s2LAeq  ? parseFloat(s2LAeq)  : null,
       service_2_max_db_c: s2MaxC  ? parseFloat(s2MaxC)  : null,
       service_2_lceq:     s2LCeq  ? parseFloat(s2LCeq)  : null,
-      logged_at: new Date().toISOString(),
-    }, { onConflict: 'sunday_id' })
+    })
     await syncToServiceRecords(sundayId, sundayDate, 'regular_11am', {
       max_db_a_slow: s2Max   ? parseFloat(s2Max)   : null,
       la_eq_15:      s2LAeq  ? parseFloat(s2LAeq)  : null,

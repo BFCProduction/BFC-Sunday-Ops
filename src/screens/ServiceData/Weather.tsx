@@ -7,6 +7,7 @@ import type { WeatherConfig } from '../../types'
 
 interface WeatherProps {
   sundayId: string
+  eventId?: string | null
 }
 
 interface WeatherRecord {
@@ -19,7 +20,7 @@ interface WeatherRecord {
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-export function Weather({ sundayId }: WeatherProps) {
+export function Weather({ sundayId, eventId }: WeatherProps) {
   const { isAdmin } = useAdmin()
   const [weather, setWeather] = useState<WeatherRecord | null>(null)
   const [config, setConfig] = useState<WeatherConfig | null>(null)
@@ -32,8 +33,10 @@ export function Weather({ sundayId }: WeatherProps) {
   const [configNotice, setConfigNotice] = useState('')
 
   useEffect(() => {
+    const weatherQ = supabase.from('weather').select('*')
+    const weatherFiltered = eventId ? weatherQ.eq('event_id', eventId) : weatherQ.eq('sunday_id', sundayId)
     Promise.all([
-      supabase.from('weather').select('*').eq('sunday_id', sundayId).single(),
+      weatherFiltered.maybeSingle(),
       supabase.from('weather_config').select('*').eq('key', 'default').maybeSingle(),
     ]).then(([weatherRes, configRes]) => {
         const nextConfig = (configRes.data || null) as WeatherConfig | null
@@ -45,7 +48,7 @@ export function Weather({ sundayId }: WeatherProps) {
         setWeather((weatherRes.data || null) as WeatherRecord | null)
         setLoading(false)
       })
-  }, [sundayId])
+  }, [sundayId, eventId])
 
   const saveConfig = async () => {
     if (!zipCode.trim()) {

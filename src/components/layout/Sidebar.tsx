@@ -3,11 +3,13 @@ import {
   LayoutDashboard, ClipboardCheck, AlertTriangle,
   BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
   Lock, LockOpen, Settings, ChevronLeft, ChevronRight, RotateCcw, TrendingUp,
+  CalendarDays,
 } from 'lucide-react'
 import { useAdmin } from '../../context/adminState'
 import { AdminPasswordModal } from '../admin/AdminPasswordModal'
 import { getServicePhase, type ServicePhase } from '../../lib/serviceStatus'
 import { useSunday } from '../../context/SundayContext'
+import type { Session } from '../../types'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings'
 
@@ -15,6 +17,7 @@ interface SidebarProps {
   active: Screen
   setActive: (s: Screen) => void
   issueCount: number
+  allSessions: Session[]
 }
 
 const navItems = [
@@ -25,15 +28,12 @@ const navItems = [
   { id: 'evaluation'  as Screen, label: 'Post-Service Evaluation',  icon: Star            },
 ]
 
-function addWeeks(dateStr: string, weeks: number): string {
-  const d = new Date(dateStr + 'T12:00:00')
-  d.setDate(d.getDate() + weeks * 7)
-  return d.toISOString().slice(0, 10)
-}
-
-export function Sidebar({ active, setActive, issueCount }: SidebarProps) {
+export function Sidebar({ active, setActive, issueCount, allSessions }: SidebarProps) {
   const { isAdmin, logout } = useAdmin()
-  const { sundayDate, todaySundayDate, timezone, isViewingPast, navigateSunday } = useSunday()
+  const {
+    sessionType, sessionDate, eventName,
+    todaySundayDate, timezone, isViewingPast, navigateSunday,
+  } = useSunday()
   const [showAdminModal, setShowAdminModal] = useState(false)
   const [phase, setPhase] = useState<ServicePhase | null>(() => getServicePhase(new Date(), timezone))
 
@@ -43,13 +43,21 @@ export function Sidebar({ active, setActive, issueCount }: SidebarProps) {
     return () => clearInterval(id)
   }, [timezone])
 
-  const dateFormatted = sundayDate
-    ? new Date(sundayDate + 'T12:00:00').toLocaleDateString('en-US', {
+  // ── Session label ──────────────────────────────────────────────────────────
+  const dateFormatted = sessionDate
+    ? new Date(sessionDate + 'T12:00:00').toLocaleDateString('en-US', {
         month: 'long', day: 'numeric', year: 'numeric',
       })
     : '—'
 
-  const isAtToday = sundayDate === todaySundayDate || !todaySundayDate
+  const displayLabel = sessionType === 'event' && eventName
+    ? eventName
+    : dateFormatted
+
+  // ── Prev / next in chronological session list ─────────────────────────────
+  const currentIdx = allSessions.findIndex(s => s.date === sessionDate && s.type === sessionType)
+  const prevSession = currentIdx > 0 ? allSessions[currentIdx - 1] : null
+  const nextSession = currentIdx >= 0 && currentIdx < allSessions.length - 1 ? allSessions[currentIdx + 1] : null
 
   return (
     <aside className="hidden md:flex flex-col flex-shrink-0 border-r border-white/[0.06] overflow-y-auto"
@@ -57,37 +65,54 @@ export function Sidebar({ active, setActive, issueCount }: SidebarProps) {
 
       <div className="px-4 pt-5 pb-4 border-b border-white/[0.05]">
         <div className="flex items-center gap-2 mb-2">
-          <Calendar className="w-3.5 h-3.5 text-gray-600" />
+          {sessionType === 'event'
+            ? <CalendarDays className="w-3.5 h-3.5 text-purple-500" />
+            : <Calendar className="w-3.5 h-3.5 text-gray-600" />
+          }
           <p className="text-gray-600 text-[10px] font-semibold uppercase tracking-widest">
-            {isViewingPast ? 'Viewing Past Sunday' : 'This Sunday'}
+            {isViewingPast
+              ? (sessionType === 'event' ? 'Past Event' : 'Viewing Past Sunday')
+              : (sessionType === 'event' ? 'Special Event' : 'This Sunday')
+            }
           </p>
         </div>
 
-        {/* Date navigator */}
+        {/* Date / name navigator */}
         <div className="flex items-center gap-1">
           <button
-            onClick={() => navigateSunday(addWeeks(sundayDate, -1))}
-            className="p-1 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0"
-            title="Previous Sunday"
+            onClick={() => prevSession && navigateSunday(prevSession.date)}
+            disabled={!prevSession}
+            className="p-1 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
+            title={prevSession ? `Go to ${prevSession.type === 'event' ? (prevSession as Extract<Session, {type:'event'}>).name : prevSession.date}` : 'No earlier session'}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <p className="text-white text-sm font-semibold flex-1 text-center leading-tight">{dateFormatted}</p>
+          <div className="flex-1 text-center">
+            <p className="text-white text-sm font-semibold leading-tight">{displayLabel}</p>
+            {sessionType === 'event' && (
+              <p className="text-gray-500 text-[10px] mt-0.5">{dateFormatted}</p>
+            )}
+          </div>
 
           <button
-            onClick={() => navigateSunday(addWeeks(sundayDate, 1))}
-            disabled={isAtToday}
+            onClick={() => nextSession && navigateSunday(nextSession.date)}
+            disabled={!nextSession}
             className="p-1 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-            title="Next Sunday"
+            title={nextSession ? `Go to ${nextSession.type === 'event' ? (nextSession as Extract<Session, {type:'event'}>).name : nextSession.date}` : 'No later session'}
           >
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Phase / historical badge */}
+        {/* Phase / session badge */}
         <div className="flex gap-2 mt-2 flex-wrap">
-          {isViewingPast ? (
+          {sessionType === 'event' ? (
+            <span className="bg-purple-900/40 text-purple-400 text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
+              <CalendarDays className="w-2.5 h-2.5" />
+              Special Event
+            </span>
+          ) : isViewingPast ? (
             <span className="bg-amber-900/40 text-amber-400 text-[10px] font-medium px-2 py-0.5 rounded-full">
               Historical View
             </span>
@@ -114,8 +139,8 @@ export function Sidebar({ active, setActive, issueCount }: SidebarProps) {
           </button>
         )}
 
-        {!isViewingPast && (
-          <p className="text-gray-700 text-[10px] mt-2">Use arrows to view past Sundays</p>
+        {!isViewingPast && sessionType === 'sunday' && (
+          <p className="text-gray-700 text-[10px] mt-2">Use arrows to view past sessions</p>
         )}
       </div>
 

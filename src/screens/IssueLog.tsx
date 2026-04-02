@@ -8,6 +8,7 @@ import type { Issue, IssuePhoto } from '../types'
 
 interface IssueLogProps {
   sundayId: string
+  eventId?: string | null
 }
 
 const MONDAY_PUSH_ENABLED = import.meta.env.VITE_ENABLE_MONDAY_PUSH === 'true'
@@ -131,7 +132,7 @@ function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function IssueLog({ sundayId }: IssueLogProps) {
+export function IssueLog({ sundayId, eventId }: IssueLogProps) {
   const { isAdmin } = useAdmin()
   const { timezone } = useSunday()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -153,10 +154,11 @@ export function IssueLog({ sundayId }: IssueLogProps) {
 
   // ── Load issues ──────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from('issues').select('*').eq('sunday_id', sundayId)
-      .order('created_at', { ascending: false })
+    const q = supabase.from('issues').select('*')
+    const filtered = eventId ? q.eq('event_id', eventId) : q.eq('sunday_id', sundayId)
+    filtered.order('created_at', { ascending: false })
       .then(({ data }) => { setIssues((data || []) as Issue[]); setLoading(false) })
-  }, [sundayId])
+  }, [sundayId, eventId])
 
   // ── Load photos for all issues ───────────────────────────────────────────
   useEffect(() => {
@@ -215,7 +217,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
       return
     }
     const newIssue = {
-      sunday_id: sundayId,
+      ...(eventId ? { event_id: eventId } : { sunday_id: sundayId }),
       title: title.trim(),
       description: desc.trim(),
       severity,
@@ -223,7 +225,7 @@ export function IssueLog({ sundayId }: IssueLogProps) {
     }
     setNotice('')
     const pushToMonday = MONDAY_PUSH_ENABLED && createTask && severity !== 'Low'
-    saveIssue(newIssue, pushToMonday)
+    saveIssue(newIssue as Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday' | 'resolved_at'>, pushToMonday)
   }
 
   const saveIssue = async (
