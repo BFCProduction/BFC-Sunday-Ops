@@ -1,5 +1,82 @@
 # Changelog
 
+## 2026-04-03 (Session 4)
+
+### Summary
+
+Added full **Special Events** support so the team can run non-Sunday services (Good Friday, Christmas Eve, etc.) through the same operational workflow as a regular Sunday. Includes reusable templates, per-event checklists with admin inline editing, and chronological session navigation that mixes Sundays and events in one unified sidebar. Fixed several bugs discovered during Good Friday use.
+
+### Completed
+
+- **Database schema** (`supabase/migrations/014_add_special_events.sql`):
+  - Five new tables: `event_templates`, `event_template_items`, `special_events`, `event_checklist_items`, `event_checklist_completions`.
+  - Added `event_id` column to all operational tables: `issues`, `attendance`, `loudness`, `weather`, `evaluations`, `runtime_values`, `service_records`.
+  - Made `sunday_id` nullable on all operational tables (existing rows unaffected).
+  - Partial unique indexes replace simple unique constraints so the same uniqueness guarantees work for both Sunday rows and event rows.
+  - `CHECK (sunday_id IS NOT NULL OR event_id IS NOT NULL)` constraints on all shared tables.
+  - Full `public_all` RLS + `GRANT` to `anon`/`authenticated` on all five new tables.
+
+- **Types** (`src/types/index.ts`):
+  - Added `EventTemplate`, `EventTemplateItem`, `SpecialEvent`, `EventChecklistItem`, `EventChecklistCompletion` interfaces.
+  - Added `Session` discriminated union (`{ type: 'sunday' }` | `{ type: 'event' }`) for unified navigation.
+  - `Issue.sunday_id` made nullable; `event_id` added.
+
+- **Context** (`src/context/SundayContext.ts`):
+  - Extended `SundayContextType` with `eventId`, `eventName`, `sessionType`, `sessionDate` — fully backward-compatible with all existing screens.
+
+- **Data layer** (`src/lib/supabase.ts`):
+  - `getSpecialEventByDate(date)` — looks up a special event on a given date.
+  - `loadAllSessions()` — fetches all Sundays and all events, merges into a single chronologically-sorted `Session[]`.
+  - `getOperationalSession()` — determines whether the operational date resolves to a Sunday or a special event.
+
+- **App init & navigation** (`src/App.tsx`):
+  - On startup, checks for a special event at the operational date before defaulting to a Sunday.
+  - `navigateSunday()` checks for events first, falls back to Sunday lookup.
+  - Routes `screen === 'checklist'` to `<Checklist>` or `<EventChecklist>` based on session type.
+  - Passes `eventId` to all operational screens.
+
+- **Sidebar** (`src/components/layout/Sidebar.tsx`):
+  - Prev/next arrows now step through `allSessions` (Sundays + events mixed in date order).
+  - Shows event name as primary label with date below when viewing an event.
+  - Purple "Special Event" badge with `CalendarDays` icon.
+
+- **Special Event Manager** (`src/components/admin/SpecialEventManager.tsx`):
+  - Admin UI in Settings → Special Events for full CRUD on templates and events.
+  - **Templates**: create/edit with name, notes, and checklist items. Items can be pulled from the Sunday checklist ("Add from Sunday checklist" picker) or created as custom items. "Add all (N)" button adds all available Sunday items at once. Picker filters out already-added items.
+  - **Events**: create/edit with name, date, time, template selection, and preview of template items. On creation, template items are snapshotted into `event_checklist_items` so later template edits don't affect existing events.
+  - **Edit Items on Event**: per-event item editor to add/remove/edit items after creation — changes are isolated to that event.
+  - **Save as Template**: create a new template from an event's current checklist items.
+  - Errors always visible in a pinned footer banner regardless of scroll position.
+
+- **Event Checklist screen** (`src/screens/EventChecklist.tsx`):
+  - Matches Sunday checklist layout exactly: sticky header, progress bar, collapsible section cards, two-column desktop layout (`xl:columns-2`).
+  - Initials stored in `localStorage` and reused across checkoffs; sign-off modal as fallback.
+  - Supabase Realtime subscription on `event_checklist_completions` for live cross-device sync.
+  - **Admin mode**: drag-to-reorder items within sections (persisted to `sort_order`), inline edit modal (label, section, subsection, notes), delete with confirmation, "Add item to {section}" button per section.
+  - Admin mode uses `useAdmin()` context — same admin toggle as the Sunday checklist.
+
+- **Operational screens** — all updated to pass `eventId` and query/insert against the correct session:
+  - `IssueLog.tsx`: conditional filter and insert (`event_id` vs `sunday_id`).
+  - `ServiceData/index.tsx`: passes `eventId` to sub-screens.
+  - `ServiceData/Attendance.tsx`: manual upsert for events (partial unique index workaround).
+  - `ServiceData/Weather.tsx`: conditional query filter.
+  - `ServiceData/Runtimes.tsx`: per-field manual upsert loop for events.
+  - `ServiceData/LoudnessLog.tsx`: `loudnessUpsert()` helper used by both 9am and 11am submit paths.
+  - `Evaluation.tsx`: conditional filter/insert.
+
+### Bug Fixes
+
+- **"Add All removes all items"**: `Date.now()` returns the same millisecond value in a synchronous `forEach`, giving all new items identical IDs. Fixed by appending a random suffix to every generated ID.
+- **"Save Template does nothing"**: Supabase error objects are not JS `Error` instances, so the catch block was displaying "Save failed" instead of the real message. Fixed to extract `.message` from the raw Supabase error object. Error banner moved from inside the scrollable content area to a pinned footer position so it's always visible.
+- **"Permission denied for table event_templates"**: Tables existed but `GRANT` statements had not been run for the `anon` role. Fixed by running explicit grants on all five new tables.
+
+### Notes
+
+- Migration `014_add_special_events.sql` must be applied manually in the Supabase SQL editor (tables, RLS, grants).
+- The manual upsert pattern (select → update or insert) is required for all event rows due to Supabase's `onConflict` not supporting partial unique indexes.
+
+---
+
 ## 2026-04-01 (Session 3)
 
 ### Summary

@@ -17,6 +17,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - PDF service report export with logo, KPIs, issues, and evaluation responses
 - ProPresenter relay script for runtime capture
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs
+- **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, per-event checklists, and unified chronological navigation
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -69,6 +70,14 @@ Live now:
 
 - RESI analytics importer (`scripts/fetch-resi.js`) — logs in via Playwright, downloads the session CSV for the target Sunday, computes per-service stats, and writes to Supabase. Supports `--now`, `--date`, and `--dry-run` flags.
 
+- **Special Events** (`src/components/admin/SpecialEventManager.tsx`, `src/screens/EventChecklist.tsx`):
+  - Admin-managed event templates (reusable checklist blueprints) and special events with name, date, time, and template assignment.
+  - Events appear chronologically in the sidebar alongside Sundays; prev/next navigation steps through both.
+  - Per-event checklists: items are snapshotted from the template at creation so later template changes don't affect existing events. Items can be added, edited, reordered, and deleted per-event in admin mode.
+  - Event checklist UI matches the Sunday checklist exactly: collapsible section cards, two-column desktop layout, sticky header, progress bar, Realtime sync.
+  - All operational screens (issues, attendance, runtimes, loudness, weather, evaluations) work for events using the same `event_id` column pattern.
+  - Managed in Settings → Special Events (admin only).
+
 - **Analytics screen** (`src/screens/Analytics/`) — three-tab layout:
   - **Dashboard**: 6 KPI cards (Avg Attendance, Avg Service Runtime, Avg Message Runtime, Avg Loudness, Avg Stream Views, Total Sundays), each with 9am/11am breakdown and period-over-period delta arrows. Date-range filter. All time values rounded to whole seconds.
   - **Data Explorer**: filterable table view of `service_records` with column-level sorting.
@@ -117,6 +126,11 @@ Completed (previously listed as pending):
 - `report_email_runs`
 - `app_config`
 - `service_records` — unified analytics table (one row per service per Sunday)
+- `event_templates` — reusable checklist blueprints for special events
+- `event_template_items` — checklist items belonging to a template
+- `special_events` — non-Sunday services (Good Friday, Christmas Eve, etc.)
+- `event_checklist_items` — per-event checklist items (snapshotted from template at creation)
+- `event_checklist_completions` — completions for event checklist items
 
 Fresh schema setup is represented by:
 - `supabase/migrations/001_initial_schema.sql`
@@ -132,6 +146,7 @@ Fresh schema setup is represented by:
 - `supabase/migrations/011_security_hardening.sql`
 - `supabase/migrations/012_create_service_records.sql`
 - `supabase/migrations/013_add_c_weighted_loudness.sql`
+- `supabase/migrations/014_add_special_events.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -369,3 +384,4 @@ supabase functions deploy summary-email-admin
 - Build the AI "Ask a Question" Analytics tab — natural-language queries against `service_records` via Claude API / Supabase Edge Function.
 - Update operational input screens (Loudness Log, Attendance, Runtimes) to write to `service_records` alongside the existing legacy tables.
 - ~~Backfill attendance and loudness into `service_records` from legacy data.~~ (completed)
+- Consider writing special event operational data (attendance, runtimes, loudness) into `service_records` so events show up in Analytics alongside Sundays.
