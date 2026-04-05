@@ -7,6 +7,7 @@ import bfcLogo from '../../assets/BFC_Production_Logo_Hor reverse.png'
 
 interface LoudnessProps { sundayId: string; eventId?: string | null }
 
+const GOAL_8AM  = 88
 const GOAL_9AM  = 88
 const GOAL_11AM = 94
 
@@ -76,12 +77,16 @@ export function LoudnessLog({ sundayId, eventId }: LoudnessProps) {
   const { sundayDate } = useSunday()
 
   // A-weighted
+  const [s0Max,  setS0Max]  = useState('')
+  const [s0LAeq, setS0LAeq] = useState('')
   const [s1Max,  setS1Max]  = useState('')
   const [s1LAeq, setS1LAeq] = useState('')
   const [s2Max,  setS2Max]  = useState('')
   const [s2LAeq, setS2LAeq] = useState('')
 
   // C-weighted
+  const [s0MaxC,  setS0MaxC]  = useState('')
+  const [s0LCeq,  setS0LCeq]  = useState('')
   const [s1MaxC,  setS1MaxC]  = useState('')
   const [s1LCeq,  setS1LCeq]  = useState('')
   const [s2MaxC,  setS2MaxC]  = useState('')
@@ -93,6 +98,8 @@ export function LoudnessLog({ sundayId, eventId }: LoudnessProps) {
     s2Max: number; s2MaxC: number; s2LAeq: number; s2LCeq: number
   }>>([])
 
+  const [s0Saving, setS0Saving] = useState(false)
+  const [s0Saved,  setS0Saved]  = useState(false)
   const [s1Saving, setS1Saving] = useState(false)
   const [s1Saved,  setS1Saved]  = useState(false)
   const [s2Saving, setS2Saving] = useState(false)
@@ -104,6 +111,10 @@ export function LoudnessLog({ sundayId, eventId }: LoudnessProps) {
     const filtered = eventId ? q.eq('event_id', eventId) : q.eq('sunday_id', sundayId)
     filtered.maybeSingle().then(({ data }) => {
         if (data) {
+          setS0Max(data.service_3_max_db?.toString() || '')
+          setS0LAeq(data.service_3_laeq?.toString() || '')
+          setS0MaxC(data.service_3_max_db_c?.toString() || '')
+          setS0LCeq(data.service_3_lceq?.toString() || '')
           setS1Max(data.service_1_max_db?.toString() || '')
           setS1LAeq(data.service_1_laeq?.toString() || '')
           setS2Max(data.service_2_max_db?.toString() || '')
@@ -143,6 +154,19 @@ export function LoudnessLog({ sundayId, eventId }: LoudnessProps) {
     } else {
       await supabase.from('loudness').upsert({ sunday_id: sundayId, ...fields, logged_at: new Date().toISOString() }, { onConflict: 'sunday_id' })
     }
+  }
+
+  const submitS0 = async () => {
+    setS0Saving(true)
+    await loudnessUpsert({
+      service_3_max_db:   s0Max   ? parseFloat(s0Max)   : null,
+      service_3_laeq:     s0LAeq  ? parseFloat(s0LAeq)  : null,
+      service_3_max_db_c: s0MaxC  ? parseFloat(s0MaxC)  : null,
+      service_3_lceq:     s0LCeq  ? parseFloat(s0LCeq)  : null,
+    })
+    setS0Saving(false)
+    setS0Saved(true)
+    setTimeout(() => setS0Saved(false), 2500)
   }
 
   const submitS1 = async () => {
@@ -223,6 +247,7 @@ export function LoudnessLog({ sundayId, eventId }: LoudnessProps) {
     }
   }
 
+  const s0Over = parseFloat(s0LAeq) > GOAL_8AM
   const s1Over = parseFloat(s1LAeq) > GOAL_9AM
   const s2Over = parseFloat(s2LAeq) > GOAL_11AM
 
@@ -257,6 +282,29 @@ export function LoudnessLog({ sundayId, eventId }: LoudnessProps) {
       <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5 items-start">
         {/* Entry forms */}
         <div className="space-y-4">
+          {/* 8am Service */}
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center gap-2 pb-1 border-b border-gray-100">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="text-emerald-600 text-xs font-semibold">8:00 AM Service</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <NumField label="Max dB A Slow" value={s0Max}   onChange={setS0Max}   accent="#10b981" />
+              <NumField label="LAeq 15"        value={s0LAeq}  onChange={setS0LAeq}  goal={GOAL_8AM} accent="#10b981" />
+              <NumField label="Max dB C Slow"  value={s0MaxC}  onChange={setS0MaxC}  accent="#10b981" />
+              <NumField label="LCeq 15"        value={s0LCeq}  onChange={setS0LCeq}  accent="#10b981" />
+            </div>
+            {s0Over && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 leading-relaxed">
+                8am LAeq 15 exceeds goal. This will be flagged in the weekly average report.
+              </div>
+            )}
+            <button onClick={submitS0} disabled={s0Saving}
+              className={`w-full py-2.5 rounded-lg font-semibold text-sm transition-all ${s0Saved ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 disabled:opacity-60'}`}>
+              {s0Saving ? 'Saving...' : s0Saved ? 'Saved ✓' : 'Log 8am Readings'}
+            </button>
+          </Card>
+
           {/* 9am Service */}
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2 pb-1 border-b border-gray-100">

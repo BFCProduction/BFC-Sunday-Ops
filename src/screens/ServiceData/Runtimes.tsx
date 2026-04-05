@@ -1,12 +1,87 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Pencil, Trash2, Server, Clock, CheckCircle2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Server, Clock, CheckCircle2, GripVertical } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAdmin } from '../../context/adminState'
 import { useSunday } from '../../context/SundayContext'
 import { RuntimeFieldModal } from '../../components/admin/RuntimeFieldModal'
 import type { RuntimeField } from '../../components/admin/RuntimeFieldModal'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 interface RuntimesProps { sundayId: string; eventId?: string | null }
+
+function SortableRuntimeRow({
+  field,
+  onEdit,
+  onDelete,
+}: {
+  field: RuntimeField
+  onEdit: (f: RuntimeField) => void
+  onDelete: (f: RuntimeField) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  }
+  return (
+    <div ref={setNodeRef} style={style} className="px-4 py-3 flex items-start gap-3 bg-white hover:bg-gray-50 transition-colors">
+      <button
+        {...attributes}
+        {...listeners}
+        className="mt-0.5 p-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none"
+        tabIndex={-1}
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-gray-900 text-sm font-medium">{field.label}</p>
+          <span className="bg-gray-100 text-gray-500 text-[10px] font-semibold px-1.5 py-0.5 rounded">
+            {DAYS[field.pull_day]}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+          <span className="flex items-center gap-1 text-gray-400 text-[11px]">
+            <Clock className="w-3 h-3" />{field.pull_time}
+          </span>
+          {field.host ? (
+            <span className="text-gray-400 text-[11px] font-mono">
+              {field.host}:{field.port} · clock index {field.clock_number}
+            </span>
+          ) : (
+            <span className="text-gray-400 text-[11px]">Manual entry only</span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <button onClick={() => onEdit(field)}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+        <button onClick={() => onDelete(field)}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -28,6 +103,11 @@ export function Runtimes({ sundayId, eventId }: RuntimesProps) {
   const [showModal, setShowModal] = useState(false)
   const [editField, setEditField] = useState<RuntimeField | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<RuntimeField | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  )
 
   const loadFields = useCallback(async () => {
     const { data } = await supabase
@@ -106,6 +186,21 @@ export function Runtimes({ sundayId, eventId }: RuntimesProps) {
     await supabase.from('runtime_fields').delete().eq('id', field.id)
     setAllFields(prev => prev.filter(f => f.id !== field.id))
     setConfirmDelete(null)
+  }
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = allFields.findIndex(f => f.id === active.id)
+    const newIndex = allFields.findIndex(f => f.id === over.id)
+    const reordered = arrayMove(allFields, oldIndex, newIndex)
+    setAllFields(reordered)
+    const updates = reordered
+      .map((f, i) => ({ ...f, sort_order: i }))
+      .filter((f, i) => f.sort_order !== allFields[i]?.sort_order)
+    if (updates.length > 0) {
+      await supabase.from('runtime_fields').upsert(updates)
+    }
   }
 
   if (loading) return (
@@ -196,42 +291,20 @@ export function Runtimes({ sundayId, eventId }: RuntimesProps) {
               <p className="text-gray-400 text-sm">No runtime fields yet. Add one to get started.</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
-              {allFields.map(field => (
-                <div key={field.id} className="px-4 py-3 flex items-start gap-3 bg-white hover:bg-gray-50 transition-colors">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-gray-900 text-sm font-medium">{field.label}</p>
-                      <span className="bg-gray-100 text-gray-500 text-[10px] font-semibold px-1.5 py-0.5 rounded">
-                        {DAYS[field.pull_day]}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                      <span className="flex items-center gap-1 text-gray-400 text-[11px]">
-                        <Clock className="w-3 h-3" />{field.pull_time}
-                      </span>
-                      {field.host ? (
-                        <span className="text-gray-400 text-[11px] font-mono">
-                          {field.host}:{field.port} · clock index {field.clock_number}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 text-[11px]">Manual entry only</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => { setEditField(field); setShowModal(true) }}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => setConfirmDelete(field)}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={allFields.map(f => f.id)} strategy={verticalListSortingStrategy}>
+                <div className="divide-y divide-gray-100">
+                  {allFields.map(field => (
+                    <SortableRuntimeRow
+                      key={field.id}
+                      field={field}
+                      onEdit={f => { setEditField(f); setShowModal(true) }}
+                      onDelete={setConfirmDelete}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+              </SortableContext>
+            </DndContext>
           )}
 
           <div className="bg-gray-50 border-t border-gray-200 px-4 py-3">
