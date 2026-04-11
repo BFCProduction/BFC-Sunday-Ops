@@ -9,7 +9,6 @@ import {
   initiatePCOLogin,
   type PCOUser,
 } from '../lib/pcoAuth'
-import { triggerPcoSync } from '../lib/adminApi'
 
 interface Props { children: ReactNode }
 
@@ -28,10 +27,6 @@ export function AuthProvider({ children }: Props) {
           storeSession(session)
           setUser(session.user)
           setSessionToken(session.token)
-          // Background sync — best-effort; don't block login on failure
-          triggerPcoSync(session.token).catch(err =>
-            console.warn('PCO sync after login failed (non-fatal):', err)
-          )
         } catch (err) {
           console.error('PCO auth exchange failed:', err)
           // Fall through to login screen — don't leave the user stuck

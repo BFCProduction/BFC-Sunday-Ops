@@ -1,165 +1,198 @@
 import { useState, useEffect, useCallback } from 'react'
-import { AdminProvider } from './context/AdminContext'
-import { SundayContext } from './context/SundayContext'
+import { AuthProvider }   from './context/AuthContext'
+import { useAuth }        from './context/authState'
+import { triggerPcoSync } from './lib/adminApi'
+import { SundayContext }  from './context/SundayContext'
 import {
-  getOrCreateSunday, getSundayByDate, getSpecialEventByDate,
-  loadChurchTimezone, loadFlipConfig, loadAllSessions, supabase,
+  loadChurchTimezone, loadFlipConfig, loadAllSessions,
+  getOrCreateTodayEvents, getEventById, getFirstEventForDate, supabase,
 } from './lib/supabase'
-import { getOperationalSundayDateString, CHURCH_TIME_ZONE } from './lib/churchTime'
-import { SiteHeader } from './components/layout/SiteHeader'
-import { Sidebar } from './components/layout/Sidebar'
-import { MobileTabs } from './components/layout/MobileTabs'
-import { Dashboard } from './screens/Dashboard'
-import { Checklist } from './screens/Checklist'
+import { CHURCH_TIME_ZONE } from './lib/churchTime'
+import { SiteHeader }     from './components/layout/SiteHeader'
+import { Sidebar }        from './components/layout/Sidebar'
+import { MobileTabs }     from './components/layout/MobileTabs'
+import { LoginScreen }    from './components/auth/LoginScreen'
+import { Dashboard }      from './screens/Dashboard'
+import { Checklist }      from './screens/Checklist'
 import { EventChecklist } from './screens/EventChecklist'
-import { IssueLog } from './screens/IssueLog'
-import { ServiceData } from './screens/ServiceData'
-import { Evaluation } from './screens/Evaluation'
-import { Analytics } from './screens/Analytics'
-import { Settings } from './screens/Settings'
-import type { Session } from './types'
+import { IssueLog }       from './screens/IssueLog'
+import { ServiceData }    from './screens/ServiceData'
+import { Evaluation }     from './screens/Evaluation'
+import { Analytics }      from './screens/Analytics'
+import { Settings }       from './screens/Settings'
+import type { Session }   from './types'
 
 export type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings'
 
+// ── Root: provides auth context ───────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('dashboard')
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  )
+}
 
-  // Timezone / flip config (loaded once)
-  const [timezone, setTimezone] = useState(CHURCH_TIME_ZONE)
+// ── Auth gate ─────────────────────────────────────────────────────────────────
+function AppShell() {
+  const { user, isLoading: authLoading, login } = useAuth()
 
-  // The "today" anchor — computed once at load, never changes during the session
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#111827' }}>
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-white/40 text-sm">Loading…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) return <LoginScreen onLogin={login} />
+  return <AppMain />
+}
+
+// ── Main app ──────────────────────────────────────────────────────────────────
+function AppMain() {
+  const { sessionToken } = useAuth()
+  const [screen,      setScreen]      = useState<Screen>('dashboard')
+  const [timezone,    setTimezone]    = useState(CHURCH_TIME_ZONE)
+
+  // The operational Sunday date — anchor for "today" and isViewingPast
   const [todaySundayDate, setTodaySundayDate] = useState('')
-  const [todaySundayId,   setTodaySundayId]   = useState('')
 
-  // The currently viewed session (Sunday or special event)
-  const [session, setSession] = useState<Session | null>(null)
-
-  // Flat list of all sessions for prev/next navigation
+  // The currently viewed session (from events table)
+  const [session,     setSession]     = useState<Session | null>(null)
   const [allSessions, setAllSessions] = useState<Session[]>([])
+  const [issueCount,  setIssueCount]  = useState(0)
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState('')
 
-  const [issueCount, setIssueCount] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState('')
-
-  // ── Initial load ──────────────────────────────────────────────────────────
+  // ── Initial load ────────────────────────────────────────────────────────────
   useEffect(() => {
     async function init() {
       const [tz, flip] = await Promise.all([loadChurchTimezone(), loadFlipConfig()])
       setTimezone(tz)
 
-      const operationalDate = getOperationalSundayDateString(new Date(), tz, flip.flipDay, flip.flipHour)
+      // Create today's 9am + 11am events (and parent Sunday record) if needed.
+      // Returns the 9am event as the default focus.
+      const { defaultSession, sundayDate } = await getOrCreateTodayEvents(
+        tz, flip.flipDay, flip.flipHour
+      )
+      setTodaySundayDate(sundayDate)
 
-      // Determine today's "anchor" Sunday (always a Sunday, never an event)
-      const todaySunday = await getOrCreateSunday(tz, flip.flipDay, flip.flipHour)
-      setTodaySundayId(todaySunday.id)
-      setTodaySundayDate(todaySunday.date)
+      // Check if there's an upcoming special event that should take focus
+      // (same logic as before: first event between today and the Sunday date)
+      const today = new Date().toISOString().slice(0, 10)
+      // Use !inner so the eq filter on the joined table actually excludes rows
+      // (without !inner, PostgREST nulls out the join result instead of filtering the row)
+      const { data: upcomingSpecial } = await supabase
+        .from('events')
+        .select(`
+          id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+          service_types!inner ( slug, name, color, sort_order )
+        `)
+        .eq('service_types.slug', 'special')
+        .gte('event_date', today)
+        .lte('event_date', sundayDate)
+        .order('event_date', { ascending: true })
+        .limit(1)
+        .maybeSingle()
 
-      // Check if there is a special event on or before the operational date
-      // that should take focus over the Sunday
-      const event = await getSpecialEventByDate(operationalDate)
-      let focusSession: Session
-
-      if (event) {
-        focusSession = { type: 'event', id: event.id, date: event.event_date, name: event.name, eventTime: event.event_time }
-      } else {
-        // Check for upcoming events between today and the operational Sunday
-        const today = new Date().toISOString().slice(0, 10)
-        const { data: upcomingEvents } = await supabase
-          .from('special_events')
-          .select('*')
-          .gte('event_date', today)
-          .lte('event_date', operationalDate)
-          .order('event_date', { ascending: true })
-          .limit(1)
-
-        if (upcomingEvents && upcomingEvents.length > 0) {
-          const e = upcomingEvents[0]
-          focusSession = { type: 'event', id: e.id, date: e.event_date, name: e.name, eventTime: e.event_time }
-        } else {
-          focusSession = { type: 'sunday', id: todaySunday.id, date: todaySunday.date }
-        }
-      }
+      const focusSession = upcomingSpecial
+        ? {
+            id:                   upcomingSpecial.id,
+            type:                 'event' as const,
+            serviceTypeSlug:      (upcomingSpecial.service_types as unknown as { slug: string; name: string; color: string; sort_order: number }).slug,
+            serviceTypeName:      (upcomingSpecial.service_types as unknown as { slug: string; name: string; color: string; sort_order: number }).name,
+            serviceTypeColor:     (upcomingSpecial.service_types as unknown as { slug: string; name: string; color: string; sort_order: number }).color,
+            name:                 upcomingSpecial.name,
+            date:                 upcomingSpecial.event_date,
+            eventTime:            upcomingSpecial.event_time,
+            legacySundayId:       upcomingSpecial.legacy_sunday_id,
+            legacySpecialEventId: upcomingSpecial.legacy_special_event_id,
+          }
+        : defaultSession
 
       setSession(focusSession)
 
-      // Load all sessions for navigation
       const sessions = await loadAllSessions()
       setAllSessions(sessions)
 
-      // Issue count for the focused session
       await refreshIssueCount(focusSession)
+
+      // Background PCO sync — fire after sessions are loaded so the UI isn't
+      // blocked, then reload sessions when done to surface newly synced events.
+      if (sessionToken) {
+        triggerPcoSync(sessionToken)
+          .then(() => loadAllSessions())
+          .then(fresh => setAllSessions(fresh))
+          .catch(err => console.warn('PCO auto-sync failed (non-fatal):', err))
+      }
     }
 
-    init().catch(err => {
-      setError(err.message)
-      setLoading(false)
-    }).then(() => setLoading(false))
+    init()
+      .catch(err => { setError((err as Error).message); setLoading(false) })
+      .then(() => setLoading(false))
   }, [])
 
+  // ── Issue count ─────────────────────────────────────────────────────────────
   async function refreshIssueCount(s: Session) {
-    if (s.type === 'sunday') {
-      const { count } = await supabase
-        .from('issues')
-        .select('id', { count: 'exact' })
-        .eq('sunday_id', s.id)
-        .in('severity', ['High', 'Critical'])
-        .is('resolved_at', null)
-      setIssueCount(count || 0)
-    } else {
-      const { count } = await supabase
-        .from('issues')
-        .select('id', { count: 'exact' })
-        .eq('event_id', s.id)
-        .in('severity', ['High', 'Critical'])
-        .is('resolved_at', null)
-      setIssueCount(count || 0)
-    }
+    const baseQuery = supabase
+      .from('issues')
+      .select('id', { count: 'exact' })
+      .in('severity', ['High', 'Critical'])
+      .is('resolved_at', null)
+
+    const { count } = s.legacySundayId
+      ? await baseQuery.eq('sunday_id', s.legacySundayId)
+      : s.legacySpecialEventId
+        ? await baseQuery.eq('event_id', s.legacySpecialEventId)
+        : await baseQuery.eq('event_id', s.id)  // future: event-native
+
+    setIssueCount(count ?? 0)
   }
 
-  // ── Navigation ────────────────────────────────────────────────────────────
+  // ── Navigation ──────────────────────────────────────────────────────────────
+  const navigateToEvent = useCallback(async (eventId: string) => {
+    const found = allSessions.find(s => s.id === eventId)
+      ?? await getEventById(eventId)
+    if (!found) return
+    setSession(found)
+    void refreshIssueCount(found)
+  }, [allSessions])
+
   const navigateSunday = useCallback(async (date: string) => {
-    // Check if there is a special event on this date first
-    const event = await getSpecialEventByDate(date)
-    if (event) {
-      const s: Session = { type: 'event', id: event.id, date: event.event_date, name: event.name, eventTime: event.event_time }
-      setSession(s)
-      refreshIssueCount(s)
-      // Ensure sessions list is up to date
-      loadAllSessions().then(setAllSessions)
-      return
+    const found = await getFirstEventForDate(date)
+    if (found) {
+      setSession(found)
+      void refreshIssueCount(found)
     }
+  }, [])
 
-    // Otherwise treat it as a Sunday
-    if (date === todaySundayDate) {
-      const s: Session = { type: 'sunday', id: todaySundayId, date: todaySundayDate }
-      setSession(s)
-      refreshIssueCount(s)
-      return
-    }
+  // ── Derived context values ──────────────────────────────────────────────────
+  const activeEventId    = session?.id ?? ''
+  const serviceTypeSlug  = session?.serviceTypeSlug  ?? 'sunday-9am'
+  const serviceTypeName  = session?.serviceTypeName  ?? 'Sunday 9:00 AM'
+  const serviceTypeColor = session?.serviceTypeColor ?? '#3b82f6'
+  const sessionDate      = session?.date ?? ''
+  const sessionType      = session?.type ?? 'sunday'
+  const sundayId         = session?.legacySundayId ?? ''
+  const sundayDate       = session?.legacySundayId ? session.date : ''
+  const eventId          = session?.legacySpecialEventId ?? null
+  const eventName        = session?.type === 'event' ? session.name : null
+  const isViewingPast    = !!session && session.date < todaySundayDate
 
-    const row = await getSundayByDate(date)
-    const s: Session = { type: 'sunday', id: row?.id ?? '', date }
-    setSession(s)
-    refreshIssueCount(s)
-  }, [todaySundayId, todaySundayDate])
-
-  // ── Derived context values ────────────────────────────────────────────────
-  const sundayId   = session?.type === 'sunday' ? session.id   : ''
-  const sundayDate = session?.type === 'sunday' ? session.date : ''
-  const eventId    = session?.type === 'event'  ? session.id   : null
-  const eventName  = session?.type === 'event'  ? session.name : null
-  const sessionDate = session?.date ?? ''
-  const sessionType = session?.type ?? 'sunday'
-
-  // "today" anchor is always the operational Sunday; session may differ
-  const todayAnchor = todaySundayDate
-  const isViewingPast = !!session && session.date !== todayAnchor && session.date < todayAnchor
+  // ── Checklist routing ───────────────────────────────────────────────────────
+  // Use EventChecklist for special events (they have their own checklist items)
+  // Use Sunday Checklist for 9am/11am services (they share the global checklist)
+  const checklistEventId = sessionType === 'event' ? eventId : null
 
   if (loading) return (
     <div className="min-h-screen bg-white flex items-center justify-center">
       <div className="text-center">
         <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-gray-400 text-sm">Loading Sunday Ops...</p>
+        <p className="text-gray-400 text-sm">Loading Sunday Ops…</p>
       </div>
     </div>
   )
@@ -174,13 +207,12 @@ export default function App() {
   )
 
   return (
-    <AdminProvider>
     <SundayContext.Provider value={{
-      sundayId, sundayDate,
-      eventId, eventName,
+      activeEventId, serviceTypeSlug, serviceTypeName, serviceTypeColor,
+      sundayId, sundayDate, eventId, eventName,
       sessionType, sessionDate,
       timezone, todaySundayDate, isViewingPast,
-      navigateSunday,
+      navigateToEvent, navigateSunday,
     }}>
       <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#111827' }}>
         <SiteHeader />
@@ -192,12 +224,12 @@ export default function App() {
             allSessions={allSessions}
           />
           <main className="flex-1 min-w-0 overflow-y-auto bg-white" style={{ paddingBottom: '72px' }}>
-            {screen === 'dashboard'  && <Dashboard   sundayId={sundayId} setScreen={setScreen} />}
-            {screen === 'checklist'  && sessionType === 'sunday' && <Checklist   sundayId={sundayId} />}
-            {screen === 'checklist'  && sessionType === 'event'  && <EventChecklist eventId={eventId!} />}
+            {screen === 'dashboard'  && <Dashboard   setScreen={setScreen} />}
+            {screen === 'checklist'  && !checklistEventId && <Checklist />}
+            {screen === 'checklist'  &&  checklistEventId && <EventChecklist eventId={checklistEventId} />}
             {screen === 'issues'     && <IssueLog    sundayId={sundayId} eventId={eventId} />}
-            {screen === 'data'       && <ServiceData  sundayId={sundayId} eventId={eventId} />}
-            {screen === 'evaluation' && <Evaluation  sundayId={sundayId} eventId={eventId} />}
+            {screen === 'data'       && <ServiceData />}
+            {screen === 'evaluation' && <Evaluation />}
             {screen === 'analytics'  && <Analytics />}
             {screen === 'settings'   && <Settings onSessionsChange={setAllSessions} />}
           </main>
@@ -205,6 +237,5 @@ export default function App() {
         <MobileTabs active={screen} setActive={setScreen} issueCount={issueCount} />
       </div>
     </SundayContext.Provider>
-    </AdminProvider>
   )
 }

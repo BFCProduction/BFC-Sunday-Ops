@@ -3,6 +3,7 @@ import { CalendarDays, Cloud, FileDown, Globe, Loader2, Mail, Plus, RefreshCw, S
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
 import { requestSummaryEmailAdmin, triggerPcoSync, type PcoSyncResult } from '../lib/adminApi'
+import { loadAllSessions } from '../lib/supabase'
 import { useSunday } from '../context/SundayContext'
 import { fetchReportData } from '../lib/reportData'
 import { generateReportHtml } from '../lib/generateReportHtml'
@@ -250,6 +251,11 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
       const result = await triggerPcoSync(sessionToken)
       setSyncResult(result)
       setLastSynced(new Date().toISOString())
+      // Reload sessions so the sidebar navigation picks up newly synced events
+      if (onSessionsChange) {
+        const fresh = await loadAllSessions()
+        onSessionsChange(fresh)
+      }
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Sync failed. Please try again.')
     } finally {
