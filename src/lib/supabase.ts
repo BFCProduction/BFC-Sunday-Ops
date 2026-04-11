@@ -1,11 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { getOperationalSundayDateString, CHURCH_TIME_ZONE } from './churchTime'
-import type { Session, SpecialEvent } from '../types'
+import type { Session } from '../types'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+const supabaseUrl    = import.meta.env.VITE_SUPABASE_URL    as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+// ── Config helpers ────────────────────────────────────────────────────────────
 
 export async function loadChurchTimezone(): Promise<string> {
   const { data } = await supabase
@@ -29,6 +31,198 @@ export async function loadFlipConfig(): Promise<{ flipDay: number; flipHour: num
   }
 }
 
+// ── Raw DB row type for events join ──────────────────────────────────────────
+
+interface EventRow {
+  id: string
+  name: string
+  event_date: string
+  event_time: string | null
+  legacy_sunday_id: string | null
+  legacy_special_event_id: string | null
+  service_types: {
+    slug: string
+    name: string
+    color: string
+    sort_order: number
+  }
+}
+
+function rowToSession(row: EventRow): Session {
+  const slug = row.service_types.slug
+  return {
+    id:                    row.id,
+    type:                  slug.startsWith('sunday') ? 'sunday' : 'event',
+    serviceTypeSlug:       slug,
+    serviceTypeName:       row.service_types.name,
+    serviceTypeColor:      row.service_types.color,
+    name:                  row.name,
+    date:                  row.event_date,
+    eventTime:             row.event_time,
+    legacySundayId:        row.legacy_sunday_id,
+    legacySpecialEventId:  row.legacy_special_event_id,
+  }
+}
+
+// ── Session / event queries ───────────────────────────────────────────────────
+
+/**
+ * Load all events sorted chronologically, then by service type sort_order
+ * within the same date (so 9am always comes before 11am).
+ */
+export async function loadAllSessions(): Promise<Session[]> {
+  const { data, error } = await supabase
+    .from('events')
+    .select(`
+      id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+      service_types ( slug, name, color, sort_order )
+    `)
+    .order('event_date', { ascending: true })
+    .order('sort_order', { ascending: true, referencedTable: 'service_types' })
+
+  if (error) throw error
+  return (data as unknown as EventRow[]).map(rowToSession)
+}
+
+/**
+ * Get a specific event by its events.id.
+ */
+export async function getEventById(id: string): Promise<Session | null> {
+  const { data } = await supabase
+    .from('events')
+    .select(`
+      id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+      service_types ( slug, name, color, sort_order )
+    `)
+    .eq('id', id)
+    .maybeSingle()
+
+  return data ? rowToSession(data as unknown as EventRow) : null
+}
+
+/**
+ * Get the first event on a given date (for "back to today" style navigation).
+ * Returns the earliest service type (e.g. 9am before 11am).
+ */
+export async function getFirstEventForDate(date: string): Promise<Session | null> {
+  const { data } = await supabase
+    .from('events')
+    .select(`
+      id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+      service_types ( slug, name, color, sort_order )
+    `)
+    .eq('event_date', date)
+    .order('sort_order', { ascending: true, referencedTable: 'service_types' })
+    .limit(1)
+    .maybeSingle()
+
+  return data ? rowToSession(data as unknown as EventRow) : null
+}
+
+/**
+ * Get all events on a given date (e.g. to show the 9am/11am pills).
+ */
+export async function getEventsForDate(date: string): Promise<Session[]> {
+  const { data } = await supabase
+    .from('events')
+    .select(`
+      id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+      service_types ( slug, name, color, sort_order )
+    `)
+    .eq('event_date', date)
+    .order('sort_order', { ascending: true, referencedTable: 'service_types' })
+
+  return ((data ?? []) as unknown as EventRow[]).map(rowToSession)
+}
+
+/**
+ * Get or create events for the operational date.
+ * For a regular Sunday, this creates both 9am and 11am events (and the
+ * underlying sundays record) if they don't already exist.
+ * Returns the 9am event as the default focus.
+ */
+export async function getOrCreateTodayEvents(
+  timezone = CHURCH_TIME_ZONE,
+  flipDay  = 1,
+  flipHour = 12,
+): Promise<{ defaultSession: Session; sundayDate: string }> {
+  const today = getOperationalSundayDateString(new Date(), timezone, flipDay, flipHour)
+
+  // Ensure the underlying sundays record exists (data tables still need it)
+  let sundayId: string
+  const { data: existingSunday } = await supabase
+    .from('sundays')
+    .select('id')
+    .eq('date', today)
+    .maybeSingle()
+
+  if (existingSunday) {
+    sundayId = existingSunday.id
+  } else {
+    const { data: newSunday, error } = await supabase
+      .from('sundays')
+      .insert({ date: today })
+      .select('id')
+      .single()
+    if (error) throw error
+    sundayId = newSunday.id
+  }
+
+  // Fetch service type IDs
+  const { data: serviceTypes } = await supabase
+    .from('service_types')
+    .select('id, slug, name, color, sort_order')
+    .in('slug', ['sunday-9am', 'sunday-11am'])
+    .order('sort_order', { ascending: true })
+
+  const st9am  = serviceTypes?.find(s => s.slug === 'sunday-9am')
+  const st11am = serviceTypes?.find(s => s.slug === 'sunday-11am')
+
+  if (!st9am || !st11am) throw new Error('Service types not found — run migration 017')
+
+  const formatName = (label: string) => {
+    const d = new Date(today + 'T12:00:00')
+    const month = d.toLocaleDateString('en-US', { month: 'long' })
+    const day   = d.getDate()
+    const year  = d.getFullYear()
+    return `${label} · ${month} ${day}, ${year}`
+  }
+
+  // Get-or-create 9am event (check first to avoid constraint dependency)
+  const { data: existing9am } = await supabase
+    .from('events').select('id').eq('service_type_id', st9am.id).eq('event_date', today).maybeSingle()
+
+  let event9amId: string
+  if (existing9am) {
+    event9amId = existing9am.id
+  } else {
+    const { data: new9am, error } = await supabase
+      .from('events')
+      .insert({ service_type_id: st9am.id, name: formatName('Sunday 9:00 AM'), event_date: today, event_time: '09:00:00', legacy_sunday_id: sundayId })
+      .select('id').single()
+    if (error) throw error
+    event9amId = new9am.id
+  }
+
+  // Get-or-create 11am event
+  const { data: existing11am } = await supabase
+    .from('events').select('id').eq('service_type_id', st11am.id).eq('event_date', today).maybeSingle()
+
+  if (!existing11am) {
+    await supabase
+      .from('events')
+      .insert({ service_type_id: st11am.id, name: formatName('Sunday 11:00 AM'), event_date: today, event_time: '11:00:00', legacy_sunday_id: sundayId })
+  }
+
+  // Return the 9am event as default session
+  const defaultSession = await getEventById(event9amId)
+  if (!defaultSession) throw new Error('Failed to load created event')
+
+  return { defaultSession, sundayDate: today }
+}
+
+// ── Legacy helpers (kept for transition; used by App.tsx focus logic) ─────────
+
 export async function getSundayByDate(date: string): Promise<{ id: string; date: string } | null> {
   const { data } = await supabase
     .from('sundays')
@@ -38,9 +232,8 @@ export async function getSundayByDate(date: string): Promise<{ id: string; date:
   return data
 }
 
-// ── Special event helpers ─────────────────────────────────────────────────────
-
-export async function getSpecialEventByDate(date: string): Promise<SpecialEvent | null> {
+/** @deprecated Use getFirstEventForDate instead */
+export async function getSpecialEventByDate(date: string) {
   const { data } = await supabase
     .from('special_events')
     .select('*')
@@ -50,99 +243,55 @@ export async function getSpecialEventByDate(date: string): Promise<SpecialEvent 
 }
 
 /**
- * Load all sessions (Sundays + special events) sorted chronologically.
- * Used by the sidebar navigation to step through all sessions in order.
+ * Create a new special event — inserts into both special_events (for legacy
+ * EventChecklist/issues compat) and events (for sidebar navigation).
+ * Returns the new events.id so the caller can navigate to it.
  */
-export async function loadAllSessions(): Promise<Session[]> {
-  const [sundaysResult, eventsResult] = await Promise.all([
-    supabase.from('sundays').select('id, date').order('date', { ascending: true }),
-    supabase.from('special_events').select('id, event_date, name, event_time').order('event_date', { ascending: true }),
-  ])
+export async function createSpecialEvent(opts: {
+  name: string
+  event_date: string
+  event_time: string | null
+  notes?: string | null
+}): Promise<string> {
+  // Look up the 'special' service type
+  const { data: st, error: stErr } = await supabase
+    .from('service_types')
+    .select('id')
+    .eq('slug', 'special')
+    .single()
+  if (stErr || !st) throw new Error('Special service type not found')
 
-  const sundays: Session[] = (sundaysResult.data || []).map(s => ({
-    type: 'sunday' as const,
-    id: s.id,
-    date: s.date,
-  }))
-
-  const events: Session[] = (eventsResult.data || []).map(e => ({
-    type: 'event' as const,
-    id: e.id,
-    date: e.event_date,
-    name: e.name,
-    eventTime: e.event_time,
-  }))
-
-  return [...sundays, ...events].sort((a, b) => a.date.localeCompare(b.date))
-}
-
-/**
- * Given the operational Sunday date string (from the focus-flip logic),
- * determine if there is a special event on that date or coming up sooner
- * than the computed Sunday. Returns the session that should be focused.
- */
-export async function getOperationalSession(
-  sundayDate: string,
-): Promise<{ session: Session; sundayRow: { id: string; date: string } | null }> {
-  // Check if there is an event on the computed Sunday date itself
-  const eventOnSundayDate = await getSpecialEventByDate(sundayDate)
-  const sundayRow = await getSundayByDate(sundayDate)
-
-  if (eventOnSundayDate) {
-    return {
-      session: {
-        type: 'event',
-        id: eventOnSundayDate.id,
-        date: eventOnSundayDate.event_date,
-        name: eventOnSundayDate.name,
-        eventTime: eventOnSundayDate.event_time,
-      },
-      sundayRow,
-    }
-  }
-
-  // Load all upcoming events between now and the computed Sunday to see if
-  // one falls between today and the Sunday focus
-  const today = new Date().toISOString().slice(0, 10)
-  const { data: upcomingEvents } = await supabase
+  // Insert into special_events (legacy — needed for EventChecklist)
+  const { data: se, error: seErr } = await supabase
     .from('special_events')
-    .select('*')
-    .gte('event_date', today)
-    .lt('event_date', sundayDate)
-    .order('event_date', { ascending: true })
-    .limit(1)
+    .insert({
+      name:       opts.name,
+      event_date: opts.event_date,
+      event_time: opts.event_time,
+      notes:      opts.notes ?? null,
+    })
+    .select('id')
+    .single()
+  if (seErr || !se) throw seErr ?? new Error('Failed to create special event')
 
-  if (upcomingEvents && upcomingEvents.length > 0) {
-    const e = upcomingEvents[0]
-    return {
-      session: {
-        type: 'event',
-        id: e.id,
-        date: e.event_date,
-        name: e.name,
-        eventTime: e.event_time,
-      },
-      sundayRow,
-    }
-  }
+  // Insert into events (unified model — required for sidebar nav)
+  const { data: ev, error: evErr } = await supabase
+    .from('events')
+    .insert({
+      service_type_id:       st.id,
+      name:                  opts.name,
+      event_date:            opts.event_date,
+      event_time:            opts.event_time,
+      legacy_special_event_id: se.id,
+    })
+    .select('id')
+    .single()
+  if (evErr || !ev) throw evErr ?? new Error('Failed to create events row')
 
-  // Default: use the computed Sunday
-  const sunday = sundayRow ?? await (async () => {
-    const { data: created, error } = await supabase
-      .from('sundays')
-      .insert({ date: sundayDate })
-      .select()
-      .single()
-    if (error) throw error
-    return created
-  })()
-
-  return {
-    session: { type: 'sunday', id: sunday.id, date: sunday.date },
-    sundayRow: sunday,
-  }
+  return ev.id
 }
 
+/** @deprecated Use getOrCreateTodayEvents instead */
 export async function getOrCreateSunday(timezone = CHURCH_TIME_ZONE, flipDay = 1, flipHour = 12) {
   const today = getOperationalSundayDateString(new Date(), timezone, flipDay, flipHour)
   const { data: existing } = await supabase

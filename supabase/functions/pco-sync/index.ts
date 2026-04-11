@@ -207,21 +207,59 @@ Deno.serve(async (req) => {
       }
 
       const eventTime = DEFAULT_EVENT_TIMES[st.slug] ?? null
+      const isSpecial = st.slug === 'special'
 
-      // Upsert on (service_type_id, event_date) — stamps pco_plan_id onto
-      // any existing row created by getOrCreateTodayEvents.
-      const { error: upsertErr } = await supabase
-        .from('events')
-        .upsert(
-          {
-            service_type_id: st.id,
-            pco_plan_id:     plan.id,
-            name:            eventName,
-            event_date:      eventDate,
-            event_time:      eventTime,
-          },
-          { onConflict: 'service_type_id,event_date' },
-        )
+      // For Sunday services (9am/11am): upsert on pco_plan_id, OR find the
+      // existing event by (service_type_id, event_date) and stamp it.
+      // For special events: match on pco_plan_id only — multiple specials can
+      // share the same date so we never conflict on (service_type_id, event_date).
+      let upsertErr: { message: string } | null = null
+
+      if (isSpecial) {
+        // Check if this PCO plan already has an events row
+        const { data: existing } = await supabase
+          .from('events')
+          .select('id')
+          .eq('pco_plan_id', plan.id)
+          .maybeSingle()
+
+        if (existing) {
+          // Update name/date in case PCO changed them
+          const { error: upErr } = await supabase
+            .from('events')
+            .update({ name: eventName, event_date: eventDate, event_time: eventTime })
+            .eq('id', existing.id)
+          upsertErr = upErr
+        } else {
+          // Insert new special event row
+          const { error: insErr } = await supabase
+            .from('events')
+            .insert({ service_type_id: st.id, pco_plan_id: plan.id, name: eventName, event_date: eventDate, event_time: eventTime })
+          upsertErr = insErr
+        }
+      } else {
+        // Sunday service: find existing by (service_type_id, event_date) or pco_plan_id,
+        // update to stamp pco_plan_id; insert if missing.
+        const { data: existingByPlan } = await supabase
+          .from('events').select('id').eq('pco_plan_id', plan.id).maybeSingle()
+        const { data: existingByDate } = !existingByPlan
+          ? await supabase.from('events').select('id').eq('service_type_id', st.id).eq('event_date', eventDate).maybeSingle()
+          : { data: null }
+
+        const existingId = existingByPlan?.id ?? existingByDate?.id
+        if (existingId) {
+          const { error: upErr } = await supabase
+            .from('events')
+            .update({ pco_plan_id: plan.id, name: eventName })
+            .eq('id', existingId)
+          upsertErr = upErr
+        } else {
+          const { error: insErr } = await supabase
+            .from('events')
+            .insert({ service_type_id: st.id, pco_plan_id: plan.id, name: eventName, event_date: eventDate, event_time: eventTime })
+          upsertErr = insErr
+        }
+      }
 
       if (upsertErr) {
         console.error(`Upsert error for plan ${plan.id}:`, upsertErr.message)

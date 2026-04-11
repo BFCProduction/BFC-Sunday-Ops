@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, ClipboardCheck, AlertTriangle,
   BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
-  Lock, LockOpen, Settings, ChevronLeft, ChevronRight, RotateCcw, TrendingUp,
-  CalendarDays,
+  Settings, ChevronLeft, ChevronRight, RotateCcw, TrendingUp,
+  CalendarDays, ChevronDown, Plus,
 } from 'lucide-react'
+import { SessionPicker } from './SessionPicker'
+import { QuickCreateModal } from './QuickCreateModal'
 import { useAdmin } from '../../context/adminState'
-import { AdminPasswordModal } from '../admin/AdminPasswordModal'
 import { getServicePhase, type ServicePhase } from '../../lib/serviceStatus'
 import { useSunday } from '../../context/SundayContext'
 import type { Session } from '../../types'
@@ -18,6 +19,7 @@ interface SidebarProps {
   setActive: (s: Screen) => void
   issueCount: number
   allSessions: Session[]
+  onSessionsChange: (sessions: Session[]) => void
 }
 
 const navItems = [
@@ -28,14 +30,16 @@ const navItems = [
   { id: 'evaluation'  as Screen, label: 'Post-Service Evaluation',  icon: Star            },
 ]
 
-export function Sidebar({ active, setActive, issueCount, allSessions }: SidebarProps) {
-  const { isAdmin, logout } = useAdmin()
+export function Sidebar({ active, setActive, issueCount, allSessions, onSessionsChange }: SidebarProps) {
+  const { isAdmin } = useAdmin()
   const {
-    sessionType, sessionDate, eventName,
-    todaySundayDate, timezone, isViewingPast, navigateSunday,
+    activeEventId, serviceTypeSlug, serviceTypeColor, eventName,
+    sessionDate, todaySundayDate, timezone, isViewingPast,
+    navigateToEvent, navigateSunday,
   } = useSunday()
-  const [showAdminModal, setShowAdminModal] = useState(false)
   const [phase, setPhase] = useState<ServicePhase | null>(() => getServicePhase(new Date(), timezone))
+  const [showPicker,      setShowPicker]      = useState(false)
+  const [showQuickCreate, setShowQuickCreate] = useState(false)
 
   useEffect(() => {
     setPhase(getServicePhase(new Date(), timezone))
@@ -50,14 +54,19 @@ export function Sidebar({ active, setActive, issueCount, allSessions }: SidebarP
       })
     : '—'
 
-  const displayLabel = sessionType === 'event' && eventName
-    ? eventName
-    : dateFormatted
+  const isSpecial = serviceTypeSlug === 'special'
+  const displayLabel = isSpecial && eventName ? eventName : dateFormatted
 
-  // ── Prev / next in chronological session list ─────────────────────────────
-  const currentIdx = allSessions.findIndex(s => s.date === sessionDate && s.type === sessionType)
+  // ── Prev / next navigation (by events.id) ─────────────────────────────────
+  const currentIdx = allSessions.findIndex(s => s.id === activeEventId)
   const prevSession = currentIdx > 0 ? allSessions[currentIdx - 1] : null
-  const nextSession = currentIdx >= 0 && currentIdx < allSessions.length - 1 ? allSessions[currentIdx + 1] : null
+  const nextSession = currentIdx >= 0 && currentIdx < allSessions.length - 1
+    ? allSessions[currentIdx + 1]
+    : null
+
+  // ── Same-date service pills (e.g. 9am + 11am on the same Sunday) ──────────
+  const sameDateSiblings = allSessions.filter(s => s.date === sessionDate && !isSpecial && s.serviceTypeSlug !== 'special')
+  const showServicePills = sameDateSiblings.length > 1
 
   return (
     <aside className="hidden md:flex flex-col flex-shrink-0 border-r border-white/[0.06] overflow-y-auto"
@@ -65,14 +74,14 @@ export function Sidebar({ active, setActive, issueCount, allSessions }: SidebarP
 
       <div className="px-4 pt-5 pb-4 border-b border-white/[0.05]">
         <div className="flex items-center gap-2 mb-2">
-          {sessionType === 'event'
-            ? <CalendarDays className="w-3.5 h-3.5 text-purple-500" />
+          {isSpecial
+            ? <CalendarDays className="w-3.5 h-3.5" style={{ color: serviceTypeColor }} />
             : <Calendar className="w-3.5 h-3.5 text-gray-600" />
           }
           <p className="text-gray-600 text-[10px] font-semibold uppercase tracking-widest">
             {isViewingPast
-              ? (sessionType === 'event' ? 'Past Event' : 'Viewing Past Sunday')
-              : (sessionType === 'event' ? 'Special Event' : 'This Sunday')
+              ? (isSpecial ? 'Past Event' : 'Viewing Past Sunday')
+              : (isSpecial ? 'Special Event' : 'This Sunday')
             }
           </p>
         </div>
@@ -80,35 +89,73 @@ export function Sidebar({ active, setActive, issueCount, allSessions }: SidebarP
         {/* Date / name navigator */}
         <div className="flex items-center gap-1">
           <button
-            onClick={() => prevSession && navigateSunday(prevSession.date)}
+            onClick={() => prevSession && navigateToEvent(prevSession.id)}
             disabled={!prevSession}
             className="p-1 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-            title={prevSession ? `Go to ${prevSession.type === 'event' ? (prevSession as Extract<Session, {type:'event'}>).name : prevSession.date}` : 'No earlier session'}
+            title={prevSession ? `Go to ${prevSession.serviceTypeSlug === 'special' ? prevSession.name : prevSession.date}` : 'No earlier session'}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <div className="flex-1 text-center">
-            <p className="text-white text-sm font-semibold leading-tight">{displayLabel}</p>
-            {sessionType === 'event' && (
+          {/* Clicking the date/name opens the session picker */}
+          <button
+            onClick={() => setShowPicker(true)}
+            className="flex-1 text-center group py-0.5 rounded hover:bg-white/[0.06] transition-colors"
+            title="Browse all sessions"
+          >
+            <p className="text-white text-sm font-semibold leading-tight group-hover:text-blue-300 transition-colors">
+              {displayLabel}
+            </p>
+            {isSpecial && (
               <p className="text-gray-500 text-[10px] mt-0.5">{dateFormatted}</p>
             )}
-          </div>
+            <ChevronDown className="w-3 h-3 text-gray-600 group-hover:text-blue-400 mx-auto mt-0.5 transition-colors" />
+          </button>
 
           <button
-            onClick={() => nextSession && navigateSunday(nextSession.date)}
+            onClick={() => nextSession && navigateToEvent(nextSession.id)}
             disabled={!nextSession}
             className="p-1 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-            title={nextSession ? `Go to ${nextSession.type === 'event' ? (nextSession as Extract<Session, {type:'event'}>).name : nextSession.date}` : 'No later session'}
+            title={nextSession ? `Go to ${nextSession.serviceTypeSlug === 'special' ? nextSession.name : nextSession.date}` : 'No later session'}
           >
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
+        {/* Same-date service pills (9am / 11am) */}
+        {showServicePills && (
+          <div className="flex items-center gap-1.5 mt-2.5 justify-center">
+            {sameDateSiblings.map(s => {
+              const isActive = s.id === activeEventId
+              const timeLabel = s.serviceTypeSlug === 'sunday-9am' ? '9:00 AM' : '11:00 AM'
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => navigateToEvent(s.id)}
+                  className={`flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all ${
+                    isActive
+                      ? 'bg-white/15 text-white ring-1 ring-white/20'
+                      : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isActive ? 'bg-white' : 'bg-gray-600'}`}
+                    style={isActive ? { backgroundColor: s.serviceTypeColor } : undefined}
+                  />
+                  {timeLabel}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* Phase / session badge */}
         <div className="flex gap-2 mt-2 flex-wrap">
-          {sessionType === 'event' ? (
-            <span className="bg-purple-900/40 text-purple-400 text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
+          {isSpecial ? (
+            <span
+              className="text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1"
+              style={{ backgroundColor: `${serviceTypeColor}25`, color: serviceTypeColor }}
+            >
               <CalendarDays className="w-2.5 h-2.5" />
               Special Event
             </span>
@@ -139,9 +186,25 @@ export function Sidebar({ active, setActive, issueCount, allSessions }: SidebarP
           </button>
         )}
 
-        {!isViewingPast && sessionType === 'sunday' && (
-          <p className="text-gray-700 text-[10px] mt-2">Use arrows to view past sessions</p>
-        )}
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-gray-700 text-[10px]">
+            {allSessions.length} session{allSessions.length !== 1 ? 's' : ''}
+            {' · '}
+            <button onClick={() => setShowPicker(true)} className="text-gray-500 hover:text-blue-400 underline transition-colors">
+              browse
+            </button>
+          </p>
+          {isAdmin && (
+            <button
+              onClick={() => setShowQuickCreate(true)}
+              className="flex items-center gap-1 text-[10px] font-semibold text-gray-500 hover:text-white hover:bg-white/[0.08] px-2 py-0.5 rounded transition-all"
+              title="Create new special event"
+            >
+              <Plus className="w-3 h-3" />
+              New Event
+            </button>
+          )}
+        </div>
       </div>
 
       <nav className="flex-1 px-3 py-3 space-y-0.5 flex flex-col">
@@ -195,23 +258,29 @@ export function Sidebar({ active, setActive, issueCount, allSessions }: SidebarP
             <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-50" />
           </a>
 
-          {isAdmin ? (
-            <button onClick={logout}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-amber-500 hover:text-amber-400 hover:bg-white/[0.04] transition-all">
-              <LockOpen className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.8} />
-              <span className="flex-1 leading-tight">Exit Admin</span>
-            </button>
-          ) : (
-            <button onClick={() => setShowAdminModal(true)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:text-gray-400 hover:bg-white/[0.04] transition-all">
-              <Lock className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.8} />
-              <span className="flex-1 leading-tight">Admin</span>
-            </button>
-          )}
         </div>
-
-        {showAdminModal && <AdminPasswordModal onClose={() => setShowAdminModal(false)} />}
       </nav>
+
+      {/* Session picker modal */}
+      {showPicker && (
+        <SessionPicker
+          allSessions={allSessions}
+          activeEventId={activeEventId}
+          onSelect={navigateToEvent}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
+      {/* Quick-create event modal */}
+      {showQuickCreate && (
+        <QuickCreateModal
+          onCreated={(newId, freshSessions) => {
+            onSessionsChange(freshSessions)
+            navigateToEvent(newId)
+          }}
+          onClose={() => setShowQuickCreate(false)}
+        />
+      )}
     </aside>
   )
 }
