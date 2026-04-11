@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, FileDown, Globe, Loader2, Mail, Plus, RefreshCw, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { CalendarDays, Cloud, FileDown, Globe, Loader2, Mail, Plus, RefreshCw, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
-import { requestSummaryEmailAdmin } from '../lib/adminApi'
+import { requestSummaryEmailAdmin, triggerPcoSync, type PcoSyncResult } from '../lib/adminApi'
 import { useSunday } from '../context/SundayContext'
 import { fetchReportData } from '../lib/reportData'
 import { generateReportHtml } from '../lib/generateReportHtml'
@@ -65,7 +65,7 @@ interface SettingsProps {
 }
 
 export function Settings({ onSessionsChange }: SettingsProps = {}) {
-  const { isAdmin, adminPassword } = useAdmin()
+  const { isAdmin, sessionToken } = useAdmin()
   const { sundayId, sundayDate, timezone } = useSunday()
 
   // ── Timezone state ──
@@ -85,6 +85,12 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
   const [pastSundays, setPastSundays]           = useState<SundayRecord[]>([])
   const [selectedPast, setSelectedPast]         = useState<SundayRecord | null>(null)
 
+  // ── PCO Sync state ──
+  const [syncing,      setSyncing]      = useState(false)
+  const [syncResult,   setSyncResult]   = useState<PcoSyncResult | null>(null)
+  const [syncError,    setSyncError]    = useState('')
+  const [lastSynced,   setLastSynced]   = useState<string | null>(null)
+
   // ── Email settings state ──
   const [settings, setSettings]           = useState<ReportEmailSettings>(DEFAULT_SETTINGS)
   const [recipients, setRecipients]       = useState<ReportEmailRecipient[]>([])
@@ -94,6 +100,12 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
   const [notice, setNotice]               = useState('')
   const [newName, setNewName]             = useState('')
   const [newEmail, setNewEmail]           = useState('')
+
+  // Load last PCO sync time
+  useEffect(() => {
+    supabase.from('app_config').select('value').eq('key', 'pco_last_synced').maybeSingle()
+      .then(({ data }) => { if (data?.value) setLastSynced(data.value) })
+  }, [])
 
   // Load past Sundays for the picker + flip config
   useEffect(() => {
@@ -117,10 +129,10 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
 
   // Load email settings (admin only)
   useEffect(() => {
-    if (!isAdmin || !adminPassword) return
+    if (!isAdmin || !sessionToken) return
     let active = true
     setLoadingEmail(true)
-    requestSummaryEmailAdmin<SummaryEmailAdminResponse>(adminPassword, 'GET')
+    requestSummaryEmailAdmin<SummaryEmailAdminResponse>(sessionToken, 'GET')
       .then(payload => {
         if (!active) return
         setSettings({ ...DEFAULT_SETTINGS, ...payload.settings })
@@ -132,7 +144,7 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
       })
       .finally(() => { if (active) setLoadingEmail(false) })
     return () => { active = false }
-  }, [adminPassword, isAdmin])
+  }, [sessionToken, isAdmin])
 
   const activeRecipients = useMemo(() => recipients.filter(r => r.active), [recipients])
 
@@ -152,11 +164,11 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
   }
 
   const saveSettings = async () => {
-    if (!adminPassword) return
+    if (!sessionToken) return
     setSavingSettings(true)
     setNotice('')
     try {
-      const payload = await requestSummaryEmailAdmin<{ settings: ReportEmailSettings }>(adminPassword, 'PUT', settings)
+      const payload = await requestSummaryEmailAdmin<{ settings: ReportEmailSettings }>(sessionToken, 'PUT', settings)
       setSettings({ ...DEFAULT_SETTINGS, ...payload.settings })
       setNotice('Settings saved.')
     } catch (err) {
@@ -165,11 +177,11 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
   }
 
   const addRecipient = async () => {
-    if (!adminPassword || !newEmail.trim()) { setNotice('Recipient email is required.'); return }
+    if (!sessionToken || !newEmail.trim()) { setNotice('Recipient email is required.'); return }
     setAddingRecipient(true)
     setNotice('')
     try {
-      const payload = await requestSummaryEmailAdmin<{ recipient: ReportEmailRecipient }>(adminPassword, 'POST', {
+      const payload = await requestSummaryEmailAdmin<{ recipient: ReportEmailRecipient }>(sessionToken, 'POST', {
         name: newName, email: newEmail, sort_order: recipients.length,
       })
       setRecipients(prev => [...prev, payload.recipient])
@@ -182,11 +194,11 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
   }
 
   const updateRecipient = async (recipient: ReportEmailRecipient, updates: Partial<ReportEmailRecipient>) => {
-    if (!adminPassword) return
+    if (!sessionToken) return
     const next = { ...recipient, ...updates }
     setRecipients(prev => prev.map(r => r.id === recipient.id ? next : r))
     try {
-      const payload = await requestSummaryEmailAdmin<{ recipient: ReportEmailRecipient }>(adminPassword, 'PATCH', next)
+      const payload = await requestSummaryEmailAdmin<{ recipient: ReportEmailRecipient }>(sessionToken, 'PATCH', next)
       setRecipients(prev => prev.map(r => r.id === recipient.id ? payload.recipient : r))
     } catch {
       setRecipients(prev => prev.map(r => r.id === recipient.id ? recipient : r))
@@ -194,11 +206,11 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
   }
 
   const deleteRecipient = async (recipient: ReportEmailRecipient) => {
-    if (!adminPassword) return
+    if (!sessionToken) return
     const prev = recipients
     setRecipients(p => p.filter(r => r.id !== recipient.id))
     try {
-      await requestSummaryEmailAdmin<{ ok: boolean }>(adminPassword, 'DELETE', { id: recipient.id })
+      await requestSummaryEmailAdmin<{ ok: boolean }>(sessionToken, 'DELETE', { id: recipient.id })
       setNotice('Recipient removed.')
     } catch {
       setRecipients(prev)
@@ -227,6 +239,22 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
     setSavingTz(false)
     if (error) { setTzNotice('Failed to save: ' + error.message); return }
     setTzNotice('Saved — reload the page for changes to take effect.')
+  }
+
+  const runPcoSync = async () => {
+    if (!sessionToken) return
+    setSyncing(true)
+    setSyncResult(null)
+    setSyncError('')
+    try {
+      const result = await triggerPcoSync(sessionToken)
+      setSyncResult(result)
+      setLastSynced(new Date().toISOString())
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Sync failed. Please try again.')
+    } finally {
+      setSyncing(false)
+    }
   }
 
   const formatSundayDate = (dateStr: string) =>
@@ -605,6 +633,76 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
             </>
           )}
         </div>
+
+        {/* ── Planning Center Sync ── */}
+        {isAdmin && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
+              <Cloud className="w-3.5 h-3.5 text-blue-500" />
+              Planning Center Sync
+            </p>
+            <Card className="p-5">
+              <p className="text-gray-900 text-sm font-semibold mb-1">Sync Upcoming Services</p>
+              <p className="text-gray-400 text-xs mb-4 leading-relaxed">
+                Pulls the next {3} months of service plans from Planning Center and creates
+                matching events in Sunday Ops. Runs automatically when you log in.
+                Existing events are updated in place — no data is lost.
+              </p>
+
+              <div className="flex items-center gap-4 flex-wrap">
+                <button
+                  onClick={runPcoSync}
+                  disabled={syncing || !sessionToken}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold
+                    hover:bg-blue-700 disabled:opacity-60 transition-colors">
+                  {syncing
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Syncing…</>
+                    : <><RefreshCw className="w-4 h-4" /> Sync Now</>
+                  }
+                </button>
+                {lastSynced && !syncing && (
+                  <p className="text-gray-400 text-xs">
+                    Last synced: {new Date(lastSynced).toLocaleString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric',
+                      hour: 'numeric', minute: '2-digit',
+                    })}
+                  </p>
+                )}
+              </div>
+
+              {syncError && (
+                <p className="text-red-600 text-xs mt-3">{syncError}</p>
+              )}
+
+              {syncResult && !syncError && (
+                <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                  <p className="text-emerald-700 text-sm font-semibold">
+                    ✓ Sync complete — {syncResult.synced} event{syncResult.synced !== 1 ? 's' : ''} synced
+                    {syncResult.skipped > 0 ? `, ${syncResult.skipped} skipped` : ''}
+                  </p>
+                  {syncResult.details.filter(d => d.action === 'error').length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {syncResult.details.filter(d => d.action === 'error').map((d, i) => (
+                        <p key={i} className="text-red-600 text-xs">{d.name}: {d.error}</p>
+                      ))}
+                    </div>
+                  )}
+                  {syncResult.details.filter(d => d.action === 'upserted').length > 0 && (
+                    <div className="mt-2 space-y-0.5">
+                      {syncResult.details.filter(d => d.action === 'upserted').map((d, i) => (
+                        <p key={i} className="text-emerald-600 text-xs">
+                          {new Date(d.event_date + 'T12:00:00').toLocaleDateString('en-US', {
+                            month: 'short', day: 'numeric',
+                          })} — {d.name}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
 
         {/* ── Special Events ── */}
         {isAdmin && (

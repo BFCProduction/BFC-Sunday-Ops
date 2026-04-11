@@ -1,48 +1,69 @@
-const FALLBACK_ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || ''
+// ─────────────────────────────────────────────────────────────────────────────
+// adminApi.ts — helpers for calling protected Supabase Edge Functions
+//
+// Auth is now session-token based (PCO OAuth). The token is passed as the
+// x-session-token header. The edge function verifies it against user_sessions
+// and checks is_admin before proceeding.
+// ─────────────────────────────────────────────────────────────────────────────
 
 function getFunctionUrl(name: string) {
   return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`
 }
 
-export async function verifyAdminPassword(password: string) {
-  try {
-    const response = await fetch(getFunctionUrl('admin-session'), {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ password }),
-    })
+// ── PCO Sync ──────────────────────────────────────────────────────────────────
 
-    if (response.ok) {
-      return true
-    }
-
-    if (response.status !== 404) {
-      return false
-    }
-  } catch {
-    // Fall back to the existing frontend-only password during local development.
-  }
-
-  return password === FALLBACK_ADMIN_PASSWORD
+export interface PcoSyncResult {
+  synced:  number
+  skipped: number
+  details: Array<{
+    pco_plan_id: string
+    event_date:  string
+    name:        string
+    action:      'upserted' | 'skipped' | 'error'
+    error?:      string
+  }>
 }
 
-export async function requestSummaryEmailAdmin<T>(password: string, method: string, body?: unknown) {
+export async function triggerPcoSync(sessionToken: string): Promise<PcoSyncResult> {
+  const response = await fetch(getFunctionUrl('pco-sync'), {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.error === 'string' ? payload.error : `Sync failed with ${response.status}`
+    )
+  }
+
+  return payload as PcoSyncResult
+}
+
+export async function requestSummaryEmailAdmin<T>(
+  sessionToken: string,
+  method: string,
+  body?: unknown,
+) {
   const response = await fetch(getFunctionUrl('summary-email-admin'), {
     method,
     headers: {
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-      'x-admin-password': password,
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
     },
     body: body == null ? undefined : JSON.stringify(body),
   })
 
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed with ${response.status}`)
+    throw new Error(
+      typeof payload?.error === 'string' ? payload.error : `Request failed with ${response.status}`
+    )
   }
 
   return payload as T
