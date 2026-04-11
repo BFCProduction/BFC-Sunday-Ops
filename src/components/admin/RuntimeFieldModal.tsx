@@ -12,27 +12,42 @@ export interface RuntimeField {
   pull_day: number
   sort_order: number
   countdown_target: string | null
+  /** null = applies to all service types */
+  service_type_slug: string | null
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 interface Props {
   field?: RuntimeField
+  /** Pre-fills service type for new fields; null = all services */
+  defaultServiceTypeSlug?: string | null
   onClose: () => void
   onSaved: () => void
 }
 
-export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
-  const [label, setLabel] = useState(field?.label || '')
-  const [host, setHost] = useState(field?.host || '')
-  const [port, setPort] = useState(field?.port ?? 1025)
-  const [clockNumber, setClockNumber] = useState(field?.clock_number ?? 0)
-  const [pullTime, setPullTime] = useState(field?.pull_time || '10:20')
-  const [pullDay, setPullDay] = useState(field?.pull_day ?? 0)
-  const [sortOrder, setSortOrder] = useState(field?.sort_order ?? 0)
+const SERVICE_OPTIONS = [
+  { value: '',            label: 'All Services'     },
+  { value: 'sunday-9am',  label: 'Sunday 9:00 AM'   },
+  { value: 'sunday-11am', label: 'Sunday 11:00 AM'  },
+  { value: 'special',     label: 'Special Events'   },
+]
+
+export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSaved }: Props) {
+  const [label,         setLabel]         = useState(field?.label || '')
+  const [host,          setHost]          = useState(field?.host || '')
+  const [port,          setPort]          = useState(field?.port ?? 1025)
+  const [clockNumber,   setClockNumber]   = useState(field?.clock_number ?? 0)
+  const [pullTime,      setPullTime]      = useState(field?.pull_time || '10:20')
+  const [pullDay,       setPullDay]       = useState(field?.pull_day ?? 0)
+  const [sortOrder,     setSortOrder]     = useState(field?.sort_order ?? 0)
   const [countdownTarget, setCountdownTarget] = useState(field?.countdown_target || '')
+  // service_type_slug: '' → null (all services), else a specific slug
+  const [serviceSlug, setServiceSlug] = useState<string>(
+    field !== undefined ? (field.service_type_slug ?? '') : (defaultServiceTypeSlug ?? '')
+  )
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error,  setError]  = useState('')
 
   const handleSave = async () => {
     if (!label.trim()) { setError('Label is required'); return }
@@ -41,14 +56,15 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
     const trimmedHost = host.trim()
     const trimmedTarget = countdownTarget.trim()
     const payload = {
-      label: label.trim(),
-      host: trimmedHost || null,
+      label:             label.trim(),
+      host:              trimmedHost || null,
       port,
-      clock_number: clockNumber,
-      pull_time: pullTime,
-      pull_day: pullDay,
-      sort_order: sortOrder,
-      countdown_target: trimmedTarget || null,
+      clock_number:      clockNumber,
+      pull_time:         pullTime,
+      pull_day:          pullDay,
+      sort_order:        sortOrder,
+      countdown_target:  trimmedTarget || null,
+      service_type_slug: serviceSlug || null,
     }
     let err: { message: string } | null = null
     if (field) {
@@ -82,6 +98,22 @@ export function RuntimeFieldModal({ field, onClose, onSaved }: Props) {
               value={label} onChange={e => setLabel(e.target.value)}
               placeholder="e.g. 9am Service Runtime"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Service</label>
+            <select
+              value={serviceSlug}
+              onChange={e => setServiceSlug(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+            >
+              {SERVICE_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <p className="text-gray-400 text-[10px] mt-1">
+              Choose which service this field appears on. "All Services" shows it everywhere.
+            </p>
           </div>
 
           <div>

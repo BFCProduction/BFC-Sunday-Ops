@@ -28,7 +28,7 @@ interface SummaryEmailAdminResponse {
 interface ReportingProps { sundayId: string }
 
 export function Reporting({ sundayId }: ReportingProps) {
-  const { isAdmin, adminPassword } = useAdmin()
+  const { isAdmin, sessionToken } = useAdmin()
   const { sundayDate } = useSunday()
   const [exporting, setExporting] = useState(false)
   const [settings, setSettings] = useState<ReportEmailSettings>(DEFAULT_SETTINGS)
@@ -69,12 +69,12 @@ export function Reporting({ sundayId }: ReportingProps) {
   )
 
   useEffect(() => {
-    if (!isAdmin || !adminPassword) return
+    if (!isAdmin || !sessionToken) return
 
     let active = true
     setLoading(true)
 
-    requestSummaryEmailAdmin<SummaryEmailAdminResponse>(adminPassword, 'GET')
+    requestSummaryEmailAdmin<SummaryEmailAdminResponse>(sessionToken, 'GET')
       .then(payload => {
         if (!active) return
         setSettings({ ...DEFAULT_SETTINGS, ...payload.settings })
@@ -91,16 +91,16 @@ export function Reporting({ sundayId }: ReportingProps) {
     return () => {
       active = false
     }
-  }, [adminPassword, isAdmin])
+  }, [sessionToken, isAdmin])
 
   const saveSettings = async () => {
-    if (!adminPassword) return
+    if (!sessionToken) return
 
     setSavingSettings(true)
     setNotice('')
 
     try {
-      const payload = await requestSummaryEmailAdmin<{ settings: ReportEmailSettings }>(adminPassword, 'PUT', settings)
+      const payload = await requestSummaryEmailAdmin<{ settings: ReportEmailSettings }>(sessionToken, 'PUT', settings)
       setSettings({ ...DEFAULT_SETTINGS, ...payload.settings })
       setNotice('Summary email settings saved.')
     } catch (error) {
@@ -111,7 +111,7 @@ export function Reporting({ sundayId }: ReportingProps) {
   }
 
   const addRecipient = async () => {
-    if (!adminPassword) return
+    if (!sessionToken) return
     if (!newEmail.trim()) {
       setNotice('Recipient email is required.')
       return
@@ -121,7 +121,7 @@ export function Reporting({ sundayId }: ReportingProps) {
     setNotice('')
 
     try {
-      const payload = await requestSummaryEmailAdmin<{ recipient: ReportEmailRecipient }>(adminPassword, 'POST', {
+      const payload = await requestSummaryEmailAdmin<{ recipient: ReportEmailRecipient }>(sessionToken, 'POST', {
         name: newName,
         email: newEmail,
         sort_order: recipients.length,
@@ -138,13 +138,13 @@ export function Reporting({ sundayId }: ReportingProps) {
   }
 
   const updateRecipient = async (recipient: ReportEmailRecipient, updates: Partial<ReportEmailRecipient>) => {
-    if (!adminPassword) return
+    if (!sessionToken) return
 
     const nextRecipient = { ...recipient, ...updates }
     setRecipients(prev => prev.map(entry => entry.id === recipient.id ? nextRecipient : entry))
 
     try {
-      const payload = await requestSummaryEmailAdmin<{ recipient: ReportEmailRecipient }>(adminPassword, 'PATCH', nextRecipient)
+      const payload = await requestSummaryEmailAdmin<{ recipient: ReportEmailRecipient }>(sessionToken, 'PATCH', nextRecipient)
       setRecipients(prev => prev.map(entry => entry.id === recipient.id ? payload.recipient : entry))
     } catch (error) {
       setRecipients(prev => prev.map(entry => entry.id === recipient.id ? recipient : entry))
@@ -153,13 +153,13 @@ export function Reporting({ sundayId }: ReportingProps) {
   }
 
   const deleteRecipient = async (recipient: ReportEmailRecipient) => {
-    if (!adminPassword) return
+    if (!sessionToken) return
 
     const previous = recipients
     setRecipients(prev => prev.filter(entry => entry.id !== recipient.id))
 
     try {
-      await requestSummaryEmailAdmin<{ ok: boolean }>(adminPassword, 'DELETE', { id: recipient.id })
+      await requestSummaryEmailAdmin<{ ok: boolean }>(sessionToken, 'DELETE', { id: recipient.id })
       setNotice('Recipient removed.')
     } catch (error) {
       setRecipients(previous)

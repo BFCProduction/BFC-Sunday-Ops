@@ -1,5 +1,108 @@
 # Changelog
 
+## 2026-04-11 (Session 5)
+
+### Summary
+
+Completed a five-sprint rebuild that brings the app to full alignment with the unified events model introduced in Session 4. Sprints 1–3 wired up PCO OAuth auth, the new `events`/`service_types` tables, and the PCO calendar sync edge function. Sprint 4 unified the Sunday and Event checklists into a single component, added a TemplateManager admin UI, and wired template seeding into the QuickCreate flow. Sprint 5 updated the Analytics screens to speak the new slug format through an `analytics_records` view. A follow-on fix corrected a long-standing schema bug where `event_id` FKs on all operational tables still pointed to `special_events(id)` instead of `events(id)`.
+
+### Completed
+
+#### Sprint 1 — Auth Foundation
+
+- **PCO OAuth** (`supabase/migrations/015_pco_auth.sql`):
+  - `user_sessions` table storing PCO access/refresh tokens, expiry, and a server-generated session token.
+  - Session token is passed as `x-session-token` header to edge functions.
+
+#### Sprint 2 — Unified Events Model
+
+- **`service_types` table** (`supabase/migrations/017_service_types_and_events.sql`):
+  - Three seed rows: `sunday-9am`, `sunday-11am`, `special`.
+  - `pco_service_type_id` column for PCO linkage.
+
+- **`events` table** (same migration):
+  - One row per service instance — replaces the split between `sundays` and `special_events` in the navigation layer.
+  - `legacy_sunday_id` and `legacy_special_event_id` bridge columns keep data tables working without a destructive migration.
+  - Seeded from existing `sundays` and `special_events` rows.
+
+- **Supporting migrations**:
+  - `018_events_unique_constraint.sql` — unique constraint on `(service_type_id, event_date)`.
+  - `019_grant_events_permissions.sql` — anon/authenticated grants on `events`.
+  - `020_runtime_fields_service_scope.sql` — scopes runtime fields to service types.
+  - `021_checklist_event_native.sql` — native event support for checklist tables.
+  - `022_checklist_completions_nullable_sunday.sql` — allows null `sunday_id` on completions.
+  - `024–026` — service_role grants on `service_types`, `events`, `app_config`.
+  - `027_fix_events_unique_constraint.sql` — constraint correction.
+
+- **`src/lib/supabase.ts`** — new helpers: `loadAllSessions()`, `getEventById()`, `getFirstEventForDate()`, `getEventsForDate()`, `getOrCreateTodayEvents()`.
+
+#### Sprint 3 — Event Management UI
+
+- **PCO sync edge function** (`supabase/functions/pco-sync/index.ts`, `supabase/migrations/023_pco_sync.sql`):
+  - Pulls upcoming service plans from Planning Center for all service types with a `pco_service_type_id`.
+  - Upserts into `events`: matches on `pco_plan_id`, then falls back to `(service_type_id, event_date)` for Sunday services; special events matched on `pco_plan_id` only.
+  - Derives event name from PCO plan title → series title → formatted service type + date.
+  - Records `pco_last_synced` timestamp in `app_config`.
+  - Called automatically after login and manually from Settings → "Sync Now".
+
+- **SessionPicker** — unified sidebar navigation replaces the old Sunday-only date stepper; steps through all sessions (Sunday and special) in chronological order.
+
+- **QuickCreateModal** — create special events inline from the sidebar; template dropdown pre-populates when templates exist.
+
+#### Sprint 4 — Checklist Rebuild
+
+- **Unified `Checklist.tsx`** (`src/screens/Checklist.tsx`) — full rewrite replacing the separate `Checklist.tsx` (Sunday) and `EventChecklist.tsx` (special events):
+  - `isEvent = sessionType === 'event'` drives all branching: data source, form type, role filter visibility, subscription table.
+  - Unified `Row` interface normalises both `checklist_items` (has `task`/`role`/`note`) and `event_checklist_items` (has `label`/`item_notes`) for shared rendering.
+  - `SortableRow` with optional role badge; DnD reorder via `reorderSection<T>` generic helper.
+  - Event mode uses `eventId` (= `special_events.id` via `legacySpecialEventId`), NOT `activeEventId` (= `events.id`).
+  - `EventItemFormModal` for adding/editing event checklist items.
+  - Real-time subscriptions branch on `isEvent`.
+
+- **`TemplateManager`** (`src/components/admin/TemplateManager.tsx`) — new admin component:
+  - Three subcomponents: `TemplateList`, `TemplateEditor`, `TemplateItemFormModal`.
+  - Full CRUD on `event_templates` and `event_template_items`.
+  - Item count displayed per template via embedded query.
+
+- **Settings** (`src/screens/Settings.tsx`) — added "Checklist Templates" section rendering `<TemplateManager />`.
+
+- **QuickCreateModal template seeding** (`src/components/layout/QuickCreateModal.tsx`):
+  - Loads templates on mount; shows a template dropdown when templates exist.
+  - Passes `templateId` to `createSpecialEvent`.
+
+- **`createSpecialEvent` template seeding** (`src/lib/supabase.ts`):
+  - When `templateId` is supplied: stamps `special_events.template_id`, loads `event_template_items`, and bulk-inserts `event_checklist_items` with `source_template_item_id` linkage.
+
+- **`App.tsx`** — simplified checklist routing from dual `<Checklist>` / `<EventChecklist>` branches to a single `{screen === 'checklist' && <Checklist />}`.
+
+#### Sprint 5 — Analytics Rebuild
+
+- **`analytics_records` view** (`supabase/migrations/028_analytics_records_view.sql`):
+  - Thin view over `service_records` that remaps legacy `service_type` enum values (`regular_9am` → `sunday-9am`, `regular_11am` → `sunday-11am`) to the new slug format.
+  - Analytics screens query this view so they speak the same language as the rest of the events model. `service_records` remains the authoritative analytics store.
+
+- **`Dashboard.tsx`** (`src/screens/Analytics/Dashboard.tsx`):
+  - Queries `analytics_records` instead of `service_records`.
+  - All `service_type` string comparisons updated to slug format (`sunday-9am`, `sunday-11am`).
+  - `GOAL_LAeq` object keys updated (bracket notation required for hyphenated keys).
+
+- **`Explorer.tsx`** (`src/screens/Analytics/Explorer.tsx`):
+  - Same table and slug updates as Dashboard.
+  - Fixed dot-notation JS syntax error introduced by the slug rename (`GOAL_LAeq['sunday-9am']`).
+
+#### Follow-on: event_id FK fix
+
+- **`029_fix_event_id_fk_to_events.sql`**:
+  - `event_id` columns on `attendance`, `loudness`, `weather`, `runtime_values`, `issues`, `evaluations`, and `service_records` were added in migration 016 pointing to `special_events(id)`. All ServiceData screens use `activeEventId` (= `events.id`), so writes for Sunday services were failing silently with FK violations.
+  - Migration remaps existing `special_events.id` values → `events.id` via `legacy_special_event_id`, then re-points all FK constraints to `events(id)`. No code changes required — ServiceData screens already used the correct ID.
+
+### Notes
+
+- `EventChecklist.tsx` is left in place as dead code — safe to remove in a future cleanup pass.
+- TypeScript build (`npx tsc --noEmit`) exits clean with zero errors after all changes.
+
+---
+
 ## 2026-04-03 (Session 4)
 
 ### Summary

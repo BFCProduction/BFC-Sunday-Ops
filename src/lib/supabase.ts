@@ -245,6 +245,7 @@ export async function getSpecialEventByDate(date: string) {
 /**
  * Create a new special event — inserts into both special_events (for legacy
  * EventChecklist/issues compat) and events (for sidebar navigation).
+ * If templateId is provided, seeds event_checklist_items from the template.
  * Returns the new events.id so the caller can navigate to it.
  */
 export async function createSpecialEvent(opts: {
@@ -252,6 +253,7 @@ export async function createSpecialEvent(opts: {
   event_date: string
   event_time: string | null
   notes?: string | null
+  templateId?: string | null
 }): Promise<string> {
   // Look up the 'special' service type
   const { data: st, error: stErr } = await supabase
@@ -287,6 +289,45 @@ export async function createSpecialEvent(opts: {
     .select('id')
     .single()
   if (evErr || !ev) throw evErr ?? new Error('Failed to create events row')
+
+  // If a template was selected, seed checklist items and link template
+  if (opts.templateId) {
+    // Update special_events.template_id
+    await supabase
+      .from('special_events')
+      .update({ template_id: opts.templateId })
+      .eq('id', se.id)
+
+    // Load template items
+    const { data: templateItems } = await supabase
+      .from('event_template_items')
+      .select('*')
+      .eq('template_id', opts.templateId)
+      .order('sort_order')
+
+    if (templateItems && templateItems.length > 0) {
+      await supabase.from('event_checklist_items').insert(
+        templateItems.map((ti: {
+          id: string
+          source_checklist_item_id: number | null
+          label: string
+          section: string
+          subsection: string | null
+          item_notes: string | null
+          sort_order: number | null
+        }, idx: number) => ({
+          event_id:                 se.id,
+          source_template_item_id:  ti.id,
+          source_checklist_item_id: ti.source_checklist_item_id,
+          label:                    ti.label,
+          section:                  ti.section,
+          subsection:               ti.subsection,
+          item_notes:               ti.item_notes,
+          sort_order:               ti.sort_order ?? idx,
+        }))
+      )
+    }
+  }
 
   return ev.id
 }

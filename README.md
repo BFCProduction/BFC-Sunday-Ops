@@ -8,16 +8,17 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 
 ## Current Scope
 
-- Gameday checklist with initials, timestamps, and expandable item notes
+- Gameday checklist with initials, timestamps, and expandable item notes (Sunday and special events in one unified component)
 - Issue log with severity tracking, photo attachments, resolution, and Monday.com follow-up sync
 - Attendance, runtime, loudness, weather, and evaluation tabs
 - Anonymous multi-submission post-service evaluation with outcome-based questions and aggregate response view
-- Admin Settings page: PDF export, configurable church timezone, and summary email management
+- Admin Settings page: PDF export, configurable church timezone, summary email management, and checklist template manager
 - Admin mode for checklist items, runtime definitions, issue cleanup, and weather settings
 - PDF service report export with logo, KPIs, issues, and evaluation responses
 - ProPresenter relay script for runtime capture
-- **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs
-- **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, per-event checklists, and unified chronological navigation
+- **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
+- **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
+- **PCO sync** — Planning Center calendar plans pulled automatically on login and manually via Settings; upserted into the unified `events` table
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -70,18 +71,25 @@ Live now:
 
 - RESI analytics importer (`scripts/fetch-resi.js`) — logs in via Playwright, downloads the session CSV for the target Sunday, computes per-service stats, and writes to Supabase. Supports `--now`, `--date`, and `--dry-run` flags.
 
-- **Special Events** (`src/components/admin/SpecialEventManager.tsx`, `src/screens/EventChecklist.tsx`):
+- **Special Events** (`src/components/admin/SpecialEventManager.tsx`, `src/components/admin/TemplateManager.tsx`, `src/screens/Checklist.tsx`):
   - Admin-managed event templates (reusable checklist blueprints) and special events with name, date, time, and template assignment.
-  - Events appear chronologically in the sidebar alongside Sundays; prev/next navigation steps through both.
-  - Per-event checklists: items are snapshotted from the template at creation so later template changes don't affect existing events. Items can be added, edited, reordered, and deleted per-event in admin mode.
-  - Event checklist UI matches the Sunday checklist exactly: collapsible section cards, two-column desktop layout, sticky header, progress bar, Realtime sync.
-  - All operational screens (issues, attendance, runtimes, loudness, weather, evaluations) work for events using the same `event_id` column pattern.
-  - Managed in Settings → Special Events (admin only).
+  - Template seeding: when a template is selected in the QuickCreate modal, checklist items are snapshotted into the event at creation time — later template changes don't affect existing events.
+  - Events appear chronologically in the sidebar alongside Sundays; prev/next navigation steps through all session types.
+  - Per-event checklists: items can be added, edited, reordered, and deleted per-event in admin mode.
+  - **Unified checklist component** (`src/screens/Checklist.tsx`) handles both Sunday and event modes — `isEvent` flag drives data source, form type, and subscription table.
+  - All operational screens (issues, attendance, runtimes, loudness, weather, evaluations) work for events using the same `event_id` column pattern. `event_id` FKs on all operational tables now correctly reference `events(id)`.
+  - Template manager in Settings → Checklist Templates (admin only).
 
 - **Analytics screen** (`src/screens/Analytics/`) — three-tab layout:
   - **Dashboard**: 6 KPI cards (Avg Attendance, Avg Service Runtime, Avg Message Runtime, Avg Loudness, Avg Stream Views, Total Sundays), each with 9am/11am breakdown and period-over-period delta arrows. Date-range filter. All time values rounded to whole seconds.
-  - **Data Explorer**: filterable table view of `service_records` with column-level sorting.
+  - **Data Explorer**: filterable table view with column-level sorting.
   - **Ask a Question**: placeholder for a future AI natural-language query interface.
+  - Both tabs query the `analytics_records` view, which remaps legacy `service_type` enum values to the new slug format (`sunday-9am`, `sunday-11am`).
+
+- **PCO sync** (`supabase/functions/pco-sync/`, `supabase/migrations/023_pco_sync.sql`):
+  - Pulls upcoming service plans from Planning Center for each service type linked via `pco_service_type_id`.
+  - Upserts into `events`: Sunday services matched by `(service_type_id, event_date)` or `pco_plan_id`; special events matched by `pco_plan_id` only.
+  - Called automatically after login and manually via Settings → Sync Now (admin only).
 
 - **`service_records` table** (`supabase/migrations/012_create_service_records.sql`) — unified analytics table with one row per service per Sunday, storing attendance, runtimes, loudness, weather, and stream analytics in one place.
 
@@ -90,7 +98,7 @@ Live now:
 Still pending:
 - Real YouTube analytics importer (`scripts/fetch-youtube.js` is a stub)
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
-- Operational screens writing to `service_records` in addition to legacy tables
+- Attendance and Runtimes screens writing to `service_records` (LoudnessLog already syncs via `syncToServiceRecords`; others still use only legacy tables)
 - Any downstream reporting beyond the Sunday summary email
 
 Completed (previously listed as pending):
@@ -109,7 +117,10 @@ Completed (previously listed as pending):
 
 ## Supabase Tables
 
-- `sundays`
+- `sundays` — legacy Sunday records (still used as source of truth for operational data)
+- `service_types` — service type definitions (`sunday-9am`, `sunday-11am`, `special`)
+- `events` — unified event instances (replaces the split between `sundays` and `special_events` in the navigation layer)
+- `user_sessions` — PCO OAuth session tokens
 - `checklist_items`
 - `checklist_completions`
 - `attendance`
@@ -125,14 +136,17 @@ Completed (previously listed as pending):
 - `report_email_recipients`
 - `report_email_runs`
 - `app_config`
-- `service_records` — unified analytics table (one row per service per Sunday)
+- `service_records` — unified analytics table (one row per service per Sunday); queried via the `analytics_records` view
 - `event_templates` — reusable checklist blueprints for special events
 - `event_template_items` — checklist items belonging to a template
 - `special_events` — non-Sunday services (Good Friday, Christmas Eve, etc.)
 - `event_checklist_items` — per-event checklist items (snapshotted from template at creation)
 - `event_checklist_completions` — completions for event checklist items
 
-Fresh schema setup is represented by:
+Views:
+- `analytics_records` — thin view over `service_records` that remaps legacy `service_type` enum values to the new slug format (`sunday-9am`, `sunday-11am`)
+
+Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/001_initial_schema.sql`
 - `supabase/migrations/002_align_runtime_and_checklist_tables.sql`
 - `supabase/migrations/003_allow_manual_runtime_fields.sql`
@@ -146,7 +160,22 @@ Fresh schema setup is represented by:
 - `supabase/migrations/011_security_hardening.sql`
 - `supabase/migrations/012_create_service_records.sql`
 - `supabase/migrations/013_add_c_weighted_loudness.sql`
-- `supabase/migrations/014_add_special_events.sql`
+- `supabase/migrations/014_add_countdown_target.sql`
+- `supabase/migrations/015_pco_auth.sql`
+- `supabase/migrations/016_add_special_events.sql`
+- `supabase/migrations/017_service_types_and_events.sql`
+- `supabase/migrations/018_events_unique_constraint.sql`
+- `supabase/migrations/019_grant_events_permissions.sql`
+- `supabase/migrations/020_runtime_fields_service_scope.sql`
+- `supabase/migrations/021_checklist_event_native.sql`
+- `supabase/migrations/022_checklist_completions_nullable_sunday.sql`
+- `supabase/migrations/023_pco_sync.sql`
+- `supabase/migrations/024_service_types_service_role_grant.sql`
+- `supabase/migrations/025_events_service_role_grant.sql`
+- `supabase/migrations/026_app_config_service_role_grant.sql`
+- `supabase/migrations/027_fix_events_unique_constraint.sql`
+- `supabase/migrations/028_analytics_records_view.sql`
+- `supabase/migrations/029_fix_event_id_fk_to_events.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -378,10 +407,23 @@ supabase functions deploy summary-email-admin
 - All other secrets (Monday API token, Google service account key, Gmail delegated credentials) must be added to Supabase project secrets for edge functions and to GitHub Actions secrets for workflows — never hardcoded.
 - When in doubt, treat a value as a secret. If it's genuinely non-sensitive (a feature flag, a public URL, a display name), it's fine in committed config.
 
-## Future Session Notes
+## Status: Maintenance Mode (as of 2026-04-11)
 
-- Set up the YouTube analytics importer and enable the supporting workflow (`scripts/fetch-youtube.js` is a stub).
-- Build the AI "Ask a Question" Analytics tab — natural-language queries against `service_records` via Claude API / Supabase Edge Function.
-- Update operational input screens (Loudness Log, Attendance, Runtimes) to write to `service_records` alongside the existing legacy tables.
+Sunday Ops has been successful and is actively used at BFC, but development focus is shifting to **Callsheet** — a purpose-built production management platform that covers both the pre-event planning layer and the day-of execution layer this app handles.
+
+The features proven here (checklist, issue log, runtime capture, attendance, loudness, evaluations, analytics) are being integrated into Callsheet's EventSpace as dedicated tabs, with real user auth replacing typed initials, Socket.io replacing Supabase Realtime, and Callsheet's design system replacing the current UI.
+
+A full five-sprint rebuild cycle was completed on 2026-04-11 (Session 5), bringing the app to full alignment with the unified events model. **This app will remain running at BFC until Callsheet can replace it day-to-day.** Minor bug fixes are fine. No new features.
+
+Callsheet repo: `/Users/alanbrown/Documents/EdgeCase Engineering/callsheet`
+
+## Future Session Notes (pre-maintenance)
+
 - ~~Backfill attendance and loudness into `service_records` from legacy data.~~ (completed)
-- Consider writing special event operational data (attendance, runtimes, loudness) into `service_records` so events show up in Analytics alongside Sundays.
+- ~~PCO calendar sync edge function.~~ (completed — Session 5)
+- ~~Unified events model and session navigation.~~ (completed — Session 5)
+- ~~Unified checklist component (Sunday + Event in one screen).~~ (completed — Session 5)
+- ~~Analytics screens using new slug format.~~ (completed — Session 5)
+- YouTube analytics importer (`scripts/fetch-youtube.js` is a stub) — deferred, will not be built here.
+- AI "Ask a Question" Analytics tab — deferred, will not be built here.
+- Attendance and Runtimes screens writing to `service_records` — deferred, will not be built here.

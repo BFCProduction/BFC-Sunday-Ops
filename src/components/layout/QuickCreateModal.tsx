@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CalendarDays, Loader2, X } from 'lucide-react'
-import { createSpecialEvent, loadAllSessions } from '../../lib/supabase'
+import { createSpecialEvent, loadAllSessions, supabase } from '../../lib/supabase'
 import type { Session } from '../../types'
+
+interface TemplateOption {
+  id: string
+  name: string
+}
 
 interface Props {
   onCreated: (newEventId: string, freshSessions: Session[]) => void
@@ -9,12 +14,20 @@ interface Props {
 }
 
 export function QuickCreateModal({ onCreated, onClose }: Props) {
-  const [name,    setName]    = useState('')
-  const [date,    setDate]    = useState(new Date().toISOString().slice(0, 10))
-  const [time,    setTime]    = useState('')
-  const [notes,   setNotes]   = useState('')
-  const [saving,  setSaving]  = useState(false)
-  const [error,   setError]   = useState('')
+  const [name,       setName]       = useState('')
+  const [date,       setDate]       = useState(new Date().toISOString().slice(0, 10))
+  const [time,       setTime]       = useState('')
+  const [notes,      setNotes]      = useState('')
+  const [templateId, setTemplateId] = useState('')
+  const [templates,  setTemplates]  = useState<TemplateOption[]>([])
+  const [saving,     setSaving]     = useState(false)
+  const [error,      setError]      = useState('')
+
+  // Load templates on mount
+  useEffect(() => {
+    supabase.from('event_templates').select('id, name').order('name')
+      .then(({ data }) => setTemplates((data || []) as TemplateOption[]))
+  }, [])
 
   async function handleSave() {
     if (!name.trim()) { setError('Event name is required'); return }
@@ -27,6 +40,7 @@ export function QuickCreateModal({ onCreated, onClose }: Props) {
         event_date: date,
         event_time: time || null,
         notes:      notes.trim() || null,
+        templateId: templateId || null,
       })
       const fresh = await loadAllSessions()
       onCreated(newId, fresh)
@@ -108,6 +122,24 @@ export function QuickCreateModal({ onCreated, onClose }: Props) {
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
             />
           </div>
+
+          {templates.length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                Checklist Template <span className="text-gray-400 font-normal normal-case">(optional)</span>
+              </label>
+              <select
+                value={templateId}
+                onChange={e => setTemplateId(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              >
+                <option value="">None</option>
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {error && <p className="text-red-600 text-xs">{error}</p>}
         </div>

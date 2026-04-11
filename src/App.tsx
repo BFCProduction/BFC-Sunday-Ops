@@ -14,7 +14,6 @@ import { MobileTabs }     from './components/layout/MobileTabs'
 import { LoginScreen }    from './components/auth/LoginScreen'
 import { Dashboard }      from './screens/Dashboard'
 import { Checklist }      from './screens/Checklist'
-import { EventChecklist } from './screens/EventChecklist'
 import { IssueLog }       from './screens/IssueLog'
 import { ServiceData }    from './screens/ServiceData'
 import { Evaluation }     from './screens/Evaluation'
@@ -183,11 +182,6 @@ function AppMain() {
   const eventName        = session?.type === 'event' ? session.name : null
   const isViewingPast    = !!session && session.date < todaySundayDate
 
-  // ── Checklist routing ───────────────────────────────────────────────────────
-  // Use EventChecklist for special events (they have their own checklist items)
-  // Use Sunday Checklist for 9am/11am services (they share the global checklist)
-  const checklistEventId = sessionType === 'event' ? eventId : null
-
   if (loading) return (
     <div className="min-h-screen bg-white flex items-center justify-center">
       <div className="text-center">
@@ -222,11 +216,11 @@ function AppMain() {
             setActive={setScreen}
             issueCount={issueCount}
             allSessions={allSessions}
+            onSessionsChange={setAllSessions}
           />
           <main className="flex-1 min-w-0 overflow-y-auto bg-white" style={{ paddingBottom: '72px' }}>
             {screen === 'dashboard'  && <Dashboard   setScreen={setScreen} />}
-            {screen === 'checklist'  && !checklistEventId && <Checklist />}
-            {screen === 'checklist'  &&  checklistEventId && <EventChecklist eventId={checklistEventId} />}
+            {screen === 'checklist'  && <Checklist />}
             {screen === 'issues'     && <IssueLog    sundayId={sundayId} eventId={eventId} />}
             {screen === 'data'       && <ServiceData />}
             {screen === 'evaluation' && <Evaluation />}

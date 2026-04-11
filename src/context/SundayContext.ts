@@ -2,40 +2,67 @@ import { createContext, useContext } from 'react'
 import { CHURCH_TIME_ZONE } from '../lib/churchTime'
 
 export interface SundayContextType {
-  // ── Sunday fields (populated when sessionType === 'sunday') ──────────────
-  sundayId: string
-  sundayDate: string
+  // ── New unified event model ───────────────────────────────────────────────
+  /** The events.id of the currently active session */
+  activeEventId: string
+  /** Service type slug: 'sunday-9am' | 'sunday-11am' | 'special' */
+  serviceTypeSlug: string
+  /** Display name: 'Sunday 9:00 AM' */
+  serviceTypeName: string
+  /** Hex color for the active service type */
+  serviceTypeColor: string
 
-  // ── Event fields (populated when sessionType === 'event') ────────────────
+  // ── Backward-compat fields (used by data screens until they go event-native) ──
+  /** sundays.id — set for Sunday 9am/11am services; empty string for specials */
+  sundayId: string
+  /** The Sunday date (YYYY-MM-DD) — same for both 9am and 11am events */
+  sundayDate: string
+  /** special_events.id — set for special events; null for Sunday services */
   eventId: string | null
+  /** Display name of the special event; null for Sunday services */
   eventName: string | null
 
   // ── Common session fields ────────────────────────────────────────────────
-  /** 'sunday' or 'event' — which type of session is currently active */
+  /** 'sunday' for 9am/11am services, 'event' for special events */
   sessionType: 'sunday' | 'event'
   /** ISO date string (YYYY-MM-DD) of the currently viewed session */
   sessionDate: string
 
   // ── Navigation / timezone ────────────────────────────────────────────────
   timezone: string
+  /** The operational Sunday date (anchor for "back to today" and isViewingPast) */
   todaySundayDate: string
   isViewingPast: boolean
-  /** Navigate to any session by its ISO date string. The app resolves
-   *  whether that date is a Sunday or a special event. */
+
+  /**
+   * Navigate to an event by its events.id.
+   * This is the primary navigation method.
+   */
+  navigateToEvent: (eventId: string) => void
+
+  /**
+   * Navigate to the first event on a given date.
+   * Kept for backward compat (e.g. "back to today" button).
+   */
   navigateSunday: (date: string) => void
 }
 
 export const SundayContext = createContext<SundayContextType>({
-  sundayId: '',
-  sundayDate: '',
-  eventId: null,
-  eventName: null,
-  sessionType: 'sunday',
-  sessionDate: '',
-  timezone: CHURCH_TIME_ZONE,
-  todaySundayDate: '',
-  isViewingPast: false,
-  navigateSunday: () => {},
+  activeEventId:    '',
+  serviceTypeSlug:  'sunday-9am',
+  serviceTypeName:  'Sunday 9:00 AM',
+  serviceTypeColor: '#3b82f6',
+  sundayId:         '',
+  sundayDate:       '',
+  eventId:          null,
+  eventName:        null,
+  sessionType:      'sunday',
+  sessionDate:      '',
+  timezone:         CHURCH_TIME_ZONE,
+  todaySundayDate:  '',
+  isViewingPast:    false,
+  navigateToEvent:  () => {},
+  navigateSunday:   () => {},
 })
 
 export function useSunday() {

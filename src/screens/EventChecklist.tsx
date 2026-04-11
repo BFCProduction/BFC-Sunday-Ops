@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, Fragment } from 'react'
 import {
-  CheckCircle2, ChevronDown, X, Pencil, Trash2, Plus, GripVertical,
+  CheckCircle2, ChevronDown, X, Pencil, Trash2, Plus, GripVertical, Settings2,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, KeyboardSensor,
@@ -12,6 +12,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { supabase } from '../lib/supabase'
 import { useAdmin } from '../context/adminState'
+import { useAuth } from '../context/authState'
 import type { EventChecklistItem, EventChecklistCompletion } from '../types'
 
 interface Props {
@@ -22,7 +23,6 @@ interface CompletionMap {
   [itemId: string]: { initials: string; time: string }
 }
 
-const INITIALS_KEY = 'bfc-checklist-initials'
 const ADD_NEW = '__add_new__'
 
 // ── Item form modal ───────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ function EventItemFormModal({
 
 interface RowProps {
   item: EventChecklistItem
-  isAdmin: boolean
+  editMode: boolean
   isLast: boolean
   chk?: { initials: string; time: string }
   onToggle: () => void
@@ -195,7 +195,7 @@ interface RowProps {
   onDelete: () => void
 }
 
-function SortableRow({ item, isAdmin, isLast, chk, onToggle, onEdit, onDelete }: RowProps) {
+function SortableRow({ item, editMode, isLast, chk, onToggle, onEdit, onDelete }: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id })
 
@@ -211,10 +211,10 @@ function SortableRow({ item, isAdmin, isLast, chk, onToggle, onEdit, onDelete }:
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-start gap-3 px-4 py-2.5 ${isLast ? '' : 'border-b border-gray-50'} ${chk && !isAdmin ? 'opacity-50' : ''} hover:bg-gray-50/50 transition-colors bg-white`}
+      className={`flex items-start gap-3 px-4 py-2.5 ${isLast ? '' : 'border-b border-gray-50'} ${chk && !editMode ? 'opacity-50' : ''} hover:bg-gray-50/50 transition-colors bg-white`}
     >
-      {/* Drag handle — admin only */}
-      {isAdmin && (
+      {/* Drag handle — edit mode only */}
+      {editMode && (
         <button
           {...attributes} {...listeners}
           className="flex-shrink-0 mt-0.5 p-0.5 text-gray-300 hover:text-gray-400 cursor-grab active:cursor-grabbing touch-none focus:outline-none"
@@ -224,8 +224,8 @@ function SortableRow({ item, isAdmin, isLast, chk, onToggle, onEdit, onDelete }:
         </button>
       )}
 
-      {/* Checkbox — non-admin only */}
-      {!isAdmin && (
+      {/* Checkbox — shown when not in edit mode */}
+      {!editMode && (
         <button
           onClick={onToggle}
           className={`flex-shrink-0 mt-0.5 w-[18px] h-[18px] rounded border-2 flex items-center justify-center transition-all ${
@@ -237,19 +237,19 @@ function SortableRow({ item, isAdmin, isLast, chk, onToggle, onEdit, onDelete }:
       )}
 
       <div className="flex-1 min-w-0">
-        <p className={`text-sm leading-snug ${chk && !isAdmin ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+        <p className={`text-sm leading-snug ${chk && !editMode ? 'line-through text-gray-400' : 'text-gray-800'}`}>
           {item.label}
         </p>
         {item.item_notes && (
           <p className="text-gray-400 text-[11px] mt-1 leading-snug">{item.item_notes}</p>
         )}
-        {chk && !isAdmin && (
+        {chk && !editMode && (
           <p className="text-emerald-600 text-[10px] mt-0.5 font-medium">{chk.initials} · {chk.time}</p>
         )}
       </div>
 
-      {/* Admin actions */}
-      {isAdmin && (
+      {/* Edit actions */}
+      {editMode && (
         <div className="flex items-center gap-1 flex-shrink-0">
           <button onClick={onEdit}
             className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
@@ -269,15 +269,11 @@ function SortableRow({ item, isAdmin, isLast, chk, onToggle, onEdit, onDelete }:
 
 export function EventChecklist({ eventId }: Props) {
   const { isAdmin } = useAdmin()
+  const { user } = useAuth()
+  const [editMode, setEditMode] = useState(false)
   const [items, setItems] = useState<EventChecklistItem[]>([])
   const [completions, setCompletions] = useState<CompletionMap>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [operatorInitials, setOperatorInitials] = useState(
-    () => window.localStorage.getItem(INITIALS_KEY) || ''
-  )
-  const [modal, setModal] = useState<string | null>(null)
-  const [modalInitials, setModalInitials] = useState('')
-  const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [timezone, setTimezone] = useState('America/Chicago')
   const [editItem, setEditItem] = useState<EventChecklistItem | null>(null)
@@ -294,12 +290,6 @@ export function EventChecklist({ eventId }: Props) {
     supabase.from('app_config').select('value').eq('key', 'church_timezone').maybeSingle()
       .then(({ data }) => { if (data?.value) setTimezone(data.value) })
   }, [])
-
-  useEffect(() => {
-    const v = operatorInitials.trim().toUpperCase()
-    if (v) window.localStorage.setItem(INITIALS_KEY, v)
-    else window.localStorage.removeItem(INITIALS_KEY)
-  }, [operatorInitials])
 
   const loadData = useCallback(async () => {
     const [itemsRes, completionsRes] = await Promise.all([
@@ -342,23 +332,21 @@ export function EventChecklist({ eventId }: Props) {
     return () => { supabase.removeChannel(channel) }
   }, [eventId, loadData])
 
-  async function completeItem(itemId: string, ini: string) {
-    const initials = ini.trim().toUpperCase() || 'N/A'
+  async function completeItem(itemId: string) {
+    const checkedBy = user?.name ?? 'Unknown'
     const now = new Date().toISOString()
-    setSaving(true)
     await supabase.from('event_checklist_completions')
-      .upsert({ event_id: eventId, item_id: itemId, initials, completed_at: now },
+      .upsert({ event_id: eventId, item_id: itemId, initials: checkedBy, completed_at: now },
         { onConflict: 'event_id,item_id' })
     setCompletions(p => ({
       ...p,
       [itemId]: {
-        initials,
+        initials: checkedBy,
         time: new Date(now).toLocaleTimeString('en-US', {
           hour: 'numeric', minute: '2-digit', hour12: true, timeZone: timezone,
         }),
       },
     }))
-    setSaving(false)
   }
 
   async function toggleItem(item: EventChecklistItem) {
@@ -366,21 +354,9 @@ export function EventChecklist({ eventId }: Props) {
       await supabase.from('event_checklist_completions')
         .delete().eq('event_id', eventId).eq('item_id', item.id)
       setCompletions(p => { const n = { ...p }; delete n[item.id]; return n })
-    } else if (operatorInitials.trim()) {
-      await completeItem(item.id, operatorInitials)
     } else {
-      setModalInitials('')
-      setModal(item.id)
+      await completeItem(item.id)
     }
-  }
-
-  async function confirmCheck() {
-    if (!modal) return
-    const ini = modalInitials.trim().toUpperCase()
-    await completeItem(modal, ini)
-    if (ini) setOperatorInitials(ini)
-    setModal(null)
-    setModalInitials('')
   }
 
   async function deleteItem(item: EventChecklistItem) {
@@ -435,12 +411,10 @@ export function EventChecklist({ eventId }: Props) {
     }
   })
 
-  const displaySections = isAdmin ? sectionedItems : sectionedItems.filter(s => s.items.length > 0)
+  const displaySections = editMode ? sectionedItems : sectionedItems.filter(s => s.items.length > 0)
   const allVisibleItems = displaySections.flatMap(s => s.items)
   const totalDone = allVisibleItems.filter(i => completions[i.id]).length
   const pct = allVisibleItems.length ? Math.round(totalDone / allVisibleItems.length * 100) : 0
-
-  const modalItem = modal ? items.find(i => i.id === modal) : null
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -454,36 +428,26 @@ export function EventChecklist({ eventId }: Props) {
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-5 pt-4 pb-3">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-gray-900 font-bold text-lg">Event Checklist</h2>
-              {isAdmin && (
-                <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
-                  Admin
-                </span>
-              )}
-            </div>
+            <h2 className="text-gray-900 font-bold text-lg">Event Checklist</h2>
             <p className="text-gray-400 text-xs mt-0.5">{totalDone} of {allVisibleItems.length} items completed</p>
           </div>
-          <span className={`text-sm font-bold ${pct === 100 ? 'text-emerald-600' : 'text-gray-400'}`}>{pct}%</span>
-        </div>
-
-        {!isAdmin && (
-          <div className="mb-3">
-            <label className="block text-gray-500 text-[11px] font-medium mb-1.5">Your Initials</label>
-            <div className="flex items-center gap-2">
-              <input
-                maxLength={3}
-                value={operatorInitials}
-                onChange={e => setOperatorInitials(e.target.value.toUpperCase())}
-                placeholder="AB"
-                className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm font-bold tracking-widest uppercase text-center focus:outline-none focus:border-blue-500"
-              />
-              <p className="text-gray-400 text-[11px]">
-                These initials will be applied automatically to every item you check off.
-              </p>
-            </div>
+          <div className="flex items-center gap-3">
+            <span className={`text-sm font-bold ${pct === 100 ? 'text-emerald-600' : 'text-gray-400'}`}>{pct}%</span>
+            {isAdmin && (
+              <button
+                onClick={() => setEditMode(m => !m)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  editMode
+                    ? 'bg-amber-500 text-white hover:bg-amber-600'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+                {editMode ? 'Done Editing' : 'Edit'}
+              </button>
+            )}
           </div>
-        )}
+        </div>
 
         <div className="bg-gray-100 rounded-full h-1">
           <div className="bg-blue-600 h-1 rounded-full progress-fill" style={{ width: `${pct}%` }} />
@@ -491,15 +455,15 @@ export function EventChecklist({ eventId }: Props) {
       </div>
 
       <div className="p-5 space-y-3">
-        {isAdmin && (
+        {editMode && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
             <p className="text-amber-700 text-xs font-medium">
-              Admin mode active — drag <GripVertical className="inline w-3 h-3" /> to reorder, pencil to edit, trash to delete, or "Add item" within each section.
+              Edit mode — drag <GripVertical className="inline w-3 h-3" /> to reorder, pencil to edit, trash to delete, or "Add item" within each section.
             </p>
           </div>
         )}
 
-        {!isAdmin && allVisibleItems.length > 0 && totalDone < allVisibleItems.length && (
+        {!editMode && allVisibleItems.length > 0 && totalDone < allVisibleItems.length && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
             <span className="text-amber-500 text-sm flex-shrink-0">!</span>
             <p className="text-amber-700 text-xs font-medium">
@@ -512,11 +476,11 @@ export function EventChecklist({ eventId }: Props) {
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
             <p className="text-gray-600 text-sm font-medium">No checklist items configured yet.</p>
             <p className="text-gray-400 text-xs mt-1">
-              {isAdmin ? 'Use admin mode to add the first checklist item.' : 'Ask an admin to add checklist items.'}
+              {isAdmin ? 'Use Edit mode to add the first checklist item.' : 'Ask an admin to add checklist items.'}
             </p>
             {isAdmin && (
               <button
-                onClick={() => { setAddSection(null); setEditItem(null); setShowItemForm(true) }}
+                onClick={() => { setEditMode(true); setAddSection(null); setEditItem(null); setShowItemForm(true) }}
                 className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
                 <Plus className="w-4 h-4" /> Add First Item
               </button>
@@ -539,7 +503,7 @@ export function EventChecklist({ eventId }: Props) {
                     >
                       <div className="flex items-center gap-2.5">
                         <span className="text-gray-900 font-semibold text-sm">{section}</span>
-                        {!isAdmin && secDone === sectionItems.length && sectionItems.length > 0 && (
+                        {!editMode && secDone === sectionItems.length && sectionItems.length > 0 && (
                           <span className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full font-semibold border border-emerald-200">
                             <CheckCircle2 className="w-3 h-3" />Done
                           </span>
@@ -576,7 +540,7 @@ export function EventChecklist({ eventId }: Props) {
                                   )}
                                   <SortableRow
                                     item={item}
-                                    isAdmin={isAdmin}
+                                    editMode={editMode}
                                     isLast={isLast}
                                     chk={completions[item.id]}
                                     onToggle={() => toggleItem(item)}
@@ -589,7 +553,7 @@ export function EventChecklist({ eventId }: Props) {
                           </SortableContext>
                         </DndContext>
 
-                        {isAdmin && (
+                        {editMode && (
                           <button
                             onClick={() => { setAddSection(section); setEditItem(null); setShowItemForm(true) }}
                             className="w-full flex items-center gap-2 px-4 py-2.5 text-blue-600 hover:bg-blue-50 transition-colors border-t border-gray-100 text-xs font-medium"
@@ -607,38 +571,6 @@ export function EventChecklist({ eventId }: Props) {
           </div>
         )}
       </div>
-
-      {/* Sign-off modal */}
-      {modal && modalItem && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end md:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm slide-up shadow-2xl">
-            <div className="flex items-start justify-between mb-1">
-              <h3 className="text-gray-900 font-bold">Sign Off</h3>
-              <button onClick={() => { setModal(null); setModalInitials('') }} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-gray-500 text-sm mb-1">{modalItem.label}</p>
-            <p className="text-gray-400 text-xs mb-4">Enter your initials to confirm.</p>
-            <input
-              autoFocus maxLength={3}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-center text-2xl font-bold tracking-widest uppercase focus:outline-none focus:border-blue-500"
-              placeholder="AB"
-              value={modalInitials}
-              onChange={e => setModalInitials(e.target.value.toUpperCase())}
-              onKeyDown={e => e.key === 'Enter' && confirmCheck()}
-            />
-            <div className="flex gap-3 mt-4">
-              <button onClick={() => { setModal(null); setModalInitials('') }}
-                className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">Cancel</button>
-              <button onClick={confirmCheck} disabled={saving}
-                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60">
-                {saving ? 'Saving…' : 'Check Off'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Item form modal */}
       {showItemForm && (

@@ -22,8 +22,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-interface RuntimesProps { sundayId: string; eventId?: string | null }
-
 function SortableRuntimeRow({
   field,
   onEdit,
@@ -91,9 +89,10 @@ interface RuntimeValue {
   captured_at: string | null
 }
 
-export function Runtimes({ sundayId, eventId }: RuntimesProps) {
+export function Runtimes() {
   const { isAdmin } = useAdmin()
-  const { timezone } = useSunday()
+  const { activeEventId, sundayId, timezone, serviceTypeSlug } = useSunday()
+  const eventId = activeEventId   // alias for clarity
   const [allFields, setAllFields] = useState<RuntimeField[]>([])
   const [values, setValues] = useState<Record<number, string>>({})
   const [captured, setCaptured] = useState<Record<number, string>>({})
@@ -110,17 +109,27 @@ export function Runtimes({ sundayId, eventId }: RuntimesProps) {
   )
 
   const loadFields = useCallback(async () => {
+    // Show fields scoped to this service type, or global (null) fields
     const { data } = await supabase
       .from('runtime_fields')
       .select('*')
+      .or(`service_type_slug.is.null,service_type_slug.eq.${serviceTypeSlug}`)
       .order('sort_order', { ascending: true })
       .order('pull_time', { ascending: true })
     setAllFields(data || [])
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceTypeSlug])
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadValues = useCallback(async () => {
     const q = supabase.from('runtime_values').select('field_id, value, captured_at')
-    const { data } = await (eventId ? q.eq('event_id', eventId) : q.eq('sunday_id', sundayId))
+    // Try event-native first; fall back to legacy Sunday record
+    const { data: eventData } = await q.eq('event_id', eventId)
+    const data = eventData && eventData.length > 0
+      ? eventData
+      : sundayId
+        ? (await supabase.from('runtime_values').select('field_id, value, captured_at').eq('sunday_id', sundayId)).data
+        : null
     if (data) {
       const vals: Record<number, string> = {}
       const caps: Record<number, string> = {}
@@ -326,6 +335,7 @@ export function Runtimes({ sundayId, eventId }: RuntimesProps) {
       {showModal && (
         <RuntimeFieldModal
           field={editField || undefined}
+          defaultServiceTypeSlug={editField ? undefined : serviceTypeSlug}
           onClose={() => { setShowModal(false); setEditField(null) }}
           onSaved={loadFields}
         />

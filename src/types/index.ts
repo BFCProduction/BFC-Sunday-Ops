@@ -141,7 +141,7 @@ export interface ChecklistItem {
 
 export type Role = 'All' | 'A1' | 'Video' | 'Graphics' | 'Lighting' | 'Stage'
 
-// ── Special Events ────────────────────────────────────────────────────────────
+// ── Special Events (legacy — kept for checklist/template system) ──────────────
 
 export interface EventTemplate {
   id: string
@@ -193,8 +193,38 @@ export interface EventChecklistCompletion {
   completed_at: string
 }
 
-// A unified session: either a regular Sunday or a special event.
-// Used for chronological navigation across both types.
-export type Session =
-  | { type: 'sunday'; id: string; date: string }
-  | { type: 'event';  id: string; date: string; name: string; eventTime: string | null }
+// ── Unified Event Model ───────────────────────────────────────────────────────
+
+/** A service type definition (Sunday 9am, 11am, Special Events, etc.) */
+export interface ServiceType {
+  id: string
+  name: string
+  slug: string          // 'sunday-9am' | 'sunday-11am' | 'special'
+  color: string
+  sortOrder: number
+}
+
+/**
+ * A unified session — every service instance across all types.
+ *
+ * Backward compat fields:
+ *   type             'sunday' for 9am/11am services, 'event' for special events
+ *   legacySundayId   sundays.id — passed to data queries for 9am/11am services
+ *   legacySpecialEventId  special_events.id — passed to data queries for specials
+ *
+ * These legacy fields are removed once all data tables are event-native.
+ */
+export interface Session {
+  id: string                        // events.id (new primary key for navigation)
+  type: 'sunday' | 'event'          // 'sunday' = regular service, 'event' = special
+  serviceTypeSlug: string           // 'sunday-9am' | 'sunday-11am' | 'special'
+  serviceTypeName: string           // 'Sunday 9:00 AM'
+  serviceTypeColor: string          // '#3b82f6'
+  name: string                      // 'Sunday 9:00 AM · April 13, 2026'
+  date: string                      // event_date YYYY-MM-DD
+  eventTime: string | null
+
+  // ── Backward-compat bridges ───────────────────────────────────────────────
+  legacySundayId: string | null        // sundays.id for 9am/11am events
+  legacySpecialEventId: string | null  // special_events.id for special events
+}

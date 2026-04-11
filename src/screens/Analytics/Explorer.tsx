@@ -3,12 +3,12 @@ import { ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const PAGE_SIZE = 52
-const GOAL_LAeq: Record<string, number> = { regular_9am: 88, regular_11am: 94 }
+const GOAL_LAeq: Record<string, number> = { 'sunday-9am': 88, 'sunday-11am': 94 }
 
 interface ServiceRecord {
   id: string
   service_date: string
-  service_type: 'regular_9am' | 'regular_11am' | 'special'
+  service_type: 'sunday-9am' | 'sunday-11am' | 'special'
   service_label: string | null
   in_person_attendance: number | null
   church_online_views: number | null
@@ -186,7 +186,7 @@ function SingleTable({
   serviceType,
   showLabel = false,
 }: {
-  serviceType: 'regular_9am' | 'regular_11am' | 'special'
+  serviceType: 'sunday-9am' | 'sunday-11am' | 'special'
   showLabel?: boolean
 }) {
   const [records, setRecords] = useState<ServiceRecord[]>([])
@@ -204,7 +204,7 @@ function SingleTable({
     setError(null)
     const from = page * PAGE_SIZE
     const { data, count, error: err } = await supabase
-      .from('service_records')
+      .from('analytics_records')
       .select('*', { count: 'exact' })
       .eq('service_type', serviceType)
       .order('service_date', { ascending: sortAsc })
@@ -344,9 +344,9 @@ function CombinedTable() {
       setError(null)
       // Fetch all regular records — ~500 rows max is fine client-side
       const { data, error: err } = await supabase
-        .from('service_records')
+        .from('analytics_records')
         .select('*')
-        .in('service_type', ['regular_9am', 'regular_11am'])
+        .in('service_type', ['sunday-9am', 'sunday-11am'])
       if (err) {
         setError(err.message)
       } else {
@@ -364,7 +364,7 @@ function CombinedTable() {
       dateMap.set(r.service_date, { date: r.service_date, am9: null, am11: null })
     }
     const row = dateMap.get(r.service_date)!
-    if (r.service_type === 'regular_9am') row.am9 = r
+    if (r.service_type === 'sunday-9am') row.am9 = r
     else row.am11 = r
   }
 
@@ -448,8 +448,8 @@ function CombinedTable() {
                     ).toLocaleString()
                   : '—'
 
-                const la9over = am9 != null && am9.la_eq_15 != null && am9.la_eq_15 > GOAL_LAeq.regular_9am
-                const la11over = am11 != null && am11.la_eq_15 != null && am11.la_eq_15 > GOAL_LAeq.regular_11am
+                const la9over = am9 != null && am9.la_eq_15 != null && am9.la_eq_15 > GOAL_LAeq['sunday-9am']
+                const la11over = am11 != null && am11.la_eq_15 != null && am11.la_eq_15 > GOAL_LAeq['sunday-11am']
                 const la9str = fmtDb(am9?.la_eq_15)
                 const la11str = fmtDb(am11?.la_eq_15)
 
@@ -539,8 +539,8 @@ export function Explorer() {
         ))}
       </div>
 
-      {tab === '9am'      && <SingleTable serviceType="regular_9am" />}
-      {tab === '11am'     && <SingleTable serviceType="regular_11am" />}
+      {tab === '9am'      && <SingleTable serviceType="sunday-9am" />}
+      {tab === '11am'     && <SingleTable serviceType="sunday-11am" />}
       {tab === 'combined' && <CombinedTable />}
       {tab === 'special'  && <SingleTable serviceType="special" showLabel />}
     </div>

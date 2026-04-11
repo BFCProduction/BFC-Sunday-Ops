@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
 import { CheckCircle2, ChevronDown, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useSunday } from '../context/SundayContext'
 import { Card } from '../components/ui/Card'
 import type { StreamAnalytics } from '../types'
-
-interface EvaluationProps { sundayId: string; eventId?: string | null }
 
 type ServiceFeel = 'excellent' | 'solid' | 'rough_spots' | 'significant_issues'
 
@@ -59,7 +58,9 @@ const FEEL_OPTIONS: {
 
 const feelMeta = Object.fromEntries(FEEL_OPTIONS.map(o => [o.value, o])) as Record<ServiceFeel, typeof FEEL_OPTIONS[number]>
 
-export function Evaluation({ sundayId, eventId }: EvaluationProps) {
+export function Evaluation() {
+  const { activeEventId, sundayId } = useSunday()
+  const eventId = activeEventId
   // ── Form state ──────────────────────────────────────────────────────────────
   const [feel,             setFeel]             = useState<ServiceFeel | null>(null)
   const [brokenMoment,     setBrokenMoment]     = useState<boolean | null>(null)
@@ -79,22 +80,30 @@ export function Evaluation({ sundayId, eventId }: EvaluationProps) {
   const [loading,     setLoading]     = useState(true)
 
   const loadData = async () => {
+    // Evaluations: always event-native going forward; fallback to sunday_id for history
     const evalQ = supabase.from('evaluations').select('*')
-    const evalFiltered = eventId ? evalQ.eq('event_id', eventId) : evalQ.eq('sunday_id', sundayId)
+    const evalFiltered = eventId
+      ? evalQ.eq('event_id', eventId)
+      : sundayId
+        ? evalQ.eq('sunday_id', sundayId)
+        : evalQ.eq('event_id', '')   // no-op
+
+    // Stream analytics: still sunday-level data
+    const analyticsQ = sundayId
+      ? supabase.from('stream_analytics').select('*').eq('sunday_id', sundayId).single()
+      : Promise.resolve({ data: null, error: null })
+
     const [subsRes, analyticsRes] = await Promise.all([
       evalFiltered.order('submitted_at', { ascending: false }),
-      supabase
-        .from('stream_analytics')
-        .select('*')
-        .eq('sunday_id', sundayId)
-        .single(),
+      analyticsQ,
     ])
     if (subsRes.data)      setSubmissions(subsRes.data as Submission[])
     if (analyticsRes.data) setAnalytics(analyticsRes.data as StreamAnalytics)
     setLoading(false)
   }
 
-  useEffect(() => { loadData() }, [sundayId, eventId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadData() }, [activeEventId, sundayId])
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const canSubmit =
@@ -112,7 +121,7 @@ export function Evaluation({ sundayId, eventId }: EvaluationProps) {
     if (!canSubmit) return
     setSaving(true)
     const { error } = await supabase.from('evaluations').insert({
-      ...(eventId ? { event_id: eventId } : { sunday_id: sundayId }),
+      event_id: eventId,
       service_feel:         feel,
       broken_moment:        brokenMoment ?? false,
       broken_moment_detail: brokenMoment ? (brokenDetail.trim() || null) : null,

@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase'
 import type { ReportEmailRecipient, ReportEmailSettings, Session } from '../types'
 import bfcLogo from '../assets/BFC_Production_Logo_Hor reverse.png'
 import { SpecialEventManager } from '../components/admin/SpecialEventManager'
+import { TemplateManager } from '../components/admin/TemplateManager'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -719,6 +720,23 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
             </p>
             <Card className="p-5">
               <SpecialEventManager onSessionsChange={onSessionsChange ?? (() => {})} />
+            </Card>
+          </div>
+        )}
+
+        {/* ── Checklist Templates ── */}
+        {isAdmin && (
+          <div className="mt-6">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
+              <CalendarDays className="w-3.5 h-3.5 text-emerald-500" />
+              Checklist Templates
+            </p>
+            <Card className="p-5">
+              <p className="text-gray-900 text-sm font-semibold mb-1">Event Checklist Templates</p>
+              <p className="text-gray-400 text-xs mb-4 leading-relaxed">
+                Create reusable checklists that can be applied when creating a new special event.
+              </p>
+              <TemplateManager />
             </Card>
           </div>
         )}

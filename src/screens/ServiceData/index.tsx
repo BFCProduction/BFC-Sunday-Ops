@@ -4,11 +4,6 @@ import { Runtimes } from './Runtimes'
 import { Weather } from './Weather'
 import { LoudnessLog } from './LoudnessLog'
 
-interface ServiceDataProps {
-  sundayId: string
-  eventId?: string | null
-}
-
 const TABS = [
   { id: 'attendance', label: 'Attendance' },
   { id: 'runtimes',   label: 'Runtimes'   },
@@ -18,7 +13,7 @@ const TABS = [
 
 type TabId = typeof TABS[number]['id']
 
-export function ServiceData({ sundayId, eventId }: ServiceDataProps) {
+export function ServiceData() {
   const [tab, setTab] = useState<TabId>('attendance')
 
   return (
@@ -35,10 +30,10 @@ export function ServiceData({ sundayId, eventId }: ServiceDataProps) {
         </div>
       </div>
       <div className="p-5">
-        {tab === 'attendance' && <Attendance sundayId={sundayId} eventId={eventId} />}
-        {tab === 'runtimes'   && <Runtimes   sundayId={sundayId} eventId={eventId} />}
-        {tab === 'weather'    && <Weather    sundayId={sundayId} eventId={eventId} />}
-        {tab === 'loudness'   && <LoudnessLog sundayId={sundayId} eventId={eventId} />}
+        {tab === 'attendance' && <Attendance />}
+        {tab === 'runtimes'   && <Runtimes />}
+        {tab === 'weather'    && <Weather />}
+        {tab === 'loudness'   && <LoudnessLog />}
       </div>
     </div>
   )

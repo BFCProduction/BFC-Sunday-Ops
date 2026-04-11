@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const GOAL_LAeq: Record<string, number> = { regular_9am: 88, regular_11am: 94 }
+const GOAL_LAeq: Record<string, number> = { 'sunday-9am': 88, 'sunday-11am': 94 }
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = Array.from({ length: CURRENT_YEAR - 2019 }, (_, i) => CURRENT_YEAR - i)
 
@@ -18,7 +18,7 @@ type ServiceFilter = 'both' | '9am' | '11am'
 
 interface Rec {
   service_date: string
-  service_type: 'regular_9am' | 'regular_11am' | 'special'
+  service_type: 'sunday-9am' | 'sunday-11am' | 'special'
   in_person_attendance: number | null
   church_online_views: number | null
   church_online_unique_viewers: number | null
@@ -109,8 +109,8 @@ function filterRecords(
   return records.filter(r => {
     if (exclSpecial && r.service_type === 'special') return false
     if (year !== 'all' && yearOf(r.service_date) !== year) return false
-    if (service === '9am'  && r.service_type !== 'regular_9am') return false
-    if (service === '11am' && r.service_type !== 'regular_11am') return false
+    if (service === '9am'  && r.service_type !== 'sunday-9am') return false
+    if (service === '11am' && r.service_type !== 'sunday-11am') return false
     return true
   })
 }
@@ -156,8 +156,8 @@ function computeKPIs(records: Rec[]): KPIs {
   const ytArr      = perSunday.map(s => s.yt)
 
   // Per-service averages
-  const all9am  = records.filter(r => r.service_type === 'regular_9am')
-  const all11am = records.filter(r => r.service_type === 'regular_11am')
+  const all9am  = records.filter(r => r.service_type === 'sunday-9am')
+  const all11am = records.filter(r => r.service_type === 'sunday-11am')
 
   // Loudness compliance: per Sunday, all services within goal
   let exceedances = 0
@@ -364,7 +364,7 @@ export function Dashboard() {
       setLoading(true)
       const [recResult, evalResult] = await Promise.all([
         supabase
-          .from('service_records')
+          .from('analytics_records')
           .select('service_date,service_type,in_person_attendance,church_online_views,church_online_unique_viewers,church_online_avg_watch_time_secs,youtube_unique_viewers,service_run_time_secs,message_run_time_secs,la_eq_15')
           .order('service_date'),
         supabase
@@ -634,14 +634,14 @@ export function Dashboard() {
           <p className="text-xs text-gray-400 mb-3">LAeq 15 compliance · {yearLabel}</p>
           <StatRow dot="#16a34a" label="9am Avg LAeq 15"
             value={(() => {
-              const rows = filtered.filter(r => r.service_type === 'regular_9am' && r.la_eq_15 != null)
+              const rows = filtered.filter(r => r.service_type === 'sunday-9am' && r.la_eq_15 != null)
               const a = avg(rows.map(r => r.la_eq_15!))
               return a != null ? `${fmt(a, 1)} dB` : '—'
             })()}
           />
           <StatRow dot="#3b82f6" label="11am Avg LAeq 15"
             value={(() => {
-              const rows = filtered.filter(r => r.service_type === 'regular_11am' && r.la_eq_15 != null)
+              const rows = filtered.filter(r => r.service_type === 'sunday-11am' && r.la_eq_15 != null)
               const a = avg(rows.map(r => r.la_eq_15!))
               return a != null ? `${fmt(a, 1)} dB` : '—'
             })()}

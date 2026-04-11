@@ -9,12 +9,8 @@ function getCorsHeaders(request: Request) {
   const origin = request.headers.get('Origin') ?? ''
   return {
     'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-admin-password',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-session-token',
   }
-}
-
-function getExpectedPassword() {
-  return Deno.env.get('ADMIN_PASSWORD') || Deno.env.get('VITE_ADMIN_PASSWORD') || ''
 }
 
 function jsonResponse(corsHeaders: Record<string, string>, status: number, payload: unknown) {
@@ -22,6 +18,44 @@ function jsonResponse(corsHeaders: Record<string, string>, status: number, paylo
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+}
+
+// Verify a session token and confirm the user is an admin.
+// Returns the user row on success, null on failure.
+async function verifyAdminSession(
+  supabase: ReturnType<typeof createClient>,
+  token: string | null,
+): Promise<{ id: string } | null> {
+  if (!token) return null
+
+  const now = new Date().toISOString()
+
+  const { data: session } = await supabase
+    .from('user_sessions')
+    .select('user_id, expires_at')
+    .eq('token', token)
+    .gt('expires_at', now)
+    .maybeSingle()
+
+  if (!session) return null
+
+  const { data: user } = await supabase
+    .from('users')
+    .select('id, is_admin')
+    .eq('id', session.user_id)
+    .eq('is_admin', true)
+    .maybeSingle()
+
+  if (!user) return null
+
+  // Bump last_used_at without blocking the response
+  supabase
+    .from('user_sessions')
+    .update({ last_used_at: now })
+    .eq('token', token)
+    .then(() => {})
+
+  return user
 }
 
 function normalizeRecipient(payload: Record<string, unknown>) {
@@ -51,16 +85,6 @@ Deno.serve(async request => {
   }
 
   try {
-    const expectedPassword = getExpectedPassword()
-    if (!expectedPassword) {
-      throw new Error('ADMIN_PASSWORD secret is not configured')
-    }
-
-    const providedPassword = request.headers.get('x-admin-password') || ''
-    if (!providedPassword || providedPassword !== expectedPassword) {
-      return jsonResponse(corsHeaders, 401, { error: 'Unauthorized' })
-    }
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_KEY')
     if (!supabaseUrl || !supabaseServiceRoleKey) {
@@ -68,6 +92,12 @@ Deno.serve(async request => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
+
+    const sessionToken = request.headers.get('x-session-token')
+    const adminUser = await verifyAdminSession(supabase, sessionToken)
+    if (!adminUser) {
+      return jsonResponse(corsHeaders, 401, { error: 'Unauthorized' })
+    }
 
     if (request.method === 'GET') {
       const [{ data: settings, error: settingsError }, { data: recipients, error: recipientsError }] = await Promise.all([

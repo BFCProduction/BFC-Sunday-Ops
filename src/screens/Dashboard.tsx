@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronRight, ClipboardCheck, BarChart2, Star } from 'lu
 import { supabase } from '../lib/supabase'
 import { ROLE_COLORS } from '../data/checklist'
 import { loadOrSeedChecklistItems } from '../lib/checklist'
+import { useSunday } from '../context/SundayContext'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import type { Issue } from '../types'
@@ -11,7 +12,6 @@ import type { ChecklistItemRecord } from '../lib/checklist'
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
 
 interface DashboardProps {
-  sundayId: string
   setScreen: (s: Screen) => void
 }
 
@@ -45,26 +45,51 @@ function getScheduleStatus(key: string): 'done' | 'active' | 'upcoming' {
   return 'upcoming'
 }
 
-export function Dashboard({ sundayId, setScreen }: DashboardProps) {
+export function Dashboard({ setScreen }: DashboardProps) {
+  const { activeEventId, sundayId, serviceTypeSlug } = useSunday()
+
   const [items, setItems] = useState<ChecklistItemRecord[]>([])
   const [completedIds, setCompletedIds] = useState<number[]>([])
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+
     async function load() {
-      const [itemData, completions, issueData] = await Promise.all([
-        loadOrSeedChecklistItems(),
-        supabase.from('checklist_completions').select('item_id').eq('sunday_id', sundayId),
-        supabase.from('issues').select('*').eq('sunday_id', sundayId).order('created_at', { ascending: false }),
-      ])
-      setItems(itemData)
-      setCompletedIds((completions.data || []).map((r: { item_id: number }) => r.item_id))
-      setIssues((issueData.data || []) as Issue[])
-      setLoading(false)
+      try {
+        // Run all three queries in parallel
+        const [itemData, eventCompletionsRes, legacyCompletionsRes, issueRes] = await Promise.all([
+          loadOrSeedChecklistItems(serviceTypeSlug),
+          supabase.from('checklist_completions').select('item_id').eq('event_id', activeEventId),
+          sundayId
+            ? supabase.from('checklist_completions').select('item_id').eq('sunday_id', sundayId)
+            : Promise.resolve({ data: [] }),
+          sundayId
+            ? supabase.from('issues').select('*').eq('sunday_id', sundayId).order('created_at', { ascending: false })
+            : Promise.resolve({ data: [] }),
+        ])
+
+        if (cancelled) return
+
+        // Prefer event-native completions; fall back to legacy
+        const completionData =
+          (eventCompletionsRes.data && eventCompletionsRes.data.length > 0)
+            ? eventCompletionsRes.data
+            : (legacyCompletionsRes.data ?? [])
+
+        setItems(itemData)
+        setCompletedIds(completionData.map((r: { item_id: number }) => r.item_id))
+        setIssues((issueRes.data || []) as Issue[])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
+
     load()
-  }, [sundayId])
+    return () => { cancelled = true }
+  }, [activeEventId, sundayId, serviceTypeSlug])
 
   const total = items.length
   const done = completedIds.length

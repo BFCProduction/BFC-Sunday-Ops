@@ -3,12 +3,8 @@ import { Cloud } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { supabase } from '../../lib/supabase'
 import { useAdmin } from '../../context/adminState'
+import { useSunday } from '../../context/SundayContext'
 import type { WeatherConfig } from '../../types'
-
-interface WeatherProps {
-  sundayId: string
-  eventId?: string | null
-}
 
 interface WeatherRecord {
   temp_f: number | null
@@ -20,8 +16,18 @@ interface WeatherRecord {
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-export function Weather({ sundayId, eventId }: WeatherProps) {
+// Sunday services each get their own config key; everything else uses 'default'
+function configKey(serviceTypeSlug: string) {
+  return serviceTypeSlug === 'sunday-9am' || serviceTypeSlug === 'sunday-11am'
+    ? serviceTypeSlug
+    : 'default'
+}
+
+export function Weather() {
   const { isAdmin } = useAdmin()
+  const { activeEventId, sundayId, serviceTypeSlug } = useSunday()
+  const eventId = activeEventId
+  const cfgKey  = configKey(serviceTypeSlug)
   const [weather, setWeather] = useState<WeatherRecord | null>(null)
   const [config, setConfig] = useState<WeatherConfig | null>(null)
   const [locationLabel, setLocationLabel] = useState('')
@@ -33,22 +39,40 @@ export function Weather({ sundayId, eventId }: WeatherProps) {
   const [configNotice, setConfigNotice] = useState('')
 
   useEffect(() => {
-    const weatherQ = supabase.from('weather').select('*')
-    const weatherFiltered = eventId ? weatherQ.eq('event_id', eventId) : weatherQ.eq('sunday_id', sundayId)
-    Promise.all([
-      weatherFiltered.maybeSingle(),
-      supabase.from('weather_config').select('*').eq('key', 'default').maybeSingle(),
-    ]).then(([weatherRes, configRes]) => {
-        const nextConfig = (configRes.data || null) as WeatherConfig | null
-        setConfig(nextConfig)
-        setLocationLabel(nextConfig?.location_label || '')
-        setZipCode(nextConfig?.zip_code || '')
-        setPullDay(nextConfig?.pull_day ?? 0)
-        setPullTime(nextConfig?.pull_time || '07:00')
-        setWeather((weatherRes.data || null) as WeatherRecord | null)
-        setLoading(false)
-      })
-  }, [sundayId, eventId])
+    let cancelled = false
+
+    async function load() {
+      // Weather reading: event-native first, then legacy Sunday fallback
+      const weatherQ = supabase.from('weather').select('*')
+      const weatherFiltered = eventId
+        ? weatherQ.eq('event_id', eventId)
+        : sundayId
+          ? weatherQ.eq('sunday_id', sundayId)
+          : weatherQ.eq('sunday_id', '')   // no-op
+
+      // Config: service-specific key first, then fall back to 'default'
+      let configRes = await supabase.from('weather_config').select('*').eq('key', cfgKey).maybeSingle()
+      if (!configRes.data && cfgKey !== 'default') {
+        configRes = await supabase.from('weather_config').select('*').eq('key', 'default').maybeSingle()
+      }
+
+      const [weatherRes] = await Promise.all([weatherFiltered.maybeSingle()])
+
+      if (cancelled) return   // service switched while loading — discard stale result
+
+      const nextConfig = (configRes.data || null) as WeatherConfig | null
+      setConfig(nextConfig)
+      setLocationLabel(nextConfig?.location_label || '')
+      setZipCode(nextConfig?.zip_code || '')
+      setPullDay(nextConfig?.pull_day ?? 0)
+      setPullTime(nextConfig?.pull_time || '07:00')
+      setWeather((weatherRes.data || null) as WeatherRecord | null)
+      setLoading(false)
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [activeEventId, sundayId, cfgKey])
 
   const saveConfig = async () => {
     if (!zipCode.trim()) {
@@ -60,7 +84,7 @@ export function Weather({ sundayId, eventId }: WeatherProps) {
     setConfigNotice('')
 
     const payload = {
-      key: 'default',
+      key: cfgKey,
       location_label: locationLabel.trim() || null,
       zip_code: zipCode.trim(),
       pull_day: pullDay,
