@@ -3,6 +3,12 @@ import { supabase } from '../../lib/supabase'
 import { syncToServiceRecords } from '../../lib/serviceRecords'
 import { useSunday } from '../../context/SundayContext'
 import { Card } from '../../components/ui/Card'
+import {
+  combinedAttendance,
+  formatHistoryInt,
+  useRecentServiceHistory,
+} from './historyData'
+import { ServiceHistoryTable } from './history'
 
 export function Attendance() {
   const {
@@ -14,12 +20,15 @@ export function Attendance() {
   const [notes,   setNotes]   = useState('')
   const [saved,   setSaved]   = useState(false)
   const [saving,  setSaving]  = useState(false)
+  const {
+    rows: historyRows,
+    loading: historyLoading,
+    error: historyError,
+  } = useRecentServiceHistory(serviceTypeSlug, sessionDate)
 
   // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeEventId) return
-    setCount('')
-    setNotes('')
     let cancelled = false
 
     async function load() {
@@ -30,10 +39,11 @@ export function Attendance() {
         .eq('event_id', activeEventId)
         .maybeSingle()
 
-      if (cancelled) return
       if (eventRow) {
-        setCount(eventRow.service_1_count?.toString() ?? '')
-        setNotes(eventRow.notes ?? '')
+        if (!cancelled) {
+          setCount(eventRow.service_1_count?.toString() ?? '')
+          setNotes(eventRow.notes ?? '')
+        }
         return
       }
 
@@ -49,7 +59,13 @@ export function Attendance() {
           const col = serviceTypeSlug === 'sunday-11am' ? 'service_2_count' : 'service_1_count'
           setCount((sundayRow[col] as number | null)?.toString() ?? '')
           setNotes(sundayRow.notes ?? '')
+          return
         }
+      }
+
+      if (!cancelled) {
+        setCount('')
+        setNotes('')
       }
     }
 
@@ -145,6 +161,31 @@ export function Attendance() {
       >
         {saving ? 'Saving...' : saved ? 'Saved' : 'Submit Attendance'}
       </button>
+
+      <ServiceHistoryTable
+        title="Past 10 Sundays"
+        subtitle={`${serviceTypeName} attendance`}
+        color={serviceTypeColor}
+        rows={historyRows}
+        loading={historyLoading}
+        error={historyError}
+        columns={[
+          {
+            key: 'in-person',
+            label: 'In-Person',
+            align: 'right',
+            mono: true,
+            render: row => formatHistoryInt(row.in_person_attendance),
+          },
+          {
+            key: 'combined',
+            label: 'Combined',
+            align: 'right',
+            mono: true,
+            render: row => formatHistoryInt(combinedAttendance(row)),
+          },
+        ]}
+      />
     </div>
   )
 }

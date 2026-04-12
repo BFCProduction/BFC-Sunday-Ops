@@ -113,29 +113,33 @@ Deno.serve(async (req) => {
   const results: PcoServiceTypeResult[] = []
 
   for (const st of serviceTypes as ServiceType[]) {
-    // Fetch upcoming plans and recent past plans in two calls so we don't
-    // rely on per_page to reach current dates when sorted ascending.
-    // Call 1: upcoming (future), sorted soonest-first
-    // Call 2: recent past, sorted most-recent-first
+    // Two calls:
+    //  1. filter=future — upcoming plans, sorted soonest-first (known-good filter)
+    //  2. No filter, sort descending — returns ALL plans newest-first; first 25
+    //     will be the most recent past services
     const baseUrl = `${PCO_API_BASE}/service_types/${st.pco_service_type_id}/plans`
-    const urlFuture = `${baseUrl}?filter=future&per_page=25&order=sort_date`
-    const urlPast   = `${baseUrl}?filter=past&per_page=25&order=-sort_date`
+    const urlFuture  = `${baseUrl}?filter=future&per_page=25&order=sort_date`
+    const urlRecent  = `${baseUrl}?per_page=25&order=-sort_date`
 
     let plans: PcoPlan[] = []
+    const debugLog: string[] = []
 
-    for (const url of [urlFuture, urlPast]) {
+    for (const url of [urlFuture, urlRecent]) {
       try {
         const res = await fetch(url, {
           headers: { Authorization: `Bearer ${pcoToken}` },
         })
         if (res.ok) {
           const body = await res.json() as { data: PcoPlan[] }
+          const count = (body.data ?? []).length
+          debugLog.push(`${res.status} OK — ${count} plans from ${url}`)
           plans = plans.concat(body.data ?? [])
         } else {
-          console.error(`PCO plans fetch failed (${res.status}) for ${st.slug}: ${url}`)
+          const errText = await res.text().catch(() => '')
+          debugLog.push(`${res.status} ERROR from ${url}: ${errText.slice(0, 300)}`)
         }
       } catch (err) {
-        console.error(`Network error fetching plans for ${st.slug}:`, err)
+        debugLog.push(`NETWORK ERROR for ${url}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
 
@@ -155,13 +159,11 @@ Deno.serve(async (req) => {
           display_date: displayDate,
         }
       })
-      // Deduplicate (same plan could appear in both calls theoretically)
       .filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
-      // Sort newest first
       .sort((a, b) => b.event_date.localeCompare(a.event_date))
 
-    results.push({ slug: st.slug, name: st.name, plans: filtered })
+    results.push({ slug: st.slug, name: st.name, plans: filtered, _debug: debugLog } as unknown as PcoServiceTypeResult)
   }
 
-  return json(cors, 200, { service_types: results })
+  return json(cors, 200, { service_types: results, _debug: true })
 })

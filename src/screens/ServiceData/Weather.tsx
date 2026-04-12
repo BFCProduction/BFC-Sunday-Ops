@@ -5,6 +5,11 @@ import { supabase } from '../../lib/supabase'
 import { useAdmin } from '../../context/adminState'
 import { useSunday } from '../../context/SundayContext'
 import type { WeatherConfig } from '../../types'
+import {
+  formatHistoryTemp,
+  useRecentServiceHistory,
+} from './historyData'
+import { ServiceHistoryTable } from './history'
 
 interface WeatherRecord {
   temp_f: number | null
@@ -25,7 +30,7 @@ function configKey(serviceTypeSlug: string) {
 
 export function Weather() {
   const { isAdmin } = useAdmin()
-  const { activeEventId, sundayId, serviceTypeSlug } = useSunday()
+  const { activeEventId, sundayId, serviceTypeSlug, serviceTypeName, serviceTypeColor, sessionDate } = useSunday()
   const eventId = activeEventId
   const cfgKey  = configKey(serviceTypeSlug)
   const [weather, setWeather] = useState<WeatherRecord | null>(null)
@@ -37,6 +42,11 @@ export function Weather() {
   const [loading, setLoading] = useState(true)
   const [savingConfig, setSavingConfig] = useState(false)
   const [configNotice, setConfigNotice] = useState('')
+  const {
+    rows: historyRows,
+    loading: historyLoading,
+    error: historyError,
+  } = useRecentServiceHistory(serviceTypeSlug, sessionDate)
 
   useEffect(() => {
     let cancelled = false
@@ -72,7 +82,7 @@ export function Weather() {
 
     load()
     return () => { cancelled = true }
-  }, [activeEventId, sundayId, cfgKey])
+  }, [eventId, sundayId, cfgKey])
 
   const saveConfig = async () => {
     if (!zipCode.trim()) {
@@ -151,6 +161,29 @@ export function Weather() {
           </div>
         )}
       </Card>
+
+      <ServiceHistoryTable
+        title="Past 10 Sundays"
+        subtitle={`${serviceTypeName} weather`}
+        color={serviceTypeColor}
+        rows={historyRows}
+        loading={historyLoading}
+        error={historyError}
+        columns={[
+          {
+            key: 'temp',
+            label: 'Temp',
+            align: 'right',
+            mono: true,
+            render: row => formatHistoryTemp(row.weather_temp_f),
+          },
+          {
+            key: 'condition',
+            label: 'Condition',
+            render: row => row.weather_condition || '-',
+          },
+        ]}
+      />
 
       <Card className="p-4">
         <p className="text-gray-900 text-sm font-semibold">Weather Import Settings</p>

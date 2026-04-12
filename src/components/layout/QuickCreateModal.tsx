@@ -66,7 +66,7 @@ function PcoPlanPicker({
         setLoading(false)
         searchRef.current?.focus()
       })
-  }, [sessionToken])
+  }, [sessionToken, initialSlug])
 
   const activeGroup = groups.find(g => g.slug === activeSlug)
   const q = query.toLowerCase()
@@ -75,7 +75,7 @@ function PcoPlanPicker({
     p.display_date.toLowerCase().includes(q) ||
     (p.title?.toLowerCase().includes(q) ?? false) ||
     (p.series_title?.toLowerCase().includes(q) ?? false)
-  )
+  ).sort((a, b) => a.event_date.localeCompare(b.event_date))
 
   return (
     <div
@@ -246,7 +246,7 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
     }
   }
 
-  function handlePcoPlanSelect(plan: PcoPlanResult, _slug: string) {
+  function handlePcoPlanSelect(plan: PcoPlanResult) {
     setPcoPlanId(plan.id)
     // Build a descriptive label for the linked-plan badge
     const label = plan.title || plan.series_title

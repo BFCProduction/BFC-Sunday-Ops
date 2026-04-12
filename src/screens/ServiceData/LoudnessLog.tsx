@@ -303,6 +303,7 @@ export function LoudnessLog() {
   }
   const rows9am  = history.filter(r => r.serviceSlug === 'sunday-9am')
   const rows11am = history.filter(r => r.serviceSlug === 'sunday-11am')
+  const visibleHistory = history.filter(r => r.serviceSlug === serviceTypeSlug).slice(0, 10)
 
   const laeqOver = laeq !== '' && parseFloat(laeq) > laeqGoal
 
@@ -367,7 +368,7 @@ export function LoudnessLog() {
         {/* ── History table ─────────────────────────────────────────────────── */}
         <div>
           <div className="flex items-center justify-between mb-2.5">
-            <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-widest">Recent Services</p>
+            <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-widest">Past 10 Sundays</p>
             <button
               onClick={exportPdf}
               disabled={exporting}
@@ -392,12 +393,12 @@ export function LoudnessLog() {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.length === 0 && (
+                  {visibleHistory.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-4 py-6 text-center text-gray-400 text-xs">No history yet</td>
                     </tr>
                   )}
-                  {history.map((row, i) => {
+                  {visibleHistory.map((row, i) => {
                     const over = row.laeq != null && row.laeq > row.goal
                     return (
                       <tr key={i} className={`border-b border-gray-50 ${over ? 'bg-red-50' : ''}`}>

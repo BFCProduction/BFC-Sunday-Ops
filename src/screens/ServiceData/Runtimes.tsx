@@ -7,6 +7,11 @@ import { syncToServiceRecords } from '../../lib/serviceRecords'
 import { RuntimeFieldModal } from '../../components/admin/RuntimeFieldModal'
 import type { RuntimeField } from '../../components/admin/RuntimeFieldModal'
 import {
+  formatHistoryDuration,
+  useRecentServiceHistory,
+} from './historyData'
+import { ServiceHistoryTable } from './history'
+import {
   DndContext,
   closestCenter,
   PointerSensor,
@@ -169,7 +174,10 @@ interface RuntimeValue {
 
 export function Runtimes() {
   const { isAdmin } = useAdmin()
-  const { activeEventId, sundayId, sessionDate, eventName, timezone, serviceTypeSlug } = useSunday()
+  const {
+    activeEventId, sundayId, sessionDate, eventName, timezone,
+    serviceTypeSlug, serviceTypeName, serviceTypeColor,
+  } = useSunday()
   const eventId = activeEventId   // alias for clarity
   const [allFields, setAllFields] = useState<RuntimeField[]>([])
   const [values, setValues] = useState<Record<number, string>>({})
@@ -180,6 +188,11 @@ export function Runtimes() {
   const [showModal, setShowModal] = useState(false)
   const [editField, setEditField] = useState<RuntimeField | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<RuntimeField | null>(null)
+  const {
+    rows: historyRows,
+    loading: historyLoading,
+    error: historyError,
+  } = useRecentServiceHistory(serviceTypeSlug, sessionDate)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -417,6 +430,38 @@ export function Runtimes() {
           Values auto-populate when the relay script runs for connected fields. Manual-only fields are entered directly here.
         </p>
       )}
+
+      <ServiceHistoryTable
+        title="Past 10 Sundays"
+        subtitle={`${serviceTypeName} runtimes`}
+        color={serviceTypeColor}
+        rows={historyRows}
+        loading={historyLoading}
+        error={historyError}
+        columns={[
+          {
+            key: 'service-runtime',
+            label: 'Service',
+            align: 'right',
+            mono: true,
+            render: row => formatHistoryDuration(row.service_run_time_secs),
+          },
+          {
+            key: 'message-runtime',
+            label: 'Message',
+            align: 'right',
+            mono: true,
+            render: row => formatHistoryDuration(row.message_run_time_secs),
+          },
+          {
+            key: 'stage-flip',
+            label: 'Stage Flip',
+            align: 'right',
+            mono: true,
+            render: row => formatHistoryDuration(row.stage_flip_time_secs),
+          },
+        ]}
+      />
 
       {/* Add/Edit modal */}
       {showModal && (
