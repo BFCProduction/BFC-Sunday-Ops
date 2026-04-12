@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { syncToServiceRecords } from '../../lib/serviceRecords'
 import { useSunday } from '../../context/SundayContext'
 import { Card } from '../../components/ui/Card'
 import { generateLoudnessReportHtml } from '../../lib/generateLoudnessReportHtml'
@@ -114,37 +115,12 @@ function NumField({ label, value, onChange, goal, accent }: NumFieldProps) {
   )
 }
 
-// ── Sync to service_records ───────────────────────────────────────────────────
-async function syncToServiceRecords(
-  sundayId: string,
-  sundayDate: string,
-  serviceType: 'regular_9am' | 'regular_11am',
-  fields: { max_db_a_slow: number | null; la_eq_15: number | null; max_db_c_slow: number | null; lc_eq_15: number | null },
-) {
-  const { data: existing } = await supabase
-    .from('service_records')
-    .select('id')
-    .eq('service_date', sundayDate)
-    .eq('service_type', serviceType)
-    .maybeSingle()
-
-  if (existing) {
-    await supabase.from('service_records').update(fields).eq('id', existing.id)
-  } else {
-    await supabase.from('service_records').insert({
-      service_date: sundayDate,
-      service_type: serviceType,
-      sunday_id: sundayId,
-      ...fields,
-    })
-  }
-}
 
 // ── LoudnessLog ───────────────────────────────────────────────────────────────
 export function LoudnessLog() {
   const {
     activeEventId, serviceTypeSlug, serviceTypeName, serviceTypeColor,
-    sundayId, sundayDate,
+    sundayId, sessionDate, eventName,
   } = useSunday()
 
   const laeqGoal = GOAL[serviceTypeSlug] ?? defaultGoal
@@ -249,19 +225,19 @@ export function LoudnessLog() {
       await supabase.from('loudness').insert(payload)
     }
 
-    // Sync to service_records for analytics (Sunday services only)
-    const serviceRecordType =
-      serviceTypeSlug === 'sunday-9am'  ? 'regular_9am'  :
-      serviceTypeSlug === 'sunday-11am' ? 'regular_11am' : null
-
-    if (serviceRecordType && sundayId && sundayDate) {
-      await syncToServiceRecords(sundayId, sundayDate, serviceRecordType, {
+    // Sync to service_records for analytics
+    await syncToServiceRecords({
+      serviceTypeSlug,
+      sundayId: sundayId ?? null,
+      sessionDate,
+      eventName: eventName ?? null,
+      fields: {
         max_db_a_slow: maxA ? parseFloat(maxA) : null,
         la_eq_15:      laeq ? parseFloat(laeq) : null,
         max_db_c_slow: maxC ? parseFloat(maxC) : null,
         lc_eq_15:      lceq ? parseFloat(lceq) : null,
-      })
-    }
+      },
+    })
 
     // Refresh history
     const { data } = await supabase

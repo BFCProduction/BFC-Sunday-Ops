@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, Server, Clock, CheckCircle2, GripVertical } from 
 import { supabase } from '../../lib/supabase'
 import { useAdmin } from '../../context/adminState'
 import { useSunday } from '../../context/SundayContext'
+import { syncToServiceRecords } from '../../lib/serviceRecords'
 import { RuntimeFieldModal } from '../../components/admin/RuntimeFieldModal'
 import type { RuntimeField } from '../../components/admin/RuntimeFieldModal'
 import {
@@ -95,25 +96,6 @@ function parseTimeSecs(str: string): number | null {
   return null
 }
 
-async function syncRuntimesToServiceRecords(
-  sundayId: string,
-  sundayDate: string,
-  serviceType: 'regular_9am' | 'regular_11am',
-  fields: { service_run_time_secs?: number | null; message_run_time_secs?: number | null; stage_flip_time_secs?: number | null },
-) {
-  const { data: existing } = await supabase
-    .from('service_records')
-    .select('id')
-    .eq('service_date', sundayDate)
-    .eq('service_type', serviceType)
-    .maybeSingle()
-
-  if (existing) {
-    await supabase.from('service_records').update(fields).eq('id', existing.id)
-  } else {
-    await supabase.from('service_records').insert({ service_date: sundayDate, service_type: serviceType, sunday_id: sundayId, ...fields })
-  }
-}
 
 interface RuntimeValue {
   field_id: number
@@ -123,7 +105,7 @@ interface RuntimeValue {
 
 export function Runtimes() {
   const { isAdmin } = useAdmin()
-  const { activeEventId, sundayId, sundayDate, timezone, serviceTypeSlug } = useSunday()
+  const { activeEventId, sundayId, sessionDate, eventName, timezone, serviceTypeSlug } = useSunday()
   const eventId = activeEventId   // alias for clarity
   const [allFields, setAllFields] = useState<RuntimeField[]>([])
   const [values, setValues] = useState<Record<number, string>>({})
@@ -218,26 +200,26 @@ export function Runtimes() {
         await supabase.from('runtime_values').upsert(upserts, { onConflict: 'sunday_id,field_id' })
       }
     }
-    // Sync tagged fields to service_records (Sunday services only)
-    const serviceRecordType =
-      serviceTypeSlug === 'sunday-9am'  ? 'regular_9am'  :
-      serviceTypeSlug === 'sunday-11am' ? 'regular_11am' : null
-
-    if (serviceRecordType && sundayId && sundayDate) {
-      const analyticsFields: Record<string, number | null> = {}
-      for (const f of allFields) {
-        if (!f.analytics_key || values[f.id] === undefined) continue
-        const colMap: Record<string, string> = {
-          service_run_time: 'service_run_time_secs',
-          message_run_time: 'message_run_time_secs',
-          stage_flip_time:  'stage_flip_time_secs',
-        }
-        const col = colMap[f.analytics_key]
-        if (col) analyticsFields[col] = parseTimeSecs(values[f.id] || '')
-      }
-      if (Object.keys(analyticsFields).length > 0) {
-        await syncRuntimesToServiceRecords(sundayId, sundayDate, serviceRecordType, analyticsFields)
-      }
+    // Sync tagged fields to service_records
+    const colMap: Record<string, string> = {
+      service_run_time: 'service_run_time_secs',
+      message_run_time: 'message_run_time_secs',
+      stage_flip_time:  'stage_flip_time_secs',
+    }
+    const analyticsFields: Record<string, number | null> = {}
+    for (const f of allFields) {
+      if (!f.analytics_key || values[f.id] === undefined) continue
+      const col = colMap[f.analytics_key]
+      if (col) analyticsFields[col] = parseTimeSecs(values[f.id] || '')
+    }
+    if (Object.keys(analyticsFields).length > 0) {
+      await syncToServiceRecords({
+        serviceTypeSlug,
+        sundayId: sundayId ?? null,
+        sessionDate,
+        eventName: eventName ?? null,
+        fields: analyticsFields,
+      })
     }
 
     setSaving(false)

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { syncToServiceRecords } from '../../lib/serviceRecords'
 import { useSunday } from '../../context/SundayContext'
 import { Card } from '../../components/ui/Card'
 
 export function Attendance() {
   const {
     activeEventId, serviceTypeName, serviceTypeColor,
-    serviceTypeSlug, sundayId, sundayDate,
+    serviceTypeSlug, sundayId, sessionDate, eventName,
   } = useSunday()
 
   const [count,   setCount]   = useState('')
@@ -90,31 +91,14 @@ export function Attendance() {
       setNotes(reloaded.notes ?? '')
     }
 
-    // Sync to service_records for analytics (Sunday services only)
-    const serviceRecordType =
-      serviceTypeSlug === 'sunday-9am'  ? 'regular_9am'  :
-      serviceTypeSlug === 'sunday-11am' ? 'regular_11am' : null
-
-    if (serviceRecordType && sundayId && sundayDate) {
-      const attendance = count ? parseInt(count) : null
-      const { data: existing } = await supabase
-        .from('service_records')
-        .select('id')
-        .eq('service_date', sundayDate)
-        .eq('service_type', serviceRecordType)
-        .maybeSingle()
-
-      if (existing) {
-        await supabase.from('service_records').update({ in_person_attendance: attendance }).eq('id', existing.id)
-      } else {
-        await supabase.from('service_records').insert({
-          service_date: sundayDate,
-          service_type: serviceRecordType,
-          sunday_id: sundayId,
-          in_person_attendance: attendance,
-        })
-      }
-    }
+    // Sync to service_records for analytics
+    await syncToServiceRecords({
+      serviceTypeSlug,
+      sundayId: sundayId ?? null,
+      sessionDate,
+      eventName: eventName ?? null,
+      fields: { in_person_attendance: count ? parseInt(count) : null },
+    })
 
     setSaving(false)
     setSaved(true)
