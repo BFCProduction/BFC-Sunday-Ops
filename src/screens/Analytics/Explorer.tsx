@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
@@ -26,12 +26,6 @@ interface ServiceRecord {
   lc_eq_15: number | null
 }
 
-interface CombinedRow {
-  date: string
-  am9: ServiceRecord | null
-  am11: ServiceRecord | null
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtSecs(secs: number | null | undefined): string {
@@ -55,16 +49,10 @@ function fmtDb(v: number | null | undefined): string {
   return v == null ? '—' : v.toFixed(1)
 }
 
-function fmtWeather(r: ServiceRecord | null): string {
-  if (!r) return '—'
+function fmtWeather(r: ServiceRecord): string {
   const temp = r.weather_temp_f != null ? `${Math.round(r.weather_temp_f)}°F` : ''
   const cond = r.weather_condition ?? ''
   return [temp, cond].filter(Boolean).join(' ') || '—'
-}
-
-function slash(a: string, b: string): string {
-  if (a === '—' && b === '—') return '—'
-  return `${a} / ${b}`
 }
 
 function combinedAttStr(r: ServiceRecord): string {
@@ -180,52 +168,129 @@ function Pagination({
   )
 }
 
-// ── Single Service Table (9am, 11am, or Special) ──────────────────────────────
+// ── Service badge ─────────────────────────────────────────────────────────────
 
-function SingleTable({
-  serviceType,
-  showLabel = false,
-}: {
-  serviceType: 'sunday-9am' | 'sunday-11am' | 'special'
-  showLabel?: boolean
-}) {
-  const [records, setRecords] = useState<ServiceRecord[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
-  const [sortAsc, setSortAsc] = useState(false)
+const SERVICE_META: Record<string, { label: string; color: string; bg: string }> = {
+  'sunday-9am':  { label: '9am',     color: '#3b82f6', bg: 'rgba(59,130,246,0.15)'  },
+  'sunday-11am': { label: '11am',    color: '#8b5cf6', bg: 'rgba(139,92,246,0.15)'  },
+  'special':     { label: 'Special', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)'  },
+}
+
+function ServiceBadge({ type }: { type: string }) {
+  const meta = SERVICE_META[type] ?? { label: type, color: '#6b7280', bg: 'rgba(107,114,128,0.15)' }
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ backgroundColor: meta.bg, color: meta.color }}
+    >
+      <span
+        className="rounded-full flex-shrink-0"
+        style={{ width: 6, height: 6, backgroundColor: meta.color }}
+      />
+      {meta.label}
+    </span>
+  )
+}
+
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+
+type SortKey = 'date' | 'in_person_attendance' | 'service_run_time_secs' | 'message_run_time_secs' | 'max_db_a_slow' | 'la_eq_15'
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'date',                   label: 'Date'       },
+  { value: 'in_person_attendance',   label: 'Attendance' },
+  { value: 'service_run_time_secs',  label: 'Svc Time'   },
+  { value: 'message_run_time_secs',  label: 'Msg Time'   },
+  { value: 'max_db_a_slow',          label: 'dB A Max'   },
+  { value: 'la_eq_15',               label: 'LAeq 15'    },
+]
+
+function compareRecords(a: ServiceRecord, b: ServiceRecord, key: SortKey, asc: boolean): number {
+  if (key === 'date') {
+    const va = a.service_date
+    const vb = b.service_date
+    return asc ? va.localeCompare(vb) : vb.localeCompare(va)
+  }
+  const va = (a[key as keyof ServiceRecord] as number | null)
+  const vb = (b[key as keyof ServiceRecord] as number | null)
+  // Nulls always go to the bottom
+  if (va == null && vb == null) return 0
+  if (va == null) return 1
+  if (vb == null) return -1
+  return asc ? va - vb : vb - va
+}
+
+// ── Explorer ──────────────────────────────────────────────────────────────────
+
+type ServiceFilter = 'all' | 'sunday-9am' | 'sunday-11am' | 'special'
+
+export function Explorer() {
+  const [allRecords, setAllRecords] = useState<ServiceRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const goal = GOAL_LAeq[serviceType]
-  const colCount = showLabel ? 16 : 15
+  // Filters & sort
+  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('all')
+  const [yearFilter, setYearFilter] = useState<string>('all')
+  const [sortKey, setSortKey] = useState<SortKey>('date')
+  const [sortAsc, setSortAsc] = useState(false)
+  const [page, setPage] = useState(0)
 
-  const loadPage = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    const from = page * PAGE_SIZE
-    const { data, count, error: err } = await supabase
-      .from('analytics_records')
-      .select('*', { count: 'exact' })
-      .eq('service_type', serviceType)
-      .order('service_date', { ascending: sortAsc })
-      .range(from, from + PAGE_SIZE - 1)
-    if (err) {
-      setError(err.message)
-    } else {
-      setRecords(data ?? [])
-      setTotal(count ?? 0)
+  // Load all records once
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      setError(null)
+      const { data, error: err } = await supabase
+        .from('analytics_records')
+        .select('*')
+        .order('service_date', { ascending: false })
+      if (err) {
+        setError(err.message)
+      } else {
+        setAllRecords(data ?? [])
+      }
+      setLoading(false)
     }
-    setLoading(false)
-  }, [page, sortAsc, serviceType])
+    load()
+  }, [])
 
-  useEffect(() => { loadPage() }, [loadPage])
+  // Derive available years from loaded records
+  const availableYears = useMemo(() => {
+    const years = new Set<string>()
+    for (const r of allRecords) {
+      years.add(r.service_date.slice(0, 4))
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a))
+  }, [allRecords])
 
-  // Reset page when sort order changes
-  useEffect(() => { setPage(0) }, [sortAsc])
+  // Filter + sort client-side
+  const filteredSorted = useMemo(() => {
+    let rows = allRecords
+    if (serviceFilter !== 'all') {
+      rows = rows.filter(r => r.service_type === serviceFilter)
+    }
+    if (yearFilter !== 'all') {
+      rows = rows.filter(r => r.service_date.startsWith(yearFilter))
+    }
+    return [...rows].sort((a, b) => compareRecords(a, b, sortKey, sortAsc))
+  }, [allRecords, serviceFilter, yearFilter, sortKey, sortAsc])
 
+  // Reset page on filter/sort change
+  useEffect(() => { setPage(0) }, [serviceFilter, yearFilter, sortKey, sortAsc])
+
+  const total = filteredSorted.length
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pageRows = filteredSorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1
   const to = Math.min((page + 1) * PAGE_SIZE, total)
+
+  const ctrlClass =
+    'bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg px-3 py-1.5 border-0 focus:outline-none focus:ring-2 focus:ring-blue-500'
+
+  const directionLabel = sortKey === 'date'
+    ? (sortAsc ? 'Oldest → Newest' : 'Newest → Oldest')
+    : (sortAsc ? 'Low → High' : 'High → Low')
 
   if (error) {
     return (
@@ -238,28 +303,72 @@ function SingleTable({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {/* Service filter */}
+        <select
+          value={serviceFilter}
+          onChange={e => setServiceFilter(e.target.value as ServiceFilter)}
+          className={ctrlClass}
+        >
+          <option value="all">All Services</option>
+          <option value="sunday-9am">9:00 AM</option>
+          <option value="sunday-11am">11:00 AM</option>
+          <option value="special">Special</option>
+        </select>
+
+        {/* Year filter */}
+        <select
+          value={yearFilter}
+          onChange={e => setYearFilter(e.target.value)}
+          className={ctrlClass}
+        >
+          <option value="all">All Years</option>
+          {availableYears.map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+
+        {/* Sort key */}
+        <select
+          value={sortKey}
+          onChange={e => setSortKey(e.target.value as SortKey)}
+          className={ctrlClass}
+        >
+          {SORT_OPTIONS.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+
+        {/* Sort direction */}
         <button
           onClick={() => setSortAsc(a => !a)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+          className={`${ctrlClass} flex items-center gap-1.5 cursor-pointer`}
         >
           <ArrowUpDown className="w-3 h-3" />
-          {sortAsc ? 'Oldest first' : 'Newest first'}
+          {directionLabel}
         </button>
-        <p className="text-gray-400 text-xs">
-          {total === 0 ? 'No records' : `Showing ${from}–${to} of ${total.toLocaleString()}`}
-        </p>
+
+        {/* Row count summary */}
+        <span className="ml-auto text-gray-400 text-xs">
+          {loading
+            ? 'Loading…'
+            : total === 0
+              ? 'No records'
+              : `${total.toLocaleString()} record${total === 1 ? '' : 's'}`}
+        </span>
       </div>
 
+      {/* Table */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: showLabel ? 1520 : 1440 }}>
+          <table className="w-full" style={{ minWidth: 1560 }}>
             <thead>
               <tr>
                 <TH sticky>Date</TH>
-                {showLabel && <TH>Service</TH>}
-                <TH right>Combined</TH>
+                <TH>Service</TH>
                 <TH right>In-Person</TH>
+                <TH right>Combined</TH>
                 <TH right>CO Views</TH>
                 <TH right>CO Unique</TH>
                 <TH right>CO Avg Watch</TH>
@@ -277,20 +386,21 @@ function SingleTable({
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={colCount} className="py-10 text-center text-gray-400 text-xs">Loading…</td>
+                  <td colSpan={16} className="py-10 text-center text-gray-400 text-xs">Loading…</td>
                 </tr>
-              ) : records.length === 0 ? (
+              ) : pageRows.length === 0 ? (
                 <tr>
-                  <td colSpan={colCount} className="py-10 text-center text-gray-400 text-xs">No records found</td>
+                  <td colSpan={16} className="py-10 text-center text-gray-400 text-xs">No records found</td>
                 </tr>
-              ) : records.map(r => {
+              ) : pageRows.map(r => {
+                const goal = GOAL_LAeq[r.service_type]
                 const laOver = goal != null && r.la_eq_15 != null && r.la_eq_15 > goal
                 return (
                   <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                     <TD sticky className="font-medium text-gray-900">{fmtDate(r.service_date)}</TD>
-                    {showLabel && <TD className="text-gray-600 max-w-[140px] truncate">{r.service_label ?? '—'}</TD>}
-                    <TD right mono className="text-gray-900 font-semibold">{combinedAttStr(r)}</TD>
+                    <TD><ServiceBadge type={r.service_type} /></TD>
                     <TD right mono>{fmtNum(r.in_person_attendance)}</TD>
+                    <TD right mono>{combinedAttStr(r)}</TD>
                     <TD right mono>{fmtNum(r.church_online_views)}</TD>
                     <TD right mono>{fmtNum(r.church_online_unique_viewers)}</TD>
                     <TD right mono>{fmtSecs(r.church_online_avg_watch_time_secs)}</TD>
@@ -325,224 +435,6 @@ function SingleTable({
           onNext={() => setPage(p => Math.min(totalPages - 1, p + 1))}
         />
       )}
-    </div>
-  )
-}
-
-// ── Combined Table ────────────────────────────────────────────────────────────
-
-function CombinedTable() {
-  const [allRecords, setAllRecords] = useState<ServiceRecord[]>([])
-  const [page, setPage] = useState(0)
-  const [sortAsc, setSortAsc] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      setError(null)
-      // Fetch all regular records — ~500 rows max is fine client-side
-      const { data, error: err } = await supabase
-        .from('analytics_records')
-        .select('*')
-        .in('service_type', ['sunday-9am', 'sunday-11am'])
-      if (err) {
-        setError(err.message)
-      } else {
-        setAllRecords(data ?? [])
-      }
-      setLoading(false)
-    }
-    load()
-  }, [])
-
-  // Group by date
-  const dateMap = new Map<string, CombinedRow>()
-  for (const r of allRecords) {
-    if (!dateMap.has(r.service_date)) {
-      dateMap.set(r.service_date, { date: r.service_date, am9: null, am11: null })
-    }
-    const row = dateMap.get(r.service_date)!
-    if (r.service_type === 'sunday-9am') row.am9 = r
-    else row.am11 = r
-  }
-
-  const sortedRows: CombinedRow[] = Array.from(dateMap.values()).sort((a, b) =>
-    sortAsc ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)
-  )
-
-  const totalSundays = sortedRows.length
-  const totalPages = Math.max(1, Math.ceil(totalSundays / PAGE_SIZE))
-  const pageRows = sortedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-  const from = totalSundays === 0 ? 0 : page * PAGE_SIZE + 1
-  const to = Math.min((page + 1) * PAGE_SIZE, totalSundays)
-
-  if (error) {
-    return (
-      <div className="py-12 text-center border border-gray-200 rounded-lg">
-        <p className="text-red-500 text-sm font-medium mb-1">{error}</p>
-        <p className="text-gray-400 text-xs">Make sure migration 012_create_service_records.sql has been run.</p>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <button
-          onClick={() => { setSortAsc(a => !a); setPage(0) }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
-        >
-          <ArrowUpDown className="w-3 h-3" />
-          {sortAsc ? 'Oldest first' : 'Newest first'}
-        </button>
-        <p className="text-gray-400 text-xs">
-          {totalSundays === 0
-            ? 'No records'
-            : `Showing ${from}–${to} of ${totalSundays.toLocaleString()} Sundays`}
-        </p>
-      </div>
-
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: 1600 }}>
-            <thead>
-              <tr>
-                <TH sticky>Date</TH>
-                <TH right>Combined</TH>
-                <TH right>In-Person</TH>
-                <TH right>CO Views</TH>
-                <TH right>CO Unique</TH>
-                <TH right>CO Avg Watch</TH>
-                <TH right>YT Unique</TH>
-                <TH right>Svc Time</TH>
-                <TH right>Msg Time</TH>
-                <TH right>Flip Time</TH>
-                <TH>Weather</TH>
-                <TH right>dB A Max</TH>
-                <TH right>dB C Max</TH>
-                <TH right>LAeq 15</TH>
-                <TH right>LCeq 15</TH>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={15} className="py-10 text-center text-gray-400 text-xs">Loading…</td>
-                </tr>
-              ) : pageRows.length === 0 ? (
-                <tr>
-                  <td colSpan={15} className="py-10 text-center text-gray-400 text-xs">No records found</td>
-                </tr>
-              ) : pageRows.map(({ date, am9, am11 }) => {
-                // Combined attendance = sum across both services (nulls treated as 0)
-                const hasAnyAtt =
-                  am9?.in_person_attendance != null || am11?.in_person_attendance != null ||
-                  am9?.church_online_unique_viewers != null || am11?.church_online_unique_viewers != null
-                const combinedTotal = hasAnyAtt
-                  ? (
-                      (am9?.in_person_attendance ?? 0) + (am11?.in_person_attendance ?? 0) +
-                      (am9?.church_online_unique_viewers ?? 0) + (am11?.church_online_unique_viewers ?? 0) +
-                      (am9?.youtube_unique_viewers ?? 0) + (am11?.youtube_unique_viewers ?? 0)
-                    ).toLocaleString()
-                  : '—'
-
-                const la9over = am9 != null && am9.la_eq_15 != null && am9.la_eq_15 > GOAL_LAeq['sunday-9am']
-                const la11over = am11 != null && am11.la_eq_15 != null && am11.la_eq_15 > GOAL_LAeq['sunday-11am']
-                const la9str = fmtDb(am9?.la_eq_15)
-                const la11str = fmtDb(am11?.la_eq_15)
-
-                return (
-                  <tr key={date} className="hover:bg-gray-50 transition-colors">
-                    <TD sticky className="font-medium text-gray-900">{fmtDate(date)}</TD>
-                    <TD right mono className="text-gray-900 font-semibold">{combinedTotal}</TD>
-                    <TD right mono>{slash(fmtNum(am9?.in_person_attendance), fmtNum(am11?.in_person_attendance))}</TD>
-                    <TD right mono>{slash(fmtNum(am9?.church_online_views), fmtNum(am11?.church_online_views))}</TD>
-                    <TD right mono>{slash(fmtNum(am9?.church_online_unique_viewers), fmtNum(am11?.church_online_unique_viewers))}</TD>
-                    <TD right mono>{slash(fmtSecs(am9?.church_online_avg_watch_time_secs), fmtSecs(am11?.church_online_avg_watch_time_secs))}</TD>
-                    <TD right mono>{slash(fmtNum(am9?.youtube_unique_viewers), fmtNum(am11?.youtube_unique_viewers))}</TD>
-                    <TD right mono>{slash(fmtSecs(am9?.service_run_time_secs), fmtSecs(am11?.service_run_time_secs))}</TD>
-                    <TD right mono>{slash(fmtSecs(am9?.message_run_time_secs), fmtSecs(am11?.message_run_time_secs))}</TD>
-                    <TD right mono>{fmtSecs(am9?.stage_flip_time_secs)}</TD>
-                    <TD className="whitespace-nowrap">{fmtWeather(am9 ?? am11)}</TD>
-                    <TD right mono>{slash(fmtDb(am9?.max_db_a_slow), fmtDb(am11?.max_db_a_slow))}</TD>
-                    <TD right mono>{slash(fmtDb(am9?.max_db_c_slow), fmtDb(am11?.max_db_c_slow))}</TD>
-                    <TD right mono>
-                      {la9str === '—' && la11str === '—' ? '—' : (
-                        <>
-                          <span className={la9over ? 'text-red-600 font-semibold' : ''}>
-                            {la9str}{la9over ? '⚠' : ''}
-                          </span>
-                          {' / '}
-                          <span className={la11over ? 'text-red-600 font-semibold' : ''}>
-                            {la11str}{la11over ? '⚠' : ''}
-                          </span>
-                        </>
-                      )}
-                    </TD>
-                    <TD right mono>{slash(fmtDb(am9?.lc_eq_15), fmtDb(am11?.lc_eq_15))}</TD>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          from={from}
-          to={to}
-          total={totalSundays}
-          label="Sundays"
-          onPrev={() => setPage(p => Math.max(0, p - 1))}
-          onNext={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-        />
-      )}
-    </div>
-  )
-}
-
-// ── Explorer ──────────────────────────────────────────────────────────────────
-
-type ExplorerTab = '9am' | '11am' | 'combined' | 'special'
-
-const EXPLORER_TABS: { id: ExplorerTab; label: string }[] = [
-  { id: '9am',      label: '9:00 AM'          },
-  { id: '11am',     label: '11:00 AM'         },
-  { id: 'combined', label: 'Combined'          },
-  { id: 'special',  label: 'Special Services' },
-]
-
-export function Explorer() {
-  const [tab, setTab] = useState<ExplorerTab>('9am')
-
-  return (
-    <div>
-      {/* Inner tab bar */}
-      <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5 w-fit mb-5">
-        {EXPLORER_TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
-              tab === t.id
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === '9am'      && <SingleTable serviceType="sunday-9am" />}
-      {tab === '11am'     && <SingleTable serviceType="sunday-11am" />}
-      {tab === 'combined' && <CombinedTable />}
-      {tab === 'special'  && <SingleTable serviceType="special" showLabel />}
     </div>
   )
 }
