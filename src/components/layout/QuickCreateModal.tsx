@@ -144,14 +144,24 @@ function PcoPlanPicker({
           )}
           {!loading && !error && visiblePlans.map(plan => {
             const label = plan.title || plan.series_title
+            const isSpecialTab = activeSlug === 'special'
             return (
               <button
                 key={plan.id}
                 onClick={() => onSelect(plan, activeSlug)}
                 className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 transition-colors"
               >
-                <p className="text-sm font-medium text-gray-900">{plan.display_date}</p>
-                {label && <p className="text-xs text-gray-500 mt-0.5">{label}</p>}
+                {isSpecialTab && label ? (
+                  <>
+                    <p className="text-sm font-medium text-gray-900">{label}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{plan.display_date}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-gray-900">{plan.display_date}</p>
+                    {label && <p className="text-xs text-gray-500 mt-0.5">{label}</p>}
+                  </>
+                )}
               </button>
             )
           })}
