@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'react'
-import { CheckCircle2, ChevronDown, ChevronRight, GripVertical, Pencil, Trash2, Plus, Settings2, X, LayoutTemplate } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, GripVertical, Pencil, Trash2, Plus, Settings2, X, LayoutTemplate, BookmarkPlus } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, KeyboardSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -421,6 +421,64 @@ export function Checklist() {
       await refreshSundayItems()
     }
     setShowTemplates(false)
+  }
+
+  // ── Save as template ─────────────────────────────────────────────────────────
+
+  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false)
+  const [saveTemplateName, setSaveTemplateName] = useState('')
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [saveTemplateError, setSaveTemplateError] = useState('')
+
+  const saveAsTemplate = async () => {
+    if (!saveTemplateName.trim()) { setSaveTemplateError('Template name is required'); return }
+    setSavingTemplate(true)
+    setSaveTemplateError('')
+
+    const { data: tmpl, error: tmplErr } = await supabase
+      .from('event_templates')
+      .insert({ name: saveTemplateName.trim(), notes: null })
+      .select('id')
+      .single()
+
+    if (tmplErr || !tmpl) {
+      setSaveTemplateError(tmplErr?.message ?? 'Failed to create template')
+      setSavingTemplate(false)
+      return
+    }
+
+    const items = isEvent
+      ? eventItems.map(item => ({
+          template_id: tmpl.id,
+          label: item.label,
+          section: item.section,
+          subsection: item.subsection ?? null,
+          item_notes: item.item_notes ?? null,
+          sort_order: item.sort_order,
+        }))
+      : sundayItems.map(item => ({
+          template_id: tmpl.id,
+          label: item.task,
+          section: item.section,
+          subsection: item.subsection ?? null,
+          item_notes: item.note ?? null,
+          sort_order: item.sort_order,
+          source_checklist_item_id: item.id,
+        }))
+
+    if (items.length > 0) {
+      const { error: itemsErr } = await supabase.from('event_template_items').insert(items)
+      if (itemsErr) {
+        await supabase.from('event_templates').delete().eq('id', tmpl.id)
+        setSaveTemplateError(itemsErr.message)
+        setSavingTemplate(false)
+        return
+      }
+    }
+
+    setSavingTemplate(false)
+    setShowSaveAsTemplate(false)
+    setSaveTemplateName('')
   }
 
   // Sunday mode state
@@ -912,13 +970,26 @@ export function Checklist() {
             {isAdmin && (
               <>
                 {editMode && (
-                  <button
-                    onClick={() => setShowTemplates(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  >
-                    <LayoutTemplate className="w-3.5 h-3.5" />
-                    Templates
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        setSaveTemplateName(serviceTypeName)
+                        setSaveTemplateError('')
+                        setShowSaveAsTemplate(true)
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    >
+                      <BookmarkPlus className="w-3.5 h-3.5" />
+                      Save as Template
+                    </button>
+                    <button
+                      onClick={() => setShowTemplates(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    >
+                      <LayoutTemplate className="w-3.5 h-3.5" />
+                      Templates
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => setEditMode(m => !m)}
@@ -1200,6 +1271,49 @@ export function Checklist() {
       )}
 
       {/* Delete confirmation — Event */}
+      {/* Save as Template modal */}
+      {showSaveAsTemplate && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="text-gray-900 font-bold">Save as Template</h3>
+                <p className="text-gray-400 text-xs mt-0.5">
+                  Snapshots all {isEvent ? eventItems.length : sundayItems.length} items into a reusable template.
+                </p>
+              </div>
+              <button onClick={() => setShowSaveAsTemplate(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Template Name *</label>
+                <input
+                  autoFocus
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+                  value={saveTemplateName}
+                  onChange={e => setSaveTemplateName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveAsTemplate() }}
+                  placeholder="e.g. Sunday 9am Standard"
+                />
+              </div>
+              {saveTemplateError && <p className="text-red-500 text-xs">{saveTemplateError}</p>}
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setShowSaveAsTemplate(false)}
+                  className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={saveAsTemplate} disabled={savingTemplate}
+                  className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60">
+                  {savingTemplate ? 'Saving…' : 'Save Template'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmDeleteEvent && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
