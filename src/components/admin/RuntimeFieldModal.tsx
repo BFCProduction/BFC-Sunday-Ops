@@ -14,6 +14,8 @@ export interface RuntimeField {
   countdown_target: string | null
   /** null = applies to all service types */
   service_type_slug: string | null
+  /** null = not synced to service_records analytics */
+  analytics_key: 'service_run_time' | 'message_run_time' | 'stage_flip_time' | null
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -42,6 +44,7 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
   const [pullDay,       setPullDay]       = useState(field?.pull_day ?? 0)
   const [sortOrder,     setSortOrder]     = useState(field?.sort_order ?? 0)
   const [countdownTarget, setCountdownTarget] = useState(field?.countdown_target || '')
+  const [analyticsKey, setAnalyticsKey] = useState<string>(field?.analytics_key ?? '')
   // service_type_slug: '' → null (all services), else a specific slug
   const [serviceSlug, setServiceSlug] = useState<string>(
     field !== undefined ? (field.service_type_slug ?? '') : (defaultServiceTypeSlug ?? '')
@@ -65,6 +68,7 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
       sort_order:        sortOrder,
       countdown_target:  trimmedTarget || null,
       service_type_slug: serviceSlug || null,
+      analytics_key:     analyticsKey || null,
     }
     let err: { message: string } | null = null
     if (field) {
@@ -172,6 +176,25 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
               Set this if the ProPresenter clock is a countdown timer with &quot;Allow Overrun&quot; checked.
               The relay will add this target duration to any captured overrun time to store the true total.
               Leave blank for stopwatch / elapsed-time clocks.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              Analytics Key <span className="text-gray-400 normal-case font-normal">(optional)</span>
+            </label>
+            <select
+              value={analyticsKey}
+              onChange={e => setAnalyticsKey(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+            >
+              <option value="">None — not synced to analytics</option>
+              <option value="service_run_time">Service Runtime</option>
+              <option value="message_run_time">Message Runtime</option>
+              <option value="stage_flip_time">Stage Flip Time</option>
+            </select>
+            <p className="text-gray-400 text-[10px] mt-1">
+              Tag this field so its value is written to the analytics record for this service.
             </p>
           </div>
 

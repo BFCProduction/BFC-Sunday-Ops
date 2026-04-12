@@ -6,7 +6,7 @@ import { Card } from '../../components/ui/Card'
 export function Attendance() {
   const {
     activeEventId, serviceTypeName, serviceTypeColor,
-    serviceTypeSlug, sundayId,
+    serviceTypeSlug, sundayId, sundayDate,
   } = useSunday()
 
   const [count,   setCount]   = useState('')
@@ -88,6 +88,32 @@ export function Attendance() {
     if (reloaded) {
       setCount(reloaded.service_1_count?.toString() ?? '')
       setNotes(reloaded.notes ?? '')
+    }
+
+    // Sync to service_records for analytics (Sunday services only)
+    const serviceRecordType =
+      serviceTypeSlug === 'sunday-9am'  ? 'regular_9am'  :
+      serviceTypeSlug === 'sunday-11am' ? 'regular_11am' : null
+
+    if (serviceRecordType && sundayId && sundayDate) {
+      const attendance = count ? parseInt(count) : null
+      const { data: existing } = await supabase
+        .from('service_records')
+        .select('id')
+        .eq('service_date', sundayDate)
+        .eq('service_type', serviceRecordType)
+        .maybeSingle()
+
+      if (existing) {
+        await supabase.from('service_records').update({ in_person_attendance: attendance }).eq('id', existing.id)
+      } else {
+        await supabase.from('service_records').insert({
+          service_date: sundayDate,
+          service_type: serviceRecordType,
+          sunday_id: sundayId,
+          in_person_attendance: attendance,
+        })
+      }
     }
 
     setSaving(false)

@@ -83,6 +83,38 @@ function SortableRuntimeRow({
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Parse "H:MM:SS" or "M:SS" into total seconds. Returns null if unparseable. */
+function parseTimeSecs(str: string): number | null {
+  if (!str.trim()) return null
+  const parts = str.trim().split(':').map(Number)
+  if (parts.some(isNaN)) return null
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  return null
+}
+
+async function syncRuntimesToServiceRecords(
+  sundayId: string,
+  sundayDate: string,
+  serviceType: 'regular_9am' | 'regular_11am',
+  fields: { service_run_time_secs?: number | null; message_run_time_secs?: number | null; stage_flip_time_secs?: number | null },
+) {
+  const { data: existing } = await supabase
+    .from('service_records')
+    .select('id')
+    .eq('service_date', sundayDate)
+    .eq('service_type', serviceType)
+    .maybeSingle()
+
+  if (existing) {
+    await supabase.from('service_records').update(fields).eq('id', existing.id)
+  } else {
+    await supabase.from('service_records').insert({ service_date: sundayDate, service_type: serviceType, sunday_id: sundayId, ...fields })
+  }
+}
+
 interface RuntimeValue {
   field_id: number
   value: string | null
@@ -91,7 +123,7 @@ interface RuntimeValue {
 
 export function Runtimes() {
   const { isAdmin } = useAdmin()
-  const { activeEventId, sundayId, timezone, serviceTypeSlug } = useSunday()
+  const { activeEventId, sundayId, sundayDate, timezone, serviceTypeSlug } = useSunday()
   const eventId = activeEventId   // alias for clarity
   const [allFields, setAllFields] = useState<RuntimeField[]>([])
   const [values, setValues] = useState<Record<number, string>>({})
@@ -186,6 +218,28 @@ export function Runtimes() {
         await supabase.from('runtime_values').upsert(upserts, { onConflict: 'sunday_id,field_id' })
       }
     }
+    // Sync tagged fields to service_records (Sunday services only)
+    const serviceRecordType =
+      serviceTypeSlug === 'sunday-9am'  ? 'regular_9am'  :
+      serviceTypeSlug === 'sunday-11am' ? 'regular_11am' : null
+
+    if (serviceRecordType && sundayId && sundayDate) {
+      const analyticsFields: Record<string, number | null> = {}
+      for (const f of allFields) {
+        if (!f.analytics_key || values[f.id] === undefined) continue
+        const colMap: Record<string, string> = {
+          service_run_time: 'service_run_time_secs',
+          message_run_time: 'message_run_time_secs',
+          stage_flip_time:  'stage_flip_time_secs',
+        }
+        const col = colMap[f.analytics_key]
+        if (col) analyticsFields[col] = parseTimeSecs(values[f.id] || '')
+      }
+      if (Object.keys(analyticsFields).length > 0) {
+        await syncRuntimesToServiceRecords(sundayId, sundayDate, serviceRecordType, analyticsFields)
+      }
+    }
+
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
