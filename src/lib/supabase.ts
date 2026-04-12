@@ -238,6 +238,113 @@ export async function getSundayByDate(date: string): Promise<{ id: string; date:
   return data
 }
 
+/**
+ * Create any type of event (9am, 11am, or special) — the unified replacement
+ * for createSpecialEvent().
+ *
+ * • For special events: also creates a legacy special_events row and seeds
+ *   event_checklist_items from the template if provided.
+ * • For Sunday services (9am/11am): only creates the events row. The regular
+ *   Sunday checklist is service-type–driven, not event-specific.
+ *
+ * Returns the new events.id so the caller can navigate to the event.
+ */
+export async function createEvent(opts: {
+  name:             string
+  serviceTypeSlug:  string       // 'sunday-9am' | 'sunday-11am' | 'special'
+  event_date:       string       // YYYY-MM-DD
+  event_time:       string | null
+  notes?:           string | null
+  templateId?:      string | null
+  pco_plan_id?:     string | null
+}): Promise<string> {
+  // Resolve service type
+  const { data: st, error: stErr } = await supabase
+    .from('service_types')
+    .select('id')
+    .eq('slug', opts.serviceTypeSlug)
+    .single()
+  if (stErr || !st) throw new Error(`Service type not found: ${opts.serviceTypeSlug}`)
+
+  const isSpecial = opts.serviceTypeSlug === 'special'
+
+  let legacySpecialId: string | null = null
+
+  if (isSpecial) {
+    // Create legacy special_events row (required for EventChecklist compatibility)
+    const { data: se, error: seErr } = await supabase
+      .from('special_events')
+      .insert({
+        name:       opts.name,
+        event_date: opts.event_date,
+        event_time: opts.event_time,
+        notes:      opts.notes ?? null,
+      })
+      .select('id')
+      .single()
+    if (seErr || !se) throw seErr ?? new Error('Failed to create special_events row')
+    legacySpecialId = se.id
+
+    // Link template if provided
+    if (opts.templateId) {
+      await supabase
+        .from('special_events')
+        .update({ template_id: opts.templateId })
+        .eq('id', se.id)
+    }
+  }
+
+  // Create the unified events row
+  const { data: ev, error: evErr } = await supabase
+    .from('events')
+    .insert({
+      service_type_id:         st.id,
+      name:                    opts.name,
+      event_date:              opts.event_date,
+      event_time:              opts.event_time,
+      notes:                   opts.notes ?? null,
+      pco_plan_id:             opts.pco_plan_id ?? null,
+      legacy_special_event_id: legacySpecialId,
+    })
+    .select('id')
+    .single()
+  if (evErr || !ev) throw evErr ?? new Error('Failed to create events row')
+
+  // Seed checklist items from template (special events only)
+  if (isSpecial && legacySpecialId && opts.templateId) {
+    const { data: templateItems } = await supabase
+      .from('event_template_items')
+      .select('*')
+      .eq('template_id', opts.templateId)
+      .order('sort_order')
+
+    if (templateItems && templateItems.length > 0) {
+      await supabase.from('event_checklist_items').insert(
+        templateItems.map((ti: {
+          id: string
+          source_checklist_item_id: number | null
+          label: string
+          section: string
+          subsection: string | null
+          item_notes: string | null
+          sort_order: number | null
+        }, idx: number) => ({
+          event_id:                 legacySpecialId,
+          source_template_item_id:  ti.id,
+          source_checklist_item_id: ti.source_checklist_item_id,
+          label:                    ti.label,
+          section:                  ti.section,
+          subsection:               ti.subsection,
+          item_notes:               ti.item_notes,
+          sort_order:               ti.sort_order ?? idx,
+        }))
+      )
+    }
+  }
+
+  return ev.id
+}
+
 /** @deprecated Use getFirstEventForDate instead */
 export async function getSpecialEventByDate(date: string) {
   const { data } = await supabase

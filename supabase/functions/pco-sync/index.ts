@@ -238,8 +238,9 @@ Deno.serve(async (req) => {
           upsertErr = insErr
         }
       } else {
-        // Sunday service: find existing by (service_type_id, event_date) or pco_plan_id,
-        // update to stamp pco_plan_id; insert if missing.
+        // Sunday service: events are now created manually in Sunday Ops.
+        // Sync only UPDATES existing events (stamps pco_plan_id and refreshes name).
+        // If no matching event exists, skip — do NOT auto-create.
         const { data: existingByPlan } = await supabase
           .from('events').select('id').eq('pco_plan_id', plan.id).maybeSingle()
         const { data: existingByDate } = !existingByPlan
@@ -254,10 +255,10 @@ Deno.serve(async (req) => {
             .eq('id', existingId)
           upsertErr = upErr
         } else {
-          const { error: insErr } = await supabase
-            .from('events')
-            .insert({ service_type_id: st.id, pco_plan_id: plan.id, name: eventName, event_date: eventDate, event_time: eventTime })
-          upsertErr = insErr
+          // No matching event — skip (events must be created manually)
+          results.push({ pco_plan_id: plan.id, event_date: eventDate, name: eventName, action: 'skipped' })
+          skippedCount++
+          continue
         }
       }
 

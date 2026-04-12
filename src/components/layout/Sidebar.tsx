@@ -8,6 +8,7 @@ import {
 import { SessionPicker } from './SessionPicker'
 import { QuickCreateModal } from './QuickCreateModal'
 import { useAdmin } from '../../context/adminState'
+import { useAuth } from '../../context/authState'
 import { getServicePhase, type ServicePhase } from '../../lib/serviceStatus'
 import { useSunday } from '../../context/SundayContext'
 import type { Session } from '../../types'
@@ -32,6 +33,7 @@ const navItems = [
 
 export function Sidebar({ active, setActive, issueCount, allSessions, onSessionsChange }: SidebarProps) {
   const { isAdmin } = useAdmin()
+  const { sessionToken } = useAuth()
   const {
     activeEventId, serviceTypeSlug, serviceTypeColor, eventName,
     sessionDate, todaySundayDate, timezone, isViewingPast,
@@ -171,7 +173,7 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
             <button
               onClick={() => setShowQuickCreate(true)}
               className="flex items-center gap-1 text-[10px] font-semibold text-gray-500 hover:text-white hover:bg-white/[0.08] px-2 py-0.5 rounded transition-all"
-              title="Create new special event"
+              title="Create new event or service"
             >
               <Plus className="w-3 h-3" />
               New Event
@@ -247,6 +249,7 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
       {/* Quick-create event modal */}
       {showQuickCreate && (
         <QuickCreateModal
+          sessionToken={sessionToken}
           onCreated={(newId, freshSessions) => {
             onSessionsChange(freshSessions)
             navigateToEvent(newId)

@@ -44,6 +44,44 @@ export async function triggerPcoSync(sessionToken: string): Promise<PcoSyncResul
   return payload as PcoSyncResult
 }
 
+// ── PCO Plans ─────────────────────────────────────────────────────────────────
+
+export interface PcoPlanResult {
+  id:           string
+  title:        string | null
+  series_title: string | null
+  event_date:   string
+  display_date: string
+}
+
+export interface PcoServiceTypePlans {
+  slug:  string
+  name:  string
+  plans: PcoPlanResult[]
+}
+
+export async function fetchPcoPlans(
+  sessionToken: string,
+): Promise<PcoServiceTypePlans[]> {
+  const response = await fetch(getFunctionUrl('pco-plans'), {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.error === 'string' ? payload.error : `Plans fetch failed with ${response.status}`
+    )
+  }
+
+  return (payload as { service_types: PcoServiceTypePlans[] }).service_types ?? []
+}
+
 export async function requestSummaryEmailAdmin<T>(
   sessionToken: string,
   method: string,
