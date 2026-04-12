@@ -18,7 +18,9 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - ProPresenter relay script for runtime capture
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
 - **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
-- **PCO sync** — Planning Center calendar plans pulled automatically on login and manually via Settings; upserted into the unified `events` table
+- **Manual event creation** — all services (9am, 11am, Special) are created in Sunday Ops via the "New Event" modal; multiple services of the same type can exist on the same date (Easter, extra traditional services, etc.)
+- **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
+- **PCO sync** — updates existing events with PCO plan metadata (name, date); no longer auto-creates Sunday events
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -86,9 +88,15 @@ Live now:
   - **Ask a Question**: placeholder for a future AI natural-language query interface.
   - Both tabs query the `analytics_records` view, which remaps legacy `service_type` enum values to the new slug format (`sunday-9am`, `sunday-11am`).
 
+- **Manual event creation** (`src/components/layout/QuickCreateModal.tsx`):
+  - All services created in Sunday Ops via the "New Event" modal: service type, name, date, time, optional PCO plan link, optional checklist template, notes.
+  - Multiple services of the same type on the same date are fully supported (dropped uniqueness constraint in migration 033).
+  - PCO plan picker (`supabase/functions/pco-plans/`) shows recent and upcoming plans grouped by service type with search; multiple Sunday Ops events can link to the same PCO plan.
+
 - **PCO sync** (`supabase/functions/pco-sync/`, `supabase/migrations/023_pco_sync.sql`):
-  - Pulls upcoming service plans from Planning Center for each service type linked via `pco_service_type_id`.
-  - Upserts into `events`: Sunday services matched by `(service_type_id, event_date)` or `pco_plan_id`; special events matched by `pco_plan_id` only.
+  - Updates existing events with PCO plan metadata (stamps `pco_plan_id`, refreshes name/date).
+  - No longer auto-creates Sunday service events — creation is manual only.
+  - Special events with explicit PCO titles still auto-create via sync.
   - Called automatically after login and manually via Settings → Sync Now (admin only).
 
 - **`service_records` table** (`supabase/migrations/012_create_service_records.sql`) — unified analytics table with one row per service per Sunday, storing attendance, runtimes, loudness, weather, and stream analytics in one place.
@@ -98,10 +106,11 @@ Live now:
 Still pending:
 - Real YouTube analytics importer (`scripts/fetch-youtube.js` is a stub)
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
-- Attendance and Runtimes screens writing to `service_records` (LoudnessLog already syncs via `syncToServiceRecords`; others still use only legacy tables)
+- PCO OAuth token auto-refresh (tokens expire ~2 hours after login; the PCO plan picker will show no results until the user logs out and back in)
 - Any downstream reporting beyond the Sunday summary email
 
 Completed (previously listed as pending):
+- Attendance, runtimes, and loudness all sync to `service_records` via the shared `syncToServiceRecords` utility.
 - Attendance and loudness data backfilled into `service_records` from legacy tables.
 - Sunday focus direction corrected (app now defaults to most recent past Sunday on weekdays).
 - Evaluation submissions now fail loudly instead of silently.
@@ -176,6 +185,10 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/027_fix_events_unique_constraint.sql`
 - `supabase/migrations/028_analytics_records_view.sql`
 - `supabase/migrations/029_fix_event_id_fk_to_events.sql`
+- `supabase/migrations/030_service_records_event_native.sql`
+- `supabase/migrations/031_email_tables_service_role_grant.sql`
+- `supabase/migrations/032_runtime_fields_analytics_key.sql`
+- `supabase/migrations/033_drop_sunday_uniqueness.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
