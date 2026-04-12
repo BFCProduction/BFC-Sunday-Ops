@@ -81,7 +81,13 @@ export async function loadAllSessions(): Promise<Session[]> {
     .order('sort_order', { ascending: true, referencedTable: 'service_types' })
 
   if (error) throw error
-  return (data as unknown as EventRow[]).map(rowToSession)
+  const slugOrder: Record<string, number> = { 'sunday-9am': 0, 'sunday-11am': 1, 'special': 2 }
+  return (data as unknown as EventRow[])
+    .map(rowToSession)
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date)
+      return (slugOrder[a.serviceTypeSlug] ?? 3) - (slugOrder[b.serviceTypeSlug] ?? 3)
+    })
 }
 
 /**
