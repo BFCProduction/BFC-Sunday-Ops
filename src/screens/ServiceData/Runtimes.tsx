@@ -248,7 +248,7 @@ export function Runtimes() {
                 {captured[field.id] && (
                   <div className="flex items-center gap-1 mt-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                    <p className="text-emerald-600 text-[10px] font-medium">Auto-captured at {captured[field.id]}</p>
+                    <p className="text-emerald-600 text-[10px] font-medium">Saved at {captured[field.id]}</p>
                   </div>
                 )}
               </div>
