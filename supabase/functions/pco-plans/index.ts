@@ -20,9 +20,6 @@ const ALLOWED_ORIGINS = [
 
 const PCO_API_BASE = 'https://api.planningcenteronline.com/services/v2'
 
-const MONTHS_BACK   = 3
-const MONTHS_AHEAD  = 6
-
 function corsHeaders(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
   return {
@@ -112,46 +109,38 @@ Deno.serve(async (req) => {
     return json(cors, 200, { service_types: [] })
   }
 
-  // ── 3. Determine date window ──────────────────────────────────────────────
-  const pastDate   = new Date()
-  pastDate.setMonth(pastDate.getMonth() - MONTHS_BACK)
-  const pastStr    = pastDate.toISOString().slice(0, 10)
-
-  const futureDate = new Date()
-  futureDate.setMonth(futureDate.getMonth() + MONTHS_AHEAD)
-  const futureStr  = futureDate.toISOString().slice(0, 10)
-
-  // ── 4. Fetch plans for each service type ──────────────────────────────────
+  // ── 3. Fetch plans for each service type ─────────────────────────────────
   const results: PcoServiceTypeResult[] = []
 
   for (const st of serviceTypes as ServiceType[]) {
-    // Fetch upcoming plans (PCO filter=future) and recent ones separately
-    // since PCO's API doesn't support a custom past range easily.
-    // We pull all non-archived plans and filter client-side.
-    const url = `${PCO_API_BASE}/service_types/${st.pco_service_type_id}/plans`
-      + `?per_page=50&order=sort_date`
+    // Fetch upcoming plans and recent past plans in two calls so we don't
+    // rely on per_page to reach current dates when sorted ascending.
+    // Call 1: upcoming (future), sorted soonest-first
+    // Call 2: recent past, sorted most-recent-first
+    const baseUrl = `${PCO_API_BASE}/service_types/${st.pco_service_type_id}/plans`
+    const urlFuture = `${baseUrl}?filter=future&per_page=25&order=sort_date`
+    const urlPast   = `${baseUrl}?filter=past&per_page=25&order=-sort_date`
 
     let plans: PcoPlan[] = []
 
-    try {
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${pcoToken}` },
-      })
-
-      if (res.ok) {
-        const body = await res.json() as { data: PcoPlan[] }
-        plans = body.data ?? []
+    for (const url of [urlFuture, urlPast]) {
+      try {
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${pcoToken}` },
+        })
+        if (res.ok) {
+          const body = await res.json() as { data: PcoPlan[] }
+          plans = plans.concat(body.data ?? [])
+        } else {
+          console.error(`PCO plans fetch failed (${res.status}) for ${st.slug}: ${url}`)
+        }
+      } catch (err) {
+        console.error(`Network error fetching plans for ${st.slug}:`, err)
       }
-    } catch {
-      // Silently skip — don't fail the whole request if one service type errors
     }
 
     const filtered: PcoPlanResult[] = plans
-      .filter(p => {
-        if (!p.attributes.sort_date) return false
-        const d = p.attributes.sort_date.slice(0, 10)
-        return d >= pastStr && d <= futureStr
-      })
+      .filter(p => !!p.attributes.sort_date)
       .map(p => {
         const eventDate = p.attributes.sort_date!.slice(0, 10)
         const d = new Date(eventDate + 'T12:00:00')
@@ -166,7 +155,9 @@ Deno.serve(async (req) => {
           display_date: displayDate,
         }
       })
-      // Sort newest first so the picker defaults to the most recent
+      // Deduplicate (same plan could appear in both calls theoretically)
+      .filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
+      // Sort newest first
       .sort((a, b) => b.event_date.localeCompare(a.event_date))
 
     results.push({ slug: st.slug, name: st.name, plans: filtered })
