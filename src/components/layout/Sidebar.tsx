@@ -55,7 +55,10 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
     : '—'
 
   const isSpecial = serviceTypeSlug === 'special'
-  const displayLabel = isSpecial && eventName ? eventName : dateFormatted
+  const serviceTime = serviceTypeSlug === 'sunday-9am' ? '9am' : serviceTypeSlug === 'sunday-11am' ? '11am' : null
+  const displayLabel = isSpecial && eventName
+    ? eventName
+    : serviceTime ? `${dateFormatted} · ${serviceTime}` : dateFormatted
 
   // ── Prev / next navigation (by events.id) ─────────────────────────────────
   const currentIdx = allSessions.findIndex(s => s.id === activeEventId)
@@ -63,10 +66,6 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
   const nextSession = currentIdx >= 0 && currentIdx < allSessions.length - 1
     ? allSessions[currentIdx + 1]
     : null
-
-  // ── Same-date service pills (e.g. 9am + 11am on the same Sunday) ──────────
-  const sameDateSiblings = allSessions.filter(s => s.date === sessionDate && !isSpecial && s.serviceTypeSlug !== 'special')
-  const showServicePills = sameDateSiblings.length > 1
 
   return (
     <aside className="hidden md:flex flex-col flex-shrink-0 border-r border-white/[0.06] overflow-y-auto"
@@ -122,32 +121,6 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
           </button>
         </div>
 
-        {/* Same-date service pills (9am / 11am) */}
-        {showServicePills && (
-          <div className="flex items-center gap-1.5 mt-2.5 justify-center">
-            {sameDateSiblings.map(s => {
-              const isActive = s.id === activeEventId
-              const timeLabel = s.serviceTypeSlug === 'sunday-9am' ? '9:00 AM' : '11:00 AM'
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => navigateToEvent(s.id)}
-                  className={`flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all ${
-                    isActive
-                      ? 'bg-white/15 text-white ring-1 ring-white/20'
-                      : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]'
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isActive ? 'bg-white' : 'bg-gray-600'}`}
-                    style={isActive ? { backgroundColor: s.serviceTypeColor } : undefined}
-                  />
-                  {timeLabel}
-                </button>
-              )
-            })}
-          </div>
-        )}
 
         {/* Phase / session badge */}
         <div className="flex gap-2 mt-2 flex-wrap">

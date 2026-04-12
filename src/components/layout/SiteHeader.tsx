@@ -39,12 +39,10 @@ export function SiteHeader({ allSessions }: SiteHeaderProps) {
   const dateFormatted = sessionDate
     ? new Date(sessionDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : '—'
-  const displayLabel = isSpecial && eventName ? eventName : dateFormatted
-
-  const sameDateSiblings = allSessions.filter(
-    s => s.date === sessionDate && !isSpecial && s.serviceTypeSlug !== 'special'
-  )
-  const showServicePills = sameDateSiblings.length > 1
+  const serviceTime = serviceTypeSlug === 'sunday-9am' ? '9am' : serviceTypeSlug === 'sunday-11am' ? '11am' : null
+  const displayLabel = isSpecial && eventName
+    ? eventName
+    : serviceTime ? `${dateFormatted} · ${serviceTime}` : dateFormatted
 
   return (
     <header
@@ -129,30 +127,6 @@ export function SiteHeader({ allSessions }: SiteHeaderProps) {
           }
           <span className="text-white text-sm font-semibold truncate">{displayLabel}</span>
         </button>
-
-        {showServicePills && (
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {[...sameDateSiblings]
-              .sort((a, b) => a.serviceTypeSlug.localeCompare(b.serviceTypeSlug))
-              .map(s => {
-                const isActive = s.id === activeEventId
-                const timeLabel = s.serviceTypeSlug === 'sunday-9am' ? '9am' : '11am'
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => navigateToEvent(s.id)}
-                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full transition-all ${
-                      isActive
-                        ? 'bg-white/15 text-white ring-1 ring-white/20'
-                        : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]'
-                    }`}
-                  >
-                    {timeLabel}
-                  </button>
-                )
-              })}
-          </div>
-        )}
 
         <button
           onClick={() => nextSession && navigateToEvent(nextSession.id)}
