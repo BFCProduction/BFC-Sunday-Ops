@@ -24,6 +24,8 @@ interface Props {
   field?: RuntimeField
   /** Pre-fills service type for new fields; null = all services */
   defaultServiceTypeSlug?: string | null
+  /** Pre-fills display order for new fields */
+  defaultSortOrder?: number
   onClose: () => void
   onSaved: () => void
 }
@@ -35,14 +37,14 @@ const SERVICE_OPTIONS = [
   { value: 'special',     label: 'Special Events'   },
 ]
 
-export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSaved }: Props) {
+export function RuntimeFieldModal({ field, defaultServiceTypeSlug, defaultSortOrder, onClose, onSaved }: Props) {
   const [label,         setLabel]         = useState(field?.label || '')
   const [host,          setHost]          = useState(field?.host || '')
   const [port,          setPort]          = useState(field?.port ?? 1025)
   const [clockNumber,   setClockNumber]   = useState(field?.clock_number ?? 0)
   const [pullTime,      setPullTime]      = useState(field?.pull_time || '10:20')
   const [pullDay,       setPullDay]       = useState(field?.pull_day ?? 0)
-  const [sortOrder,     setSortOrder]     = useState(field?.sort_order ?? 0)
+  const sortOrder = field?.sort_order ?? defaultSortOrder ?? 0
   const [countdownTarget, setCountdownTarget] = useState(field?.countdown_target || '')
   const [analyticsKey, setAnalyticsKey] = useState<string>(field?.analytics_key ?? '')
   // service_type_slug: '' → null (all services), else a specific slug
@@ -88,7 +90,7 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between mb-4">
-          <h3 className="text-gray-900 font-bold">{field ? 'Edit Runtime Field' : 'Add Runtime Field'}</h3>
+          <h3 className="text-gray-900 font-bold">{field ? 'Edit Runtime' : 'Add Runtime'}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
           </button>
@@ -116,7 +118,7 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
               ))}
             </select>
             <p className="text-gray-400 text-[10px] mt-1">
-              Choose which service this field appears on. "All Services" shows it everywhere.
+              Choose which service this runtime appears on. "All Services" shows it everywhere.
             </p>
           </div>
 
@@ -157,7 +159,7 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
             />
             <p className="text-gray-400 text-[10px] mt-1">
               {host.trim()
-                ? 'Zero-based index in ProPresenter&apos;s Clock module (0 = first clock)'
+                ? "Zero-based index in ProPresenter's Clock module (0 = first clock)"
                 : 'Not used for manual-entry-only runtimes'}
             </p>
           </div>
@@ -194,7 +196,7 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
               <option value="stage_flip_time">Stage Flip Time</option>
             </select>
             <p className="text-gray-400 text-[10px] mt-1">
-              Tag this field so its value is written to the analytics record for this service.
+              Tag this runtime so its value is written to the analytics record for this service.
             </p>
           </div>
 
@@ -216,19 +218,6 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-              Display Order <span className="text-gray-400 normal-case font-normal">(optional)</span>
-            </label>
-            <input
-              type="number" min="0"
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm font-mono focus:outline-none focus:border-blue-500"
-              value={sortOrder} onChange={e => setSortOrder(parseInt(e.target.value) || 0)}
-              placeholder="0"
-            />
-            <p className="text-gray-400 text-[10px] mt-1">Lower numbers appear first</p>
-          </div>
-
           {error && <p className="text-red-500 text-xs">{error}</p>}
 
           <div className="flex gap-3 pt-2">
@@ -238,7 +227,7 @@ export function RuntimeFieldModal({ field, defaultServiceTypeSlug, onClose, onSa
             </button>
             <button onClick={handleSave} disabled={saving}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60">
-              {saving ? 'Saving...' : field ? 'Save Changes' : 'Add Field'}
+              {saving ? 'Saving...' : field ? 'Save Changes' : 'Add Runtime'}
             </button>
           </div>
         </div>

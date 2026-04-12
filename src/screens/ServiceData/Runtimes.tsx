@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Plus, Pencil, Trash2, Server, Clock, CheckCircle2, GripVertical } from 'lucide-react'
+import { useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react'
+import { Plus, Pencil, Trash2, CheckCircle2, GripVertical } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAdmin } from '../../context/adminState'
 import { useSunday } from '../../context/SundayContext'
@@ -23,62 +23,126 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-function SortableRuntimeRow({
-  field,
-  onEdit,
-  onDelete,
-}: {
+interface RuntimeValueRowProps {
   field: RuntimeField
+  value: string
+  capturedAt?: string
+  isAdmin: boolean
+  onValueChange: (value: string) => void
   onEdit: (f: RuntimeField) => void
   onDelete: (f: RuntimeField) => void
-}) {
+  dragHandle?: ReactNode
+  rootRef?: (node: HTMLDivElement | null) => void
+  style?: CSSProperties
+  isDragging?: boolean
+}
+
+function RuntimeValueRow({
+  field,
+  value,
+  capturedAt,
+  isAdmin,
+  onValueChange,
+  onEdit,
+  onDelete,
+  dragHandle,
+  rootRef,
+  style,
+  isDragging = false,
+}: RuntimeValueRowProps) {
+  return (
+    <div
+      ref={rootRef}
+      style={style}
+      className={`bg-white border border-gray-200 rounded-xl p-4 transition-all ${
+        isDragging ? 'shadow-lg ring-2 ring-blue-100 opacity-90' : ''
+      }`}
+    >
+      <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+        {isAdmin && dragHandle}
+        <div className="flex-1 min-w-[180px]">
+          <p className="text-gray-900 text-sm font-medium">{field.label}</p>
+          {isAdmin && (
+            <div className="flex items-center gap-2 flex-wrap text-gray-400 text-[10px] mt-0.5">
+              {field.host ? (
+                <>
+                  <span>Pull {DAYS[field.pull_day]} at {field.pull_time}</span>
+                  <span>{field.host}:{field.port} · clock index {field.clock_number}</span>
+                </>
+              ) : (
+                <span>Manual entry only</span>
+              )}
+            </div>
+          )}
+          {!isAdmin && !field.host && (
+            <p className="text-gray-400 text-[10px] mt-0.5">Manual entry only</p>
+          )}
+          {capturedAt && (
+            <div className="flex items-center gap-1 mt-1">
+              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+              <p className="text-emerald-600 text-[10px] font-medium">Saved at {capturedAt}</p>
+            </div>
+          )}
+        </div>
+        <input
+          type="text"
+          placeholder="H:MM:SS"
+          value={value}
+          onChange={e => onValueChange(e.target.value)}
+          className="w-28 max-sm:flex-1 max-sm:min-w-[120px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500 text-center"
+        />
+        {isAdmin && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => onEdit(field)}
+              aria-label={`Edit ${field.label}`}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(field)}
+              aria-label={`Delete ${field.label}`}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SortableRuntimeValueRow(props: RuntimeValueRowProps) {
+  const { field } = props
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
+    opacity: isDragging ? 0.9 : 1,
   }
+
   return (
-    <div ref={setNodeRef} style={style} className="px-4 py-3 flex items-start gap-3 bg-white hover:bg-gray-50 transition-colors">
-      <button
-        {...attributes}
-        {...listeners}
-        className="mt-0.5 p-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none"
-        tabIndex={-1}
-      >
-        <GripVertical className="w-4 h-4" />
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-gray-900 text-sm font-medium">{field.label}</p>
-          <span className="bg-gray-100 text-gray-500 text-[10px] font-semibold px-1.5 py-0.5 rounded">
-            {DAYS[field.pull_day]}
-          </span>
-        </div>
-        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-          <span className="flex items-center gap-1 text-gray-400 text-[11px]">
-            <Clock className="w-3 h-3" />{field.pull_time}
-          </span>
-          {field.host ? (
-            <span className="text-gray-400 text-[11px] font-mono">
-              {field.host}:{field.port} · clock index {field.clock_number}
-            </span>
-          ) : (
-            <span className="text-gray-400 text-[11px]">Manual entry only</span>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
-        <button onClick={() => onEdit(field)}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-          <Pencil className="w-3.5 h-3.5" />
+    <RuntimeValueRow
+      {...props}
+      rootRef={setNodeRef}
+      style={style}
+      isDragging={isDragging}
+      dragHandle={(
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label={`Move ${field.label}`}
+          className="p-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none flex-shrink-0"
+        >
+          <GripVertical className="w-4 h-4" />
         </button>
-        <button onClick={() => onDelete(field)}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    </div>
+      )}
+    />
   )
 }
 
@@ -131,10 +195,8 @@ export function Runtimes() {
       .order('sort_order', { ascending: true })
       .order('pull_time', { ascending: true })
     setAllFields(data || [])
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceTypeSlug])
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadValues = useCallback(async () => {
     const q = supabase.from('runtime_values').select('field_id, value, captured_at')
     // Try event-native first; fall back to legacy Sunday record
@@ -158,7 +220,7 @@ export function Runtimes() {
       setValues(vals)
       setCaptured(caps)
     }
-  }, [sundayId, eventId])
+  }, [sundayId, eventId, timezone])
 
   useEffect(() => {
     let active = true
@@ -230,6 +292,16 @@ export function Runtimes() {
   const deleteField = async (field: RuntimeField) => {
     await supabase.from('runtime_fields').delete().eq('id', field.id)
     setAllFields(prev => prev.filter(f => f.id !== field.id))
+    setValues(prev => {
+      const next = { ...prev }
+      delete next[field.id]
+      return next
+    })
+    setCaptured(prev => {
+      const next = { ...prev }
+      delete next[field.id]
+      return next
+    })
     setConfirmDelete(null)
   }
 
@@ -238,15 +310,25 @@ export function Runtimes() {
     if (!over || active.id === over.id) return
     const oldIndex = allFields.findIndex(f => f.id === active.id)
     const newIndex = allFields.findIndex(f => f.id === over.id)
-    const reordered = arrayMove(allFields, oldIndex, newIndex)
+    if (oldIndex === -1 || newIndex === -1) return
+    const reordered = arrayMove(allFields, oldIndex, newIndex).map((f, i) => ({ ...f, sort_order: i }))
     setAllFields(reordered)
-    const updates = reordered
-      .map((f, i) => ({ ...f, sort_order: i }))
-      .filter((f, i) => f.sort_order !== allFields[i]?.sort_order)
-    if (updates.length > 0) {
-      await supabase.from('runtime_fields').upsert(updates)
-    }
+    await supabase.from('runtime_fields').upsert(reordered)
   }
+
+  const openAddRuntime = () => {
+    setEditField(null)
+    setShowModal(true)
+  }
+
+  const openEditRuntime = (field: RuntimeField) => {
+    setEditField(field)
+    setShowModal(true)
+  }
+
+  const nextSortOrder = allFields.length > 0
+    ? Math.max(...allFields.map(field => field.sort_order ?? 0)) + 1
+    : 0
 
   if (loading) return (
     <div className="flex items-center justify-center h-32">
@@ -257,45 +339,67 @@ export function Runtimes() {
   return (
     <div className="space-y-4 fade-in">
 
+      {isAdmin && (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-gray-500 text-xs">Drag runtimes to reorder. Use the pencil to edit a runtime.</p>
+          <button
+            type="button"
+            onClick={openAddRuntime}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Runtime
+          </button>
+        </div>
+      )}
+
       {/* Today's runtime values */}
       {allFields.length === 0 ? (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
-          <p className="text-gray-500 text-sm">No runtime fields configured for today.</p>
+          <p className="text-gray-500 text-sm">No runtimes configured for this service.</p>
           {isAdmin && (
-            <p className="text-gray-400 text-xs mt-1">Use the admin panel below to add runtime fields.</p>
+            <button
+              type="button"
+              onClick={openAddRuntime}
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Runtime
+            </button>
           )}
         </div>
+      ) : isAdmin ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={allFields.map(f => f.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-2">
+              {allFields.map(field => (
+                <SortableRuntimeValueRow
+                  key={field.id}
+                  field={field}
+                  value={values[field.id] ?? ''}
+                  capturedAt={captured[field.id]}
+                  isAdmin={isAdmin}
+                  onValueChange={value => setValues(p => ({ ...p, [field.id]: value }))}
+                  onEdit={openEditRuntime}
+                  onDelete={setConfirmDelete}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       ) : (
         <div className="space-y-2">
           {allFields.map(field => (
-            <div key={field.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
-              <div className="flex-1 min-w-0">
-                <p className="text-gray-900 text-sm font-medium">{field.label}</p>
-                {isAdmin && (
-                  <p className="text-gray-400 text-[10px] mt-0.5">
-                    {field.host
-                      ? `Pull at ${field.pull_time} · ${field.host}:${field.port} · clock index ${field.clock_number}`
-                      : 'Manual entry only'}
-                  </p>
-                )}
-                {!isAdmin && !field.host && (
-                  <p className="text-gray-400 text-[10px] mt-0.5">Manual entry only</p>
-                )}
-                {captured[field.id] && (
-                  <div className="flex items-center gap-1 mt-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                    <p className="text-emerald-600 text-[10px] font-medium">Saved at {captured[field.id]}</p>
-                  </div>
-                )}
-              </div>
-              <input
-                type="text"
-                placeholder="H:MM:SS"
-                value={values[field.id] ?? ''}
-                onChange={e => setValues(p => ({ ...p, [field.id]: e.target.value }))}
-                className="w-28 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500 text-center"
-              />
-            </div>
+            <RuntimeValueRow
+              key={field.id}
+              field={field}
+              value={values[field.id] ?? ''}
+              capturedAt={captured[field.id]}
+              isAdmin={isAdmin}
+              onValueChange={value => setValues(p => ({ ...p, [field.id]: value }))}
+              onEdit={openEditRuntime}
+              onDelete={setConfirmDelete}
+            />
           ))}
         </div>
       )}
@@ -314,64 +418,12 @@ export function Runtimes() {
         </p>
       )}
 
-      {/* Admin panel */}
-      {isAdmin && (
-        <div className="border border-amber-200 rounded-xl overflow-hidden">
-          <div className="bg-amber-50 px-4 py-3 flex items-center justify-between border-b border-amber-200">
-            <div className="flex items-center gap-2">
-              <Server className="w-4 h-4 text-amber-600" />
-              <p className="text-gray-900 text-sm font-semibold">Runtime Field Definitions</p>
-              <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">Admin</span>
-            </div>
-            <button
-              onClick={() => { setEditField(null); setShowModal(true) }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors">
-              <Plus className="w-3.5 h-3.5" />
-              Add Field
-            </button>
-          </div>
-
-          {allFields.length === 0 ? (
-            <div className="p-6 text-center">
-              <p className="text-gray-400 text-sm">No runtime fields yet. Add one to get started.</p>
-            </div>
-          ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={allFields.map(f => f.id)} strategy={verticalListSortingStrategy}>
-                <div className="divide-y divide-gray-100">
-                  {allFields.map(field => (
-                    <SortableRuntimeRow
-                      key={field.id}
-                      field={field}
-                      onEdit={f => { setEditField(f); setShowModal(true) }}
-                      onDelete={setConfirmDelete}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
-          )}
-
-          <div className="bg-gray-50 border-t border-gray-200 px-4 py-3">
-            <p className="text-gray-500 text-xs font-semibold mb-1">Running the relay script</p>
-            <p className="text-gray-400 text-[11px] leading-relaxed mb-2">
-              Run on any Mac on the same network. It will wait and pull each field at its configured time.
-            </p>
-            <code className="block bg-gray-900 text-green-400 text-[11px] rounded px-3 py-2 font-mono">
-              node scripts/propresenter-relay.js
-            </code>
-            <p className="text-gray-400 text-[10px] mt-1.5">
-              Add <span className="font-mono">--now</span> to pull all connected fields immediately for testing. ProPresenter timer indexes are zero-based.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Add/Edit modal */}
       {showModal && (
         <RuntimeFieldModal
           field={editField || undefined}
           defaultServiceTypeSlug={editField ? undefined : serviceTypeSlug}
+          defaultSortOrder={editField ? undefined : nextSortOrder}
           onClose={() => { setShowModal(false); setEditField(null) }}
           onSaved={loadFields}
         />
@@ -381,10 +433,10 @@ export function Runtimes() {
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-gray-900 font-bold mb-2">Delete Field</h3>
+            <h3 className="text-gray-900 font-bold mb-2">Delete Runtime</h3>
             <p className="text-gray-500 text-sm mb-4">
               Delete "<span className="font-medium text-gray-700">{confirmDelete.label}</span>"?
-              Captured values for this field will also be removed.
+              Captured values for this runtime will also be removed.
             </p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)}
