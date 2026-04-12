@@ -36,37 +36,46 @@ interface Props {
 
 function PcoPlanPicker({
   sessionToken,
+  initialSlug,
   onSelect,
   onClose,
 }: {
   sessionToken: string
+  initialSlug: string
   onSelect: (plan: PcoPlanResult, serviceTypeSlug: string) => void
   onClose: () => void
 }) {
-  const [loading,      setLoading]      = useState(true)
-  const [error,        setError]        = useState('')
-  const [groups,       setGroups]       = useState<PcoServiceTypePlans[]>([])
-  const [query,        setQuery]        = useState('')
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState('')
+  const [groups,      setGroups]      = useState<PcoServiceTypePlans[]>([])
+  const [activeSlug,  setActiveSlug]  = useState(initialSlug)
+  const [query,       setQuery]       = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    searchRef.current?.focus()
     fetchPcoPlans(sessionToken)
-      .then(setGroups)
+      .then(data => {
+        setGroups(data)
+        // If the initialSlug isn't in the returned groups, default to first
+        if (data.length > 0 && !data.find(g => g.slug === initialSlug)) {
+          setActiveSlug(data[0].slug)
+        }
+      })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load PCO plans'))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+        searchRef.current?.focus()
+      })
   }, [sessionToken])
 
+  const activeGroup = groups.find(g => g.slug === activeSlug)
   const q = query.toLowerCase()
-  const filtered = groups.map(g => ({
-    ...g,
-    plans: g.plans.filter(p =>
-      !q ||
-      p.display_date.toLowerCase().includes(q) ||
-      (p.title?.toLowerCase().includes(q) ?? false) ||
-      (p.series_title?.toLowerCase().includes(q) ?? false)
-    ),
-  })).filter(g => g.plans.length > 0)
+  const visiblePlans = (activeGroup?.plans ?? []).filter(p =>
+    !q ||
+    p.display_date.toLowerCase().includes(q) ||
+    (p.title?.toLowerCase().includes(q) ?? false) ||
+    (p.series_title?.toLowerCase().includes(q) ?? false)
+  )
 
   return (
     <div
@@ -84,6 +93,27 @@ function PcoPlanPicker({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Service type tabs */}
+        {!loading && groups.length > 0 && (
+          <div className="flex border-b border-gray-100 flex-shrink-0">
+            {groups.map(g => (
+              <button
+                key={g.slug}
+                onClick={() => { setActiveSlug(g.slug); setQuery('') }}
+                className={`flex-1 py-2.5 text-xs font-semibold transition-colors border-b-2 -mb-px ${
+                  activeSlug === g.slug
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {g.slug === 'sunday-9am'  ? '9am'     :
+                 g.slug === 'sunday-11am' ? '11am'    :
+                 'Special'}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Search */}
         <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
@@ -109,29 +139,22 @@ function PcoPlanPicker({
           {!loading && error && (
             <p className="px-5 py-4 text-sm text-red-600">{error}</p>
           )}
-          {!loading && !error && filtered.length === 0 && (
+          {!loading && !error && visiblePlans.length === 0 && (
             <p className="px-5 py-6 text-sm text-gray-400 text-center">No plans found</p>
           )}
-          {!loading && !error && filtered.map(group => (
-            <div key={group.slug}>
-              <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
-                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{group.name}</p>
-              </div>
-              {group.plans.map(plan => {
-                const label = plan.title || plan.series_title
-                return (
-                  <button
-                    key={plan.id}
-                    onClick={() => onSelect(plan, group.slug)}
-                    className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 transition-colors"
-                  >
-                    <p className="text-sm font-medium text-gray-900">{plan.display_date}</p>
-                    {label && <p className="text-xs text-gray-500 mt-0.5">{label}</p>}
-                  </button>
-                )
-              })}
-            </div>
-          ))}
+          {!loading && !error && visiblePlans.map(plan => {
+            const label = plan.title || plan.series_title
+            return (
+              <button
+                key={plan.id}
+                onClick={() => onSelect(plan, activeSlug)}
+                className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 transition-colors"
+              >
+                <p className="text-sm font-medium text-gray-900">{plan.display_date}</p>
+                {label && <p className="text-xs text-gray-500 mt-0.5">{label}</p>}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
@@ -411,6 +434,7 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
       {showPcoPicker && sessionToken && (
         <PcoPlanPicker
           sessionToken={sessionToken}
+          initialSlug={serviceTypeSlug}
           onSelect={handlePcoPlanSelect}
           onClose={() => setShowPcoPicker(false)}
         />
