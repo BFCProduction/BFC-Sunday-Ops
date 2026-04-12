@@ -18,25 +18,12 @@ interface Props {
 const ROLES_LIST = ['A1', 'Video', 'Graphics', 'Lighting', 'Stage']
 const ADD_NEW = '__add_new__'
 
-const SERVICE_OPTIONS = [
-  { value: '',            label: 'All Services (default)' },
-  { value: 'sunday-9am',  label: 'Sunday 9:00 AM'         },
-  { value: 'sunday-11am', label: 'Sunday 11:00 AM'        },
-  { value: 'special',     label: 'Special Events'         },
-]
-
 export function ItemFormModal({ item, defaultSection, defaultServiceTypeSlug, sectionOptions = [], subsectionsBySection = {}, onClose, onSaved }: Props) {
   const [task, setTask] = useState(item?.task || '')
   const [role, setRole] = useState(item?.role || 'A1')
   const [section, setSection] = useState(item?.section || defaultSection || sectionOptions[0] || '')
   const [subsection, setSubsection] = useState(item?.subsection || '')
   const [note, setNote] = useState(item?.note || '')
-  // service_type_slug: '' → null (all services), else a specific slug
-  const [serviceSlug, setServiceSlug] = useState<string>(
-    item !== undefined
-      ? (item.service_type_slug ?? '')
-      : (defaultServiceTypeSlug ?? '')
-  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [addingSection, setAddingSection] = useState(sectionOptions.length === 0)
@@ -84,7 +71,7 @@ export function ItemFormModal({ item, defaultSection, defaultServiceTypeSlug, se
       subsection:        effectiveSubsection.trim() || null,
       note:              note.trim() || null,
       sort_order:        item?.sort_order ?? 999,
-      service_type_slug: serviceSlug || null,
+      service_type_slug: item !== undefined ? (item.service_type_slug ?? null) : (defaultServiceTypeSlug ?? null),
     }
     let err: { message: string } | null = null
     if (item) {
@@ -133,22 +120,6 @@ export function ItemFormModal({ item, defaultSection, defaultServiceTypeSlug, se
                 </button>
               ))}
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Service</label>
-            <select
-              value={serviceSlug}
-              onChange={e => setServiceSlug(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
-            >
-              {SERVICE_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            <p className="text-gray-400 text-[10px] mt-1">
-              Choose which service this item appears on. "All Services" shows it on every service.
-            </p>
           </div>
 
           <div>
