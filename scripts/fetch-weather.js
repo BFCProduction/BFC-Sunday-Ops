@@ -260,9 +260,17 @@ async function run() {
     fetched_at: new Date().toISOString(),
   }
 
-  const { error: upsertError } = await supabase
-    .from('weather')
-    .upsert(payload, { onConflict: 'sunday_id' })
+  // Use update-or-insert instead of upsert: the sunday_id unique constraint
+  // was replaced by a partial index in migration 016, which PostgREST's
+  // onConflict cannot use.
+  let upsertError
+  if (existingWeather) {
+    const { error } = await supabase.from('weather').update(payload).eq('sunday_id', sunday.id)
+    upsertError = error
+  } else {
+    const { error } = await supabase.from('weather').insert(payload)
+    upsertError = error
+  }
 
   if (upsertError) throw upsertError
 
