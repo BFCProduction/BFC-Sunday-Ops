@@ -104,21 +104,22 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }:
 
   // ── Render helpers ───────────────────────────────────────────────────────────
 
-  function ServicePill({ s }: { s: Session }) {
+  function SundayRow({ s }: { s: Session }) {
     const isActive = s.id === activeEventId
     const label = s.serviceTypeSlug === 'sunday-9am' ? '9:00 AM' : '11:00 AM'
     return (
       <button
         ref={isActive ? activeRef : undefined}
         onClick={() => handleSelect(s.id)}
-        className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${
+        className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm ${
           isActive
-            ? 'bg-blue-600 text-white ring-2 ring-blue-400'
-            : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+            ? 'bg-blue-50 text-blue-800 ring-1 ring-blue-300'
+            : 'hover:bg-gray-50 text-gray-700'
         }`}
       >
-        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: isActive ? 'white' : s.serviceTypeColor }} />
-        {label}
+        <Calendar className="w-3.5 h-3.5 flex-shrink-0" style={{ color: s.serviceTypeColor }} />
+        <span className="flex-1 truncate font-medium">{label}</span>
+        <span className="text-xs text-gray-400 flex-shrink-0">{formatDayLabel(s.date)}</span>
       </button>
     )
   }
@@ -145,17 +146,7 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }:
   function DateRow({ dg }: { dg: DateGroup }) {
     return (
       <div className="py-1.5">
-        {dg.sundays.length > 0 && (
-          <div className="flex items-center gap-3 px-3 py-1.5">
-            <div className="flex items-center gap-1.5 text-xs text-gray-400 w-32 flex-shrink-0">
-              <Calendar className="w-3 h-3" />
-              <span>{formatDayLabel(dg.date)}</span>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {[...dg.sundays].sort((a, b) => a.serviceTypeSlug.localeCompare(b.serviceTypeSlug)).map(s => <ServicePill key={s.id} s={s} />)}
-            </div>
-          </div>
-        )}
+        {[...dg.sundays].sort((a, b) => a.serviceTypeSlug.localeCompare(b.serviceTypeSlug)).map(s => <SundayRow key={s.id} s={s} />)}
         {dg.specials.map(s => <SpecialRow key={s.id} s={s} />)}
       </div>
     )

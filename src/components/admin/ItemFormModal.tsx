@@ -39,7 +39,7 @@ export function ItemFormModal({ item, defaultSection, defaultServiceTypeSlug, se
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [addingSection, setAddingSection] = useState(false)
+  const [addingSection, setAddingSection] = useState(sectionOptions.length === 0)
   const [newSectionText, setNewSectionText] = useState('')
   const [addingSubsection, setAddingSubsection] = useState(false)
   const [newSubsectionText, setNewSubsectionText] = useState('')

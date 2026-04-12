@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'react'
-import { CheckCircle2, ChevronDown, ChevronRight, GripVertical, Pencil, Trash2, Plus, Settings2, X } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, GripVertical, Pencil, Trash2, Plus, Settings2, X, LayoutTemplate } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, KeyboardSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -15,8 +15,9 @@ import { useAdmin } from '../context/adminState'
 import { useAuth } from '../context/authState'
 import { useSunday } from '../context/SundayContext'
 import { ItemFormModal } from '../components/admin/ItemFormModal'
+import { TemplateManager } from '../components/admin/TemplateManager'
 import type { ChecklistItemRecord } from '../lib/checklist'
-import type { EventChecklistItem, EventChecklistCompletion, Role } from '../types'
+import type { EventChecklistItem, EventChecklistCompletion, EventTemplateItem, Role } from '../types'
 
 // ── Sunday completion map ────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ function EventItemFormModal({
   const [section, setSection] = useState(item?.section ?? defaultSection ?? sectionOptions[0] ?? '')
   const [subsection, setSubsection] = useState(item?.subsection ?? '')
   const [notes, setNotes] = useState(item?.item_notes ?? '')
-  const [addingSection, setAddingSection] = useState(false)
+  const [addingSection, setAddingSection] = useState(sectionOptions.length === 0)
   const [newSectionText, setNewSectionText] = useState('')
   const [addingSubsection, setAddingSubsection] = useState(false)
   const [newSubsectionText, setNewSubsectionText] = useState('')
@@ -338,6 +339,89 @@ export function Checklist() {
   const isEvent = sessionType === 'event'
 
   const [editMode, setEditMode] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+
+  const applyTemplate = async (templateId: string) => {
+    const { data, error: fetchError } = await supabase
+      .from('event_template_items')
+      .select('*')
+      .eq('template_id', templateId)
+      .order('sort_order')
+
+    if (fetchError) throw new Error(fetchError.message)
+    if (!data || data.length === 0) throw new Error('Template has no items to apply.')
+    const items = data as EventTemplateItem[]
+
+    if (isEvent) {
+      const rows = items.map(item => ({
+        event_id: activeEventId,
+        label: item.label,
+        section: item.section,
+        subsection: item.subsection,
+        item_notes: item.item_notes,
+        sort_order: item.sort_order,
+        source_template_item_id: item.id,
+      }))
+      const { error: insertError } = await supabase.from('event_checklist_items').insert(rows)
+      if (insertError) throw new Error(insertError.message)
+      await refreshEventItems()
+    } else {
+      const rows = items.map(item => ({
+        task: item.label,
+        role: 'All',
+        section: item.section,
+        subsection: item.subsection,
+        note: item.item_notes,
+        sort_order: item.sort_order,
+        service_type_slug: serviceTypeSlug,
+      }))
+      const { error: insertError } = await supabase.from('checklist_items').insert(rows)
+      if (insertError) throw new Error(insertError.message)
+      await refreshSundayItems()
+    }
+    setShowTemplates(false)
+  }
+
+  const removeTemplate = async (templateId: string) => {
+    const { data: templateItems } = await supabase
+      .from('event_template_items')
+      .select('id')
+      .eq('template_id', templateId)
+    if (!templateItems?.length) return
+    const ids = templateItems.map((i: { id: string }) => i.id)
+
+    if (isEvent) {
+      const { error } = await supabase
+        .from('event_checklist_items')
+        .delete()
+        .eq('event_id', activeEventId)
+        .in('source_template_item_id', ids)
+      if (error) throw new Error(error.message)
+      await refreshEventItems()
+    } else {
+      // Sunday items have no source_template_item_id — nothing to remove
+      throw new Error('Remove by template is only supported for special events.')
+    }
+  }
+
+  const clearAllItems = async () => {
+    if (isEvent) {
+      const { error } = await supabase
+        .from('event_checklist_items')
+        .delete()
+        .eq('event_id', activeEventId)
+      if (error) throw new Error(error.message)
+      await refreshEventItems()
+    } else {
+      const { error } = await supabase
+        .from('checklist_items')
+        .delete()
+        .eq('service_type_slug', serviceTypeSlug)
+      if (error) throw new Error(error.message)
+      await refreshSundayItems()
+    }
+    setShowTemplates(false)
+  }
 
   // Sunday mode state
   const [sundayItems, setSundayItems] = useState<ChecklistItemRecord[]>([])
@@ -390,11 +474,11 @@ export function Checklist() {
     async function load() {
       if (isEvent) {
         // Event mode: load event_checklist_items + event_checklist_completions
-        if (!eventId) { setLoading(false); return }
+        if (!activeEventId) { setLoading(false); return }
 
         const [itemsRes, completionsRes] = await Promise.all([
-          supabase.from('event_checklist_items').select('*').eq('event_id', eventId).order('sort_order'),
-          supabase.from('event_checklist_completions').select('*').eq('event_id', eventId),
+          supabase.from('event_checklist_items').select('*').eq('event_id', activeEventId).order('sort_order'),
+          supabase.from('event_checklist_completions').select('*').eq('event_id', activeEventId),
         ])
         if (cancelled) return
 
@@ -464,7 +548,7 @@ export function Checklist() {
 
     load()
     return () => { cancelled = true }
-  }, [isEvent, eventId, activeEventId, sundayId, serviceTypeSlug])
+  }, [isEvent, activeEventId, sundayId, serviceTypeSlug])
 
   // ── Refresh callbacks (use refs — never go stale) ────────────────────────────
 
@@ -514,7 +598,7 @@ export function Checklist() {
   }, [])
 
   const refreshEventItems = useCallback(async () => {
-    const curEventId = eventIdRef.current
+    const curEventId = activeEventIdRef.current
     if (!curEventId) return
     const { data } = await supabase
       .from('event_checklist_items')
@@ -533,7 +617,7 @@ export function Checklist() {
   }, [])
 
   const refreshEventCompletions = useCallback(async () => {
-    const curEventId = eventIdRef.current
+    const curEventId = activeEventIdRef.current
     if (!curEventId) return
     const { data } = await supabase
       .from('event_checklist_completions')
@@ -552,15 +636,15 @@ export function Checklist() {
   // ── Real-time subscriptions ──────────────────────────────────────────────────
   useEffect(() => {
     if (isEvent) {
-      if (!eventId) return
+      if (!activeEventId) return
       const channel = supabase
-        .channel(`event-checklist-realtime-${eventId}`)
+        .channel(`event-checklist-realtime-${activeEventId}`)
         .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'event_checklist_completions', filter: `event_id=eq.${eventId}` },
+          { event: '*', schema: 'public', table: 'event_checklist_completions', filter: `event_id=eq.${activeEventId}` },
           () => refreshEventCompletions(),
         )
         .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'event_checklist_items', filter: `event_id=eq.${eventId}` },
+          { event: '*', schema: 'public', table: 'event_checklist_items', filter: `event_id=eq.${activeEventId}` },
           () => refreshEventItems(),
         )
         .subscribe()
@@ -580,7 +664,7 @@ export function Checklist() {
         .subscribe()
       return () => { supabase.removeChannel(channel) }
     }
-  }, [isEvent, eventId, activeEventId, refreshEventCompletions, refreshEventItems, refreshSundayCompletions, refreshSundayItems])
+  }, [isEvent, activeEventId, refreshEventCompletions, refreshEventItems, refreshSundayCompletions, refreshSundayItems])
 
   // ── Toggle completion ────────────────────────────────────────────────────────
 
@@ -588,13 +672,13 @@ export function Checklist() {
     if (isEvent) {
       if (eventCompletions[uid]) {
         await supabase.from('event_checklist_completions')
-          .delete().eq('event_id', eventId).eq('item_id', uid)
+          .delete().eq('event_id', activeEventId).eq('item_id', uid)
         setEventCompletions(p => { const n = { ...p }; delete n[uid]; return n })
       } else {
         const checkedBy = user?.name ?? 'Unknown'
         const now = new Date().toISOString()
         await supabase.from('event_checklist_completions')
-          .upsert({ event_id: eventId, item_id: uid, initials: checkedBy, completed_at: now },
+          .upsert({ event_id: activeEventId, item_id: uid, initials: checkedBy, completed_at: now },
             { onConflict: 'event_id,item_id' })
         setEventCompletions(p => ({
           ...p,
@@ -826,17 +910,28 @@ export function Checklist() {
           <div className="flex items-center gap-3">
             <span className={`text-sm font-bold ${pct === 100 ? 'text-emerald-600' : 'text-gray-400'}`}>{pct}%</span>
             {isAdmin && (
-              <button
-                onClick={() => setEditMode(m => !m)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  editMode
-                    ? 'bg-amber-500 text-white hover:bg-amber-600'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                <Settings2 className="w-3.5 h-3.5" />
-                {editMode ? 'Done Editing' : 'Edit'}
-              </button>
+              <>
+                {editMode && (
+                  <button
+                    onClick={() => setShowTemplates(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  >
+                    <LayoutTemplate className="w-3.5 h-3.5" />
+                    Templates
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditMode(m => !m)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    editMode
+                      ? 'bg-amber-500 text-white hover:bg-amber-600'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  {editMode ? 'Done Editing' : 'Edit'}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -1040,9 +1135,9 @@ export function Checklist() {
       )}
 
       {/* Event item form modal */}
-      {showEventItemForm && isEvent && eventId && (
+      {showEventItemForm && isEvent && activeEventId && (
         <EventItemFormModal
-          eventId={eventId}
+          eventId={activeEventId}
           item={editEventItem || undefined}
           defaultSection={addSection || undefined}
           sectionOptions={sectionOptions}
@@ -1069,6 +1164,36 @@ export function Checklist() {
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors">
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Templates modal */}
+      {showTemplates && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowTemplates(false) }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <LayoutTemplate className="w-4 h-4 text-gray-500" />
+                <h2 className="text-gray-900 font-bold text-sm">Checklist Templates</h2>
+              </div>
+              <button
+                onClick={() => setShowTemplates(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <TemplateManager
+                onApply={applyTemplate}
+                onRemove={isEvent ? removeTemplate : undefined}
+                onClearAll={clearAllItems}
+              />
             </div>
           </div>
         </div>

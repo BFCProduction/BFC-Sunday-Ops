@@ -209,7 +209,7 @@ function AppMain() {
       navigateToEvent, navigateSunday,
     }}>
       <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#111827' }}>
-        <SiteHeader />
+        <SiteHeader allSessions={allSessions} />
         <div className="flex flex-1 min-h-0">
           <Sidebar
             active={screen}

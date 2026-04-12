@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Download, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { EventTemplate, EventTemplateItem } from '../../types'
 
@@ -330,21 +330,125 @@ interface TemplateListProps {
   onEdit: (template: TemplateWithCount) => void
   onNew: () => void
   onDelete: (template: TemplateWithCount) => void
+  onApply?: (templateId: string) => Promise<void>
+  onRemove?: (templateId: string) => Promise<void>
+  onClearAll?: () => Promise<void>
 }
 
-function TemplateList({ templates, onEdit, onNew, onDelete }: TemplateListProps) {
+function TemplateList({ templates, onEdit, onNew, onDelete, onApply, onRemove, onClearAll }: TemplateListProps) {
+  const [applying, setApplying] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
+  const [clearingAll, setClearingAll] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState<TemplateWithCount | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
+
+  const handleApply = async (t: TemplateWithCount) => {
+    if (!onApply) return
+    setApplying(t.id)
+    setActionError('')
+    try {
+      await onApply(t.id)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to apply template')
+    }
+    setApplying(null)
+  }
+
+  const handleRemove = async (t: TemplateWithCount) => {
+    if (!onRemove) return
+    setRemoving(t.id)
+    setConfirmRemove(null)
+    setActionError('')
+    try {
+      await onRemove(t.id)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to remove template items')
+    }
+    setRemoving(null)
+  }
+
+  const handleClearAll = async () => {
+    if (!onClearAll) return
+    setClearingAll(true)
+    setConfirmClear(false)
+    setActionError('')
+    try {
+      await onClearAll()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to clear checklist')
+    }
+    setClearingAll(false)
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
         <p className="text-gray-500 text-xs">{templates.length} template{templates.length !== 1 ? 's' : ''}</p>
-        <button
-          onClick={onNew}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          New Template
-        </button>
+        <div className="flex items-center gap-2">
+          {onClearAll && (
+            <button
+              onClick={() => setConfirmClear(true)}
+              disabled={clearingAll}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {clearingAll ? 'Clearing…' : 'Clear All Items'}
+            </button>
+          )}
+          <button
+            onClick={onNew}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New Template
+          </button>
+        </div>
       </div>
+
+      {confirmClear && (
+        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-start gap-2 mb-3">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+            <p className="text-red-800 text-sm font-medium">Delete all checklist items? This cannot be undone.</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirmClear(false)}
+              className="flex-1 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button onClick={handleClearAll}
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors">
+              Delete All
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confirmRemove && (
+        <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-start gap-2 mb-3">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+            <p className="text-red-800 text-sm font-medium">
+              Remove all items from "<span className="font-bold">{confirmRemove.name}</span>" from the checklist?
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirmRemove(null)}
+              className="flex-1 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button onClick={() => handleRemove(confirmRemove)}
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors">
+              Remove
+            </button>
+          </div>
+        </div>
+      )}
+
+      {actionError && (
+        <p className="text-red-500 text-xs mb-3">{actionError}</p>
+      )}
 
       {templates.length === 0 ? (
         <div className="border border-dashed border-gray-200 rounded-xl px-4 py-8 text-center">
@@ -370,6 +474,26 @@ function TemplateList({ templates, onEdit, onNew, onDelete }: TemplateListProps)
                 )}
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
+                {onApply && (
+                  <button
+                    onClick={() => handleApply(t)}
+                    disabled={applying === t.id || removing === t.id}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {applying === t.id ? 'Applying…' : 'Apply'}
+                  </button>
+                )}
+                {onRemove && (
+                  <button
+                    onClick={() => setConfirmRemove(t)}
+                    disabled={removing === t.id || applying === t.id}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    {removing === t.id ? 'Removing…' : 'Remove'}
+                  </button>
+                )}
                 <button
                   onClick={() => onEdit(t)}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
@@ -394,7 +518,13 @@ function TemplateList({ templates, onEdit, onNew, onDelete }: TemplateListProps)
 
 // ── Main TemplateManager ──────────────────────────────────────────────────────
 
-export function TemplateManager() {
+interface TemplateManagerProps {
+  onApply?: (templateId: string) => Promise<void>
+  onRemove?: (templateId: string) => Promise<void>
+  onClearAll?: () => Promise<void>
+}
+
+export function TemplateManager({ onApply, onRemove, onClearAll }: TemplateManagerProps = {}) {
   const [templates, setTemplates] = useState<TemplateWithCount[]>([])
   const [loading, setLoading] = useState(true)
   const [editingTemplate, setEditingTemplate] = useState<TemplateWithCount | null>(null)
@@ -515,6 +645,9 @@ export function TemplateManager() {
         onEdit={t => setEditingTemplate(t)}
         onNew={() => setShowNewForm(true)}
         onDelete={t => setConfirmDeleteTemplate(t)}
+        onApply={onApply}
+        onRemove={onRemove}
+        onClearAll={onClearAll}
       />
 
       {confirmDeleteTemplate && (
