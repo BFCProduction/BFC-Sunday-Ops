@@ -4,6 +4,9 @@ import { supabase } from '../lib/supabase'
 import { ROLE_COLORS } from '../data/checklist'
 import { loadOrSeedChecklistItems } from '../lib/checklist'
 import { useSunday } from '../context/SundayContext'
+import { useAuth } from '../context/authState'
+import { fetchPcoPlanTimes, type PcoPlanTimeResult } from '../lib/adminApi'
+import { getChurchDateString } from '../lib/churchTime'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import type { Issue } from '../types'
@@ -15,42 +18,98 @@ interface DashboardProps {
   setScreen: (s: Screen) => void
 }
 
-const SCHEDULE = [
-  { time: '7:00 AM',  label: 'Production Meeting', key: 'meeting'    },
-  { time: '7:45 AM',  label: 'Rehearsal Begins',   key: 'rehearsal1' },
-  { time: '8:15 AM',  label: 'Projectors On',      key: 'proj'       },
-  { time: '8:40 AM',  label: 'Encoders Start',     key: 'encoders1'  },
-  { time: '9:00 AM',  label: '1st Service',        key: 'service1'   },
-  { time: '10:00 AM', label: 'Flip Stage',         key: 'flip'       },
-  { time: '10:20 AM', label: 'Rehearsal Begins',   key: 'rehearsal2' },
-  { time: '10:40 AM', label: 'Encoders Start',     key: 'encoders2'  },
-  { time: '11:00 AM', label: '2nd Service',        key: 'service2'   },
-  { time: '12:00 PM', label: 'Release',            key: 'release'    },
+interface ScheduleItem {
+  id: string
+  time: string
+  label: string
+  minuteOfDay: number | null
+}
+
+const FALLBACK_SCHEDULE: ScheduleItem[] = [
+  { id: 'meeting',    time: '7:00 AM',  label: 'Production Meeting', minuteOfDay: 7 * 60 },
+  { id: 'rehearsal1', time: '7:45 AM',  label: 'Rehearsal Begins',   minuteOfDay: 7 * 60 + 45 },
+  { id: 'proj',       time: '8:15 AM',  label: 'Projectors On',      minuteOfDay: 8 * 60 + 15 },
+  { id: 'encoders1',  time: '8:40 AM',  label: 'Encoders Start',     minuteOfDay: 8 * 60 + 40 },
+  { id: 'service1',   time: '9:00 AM',  label: '1st Service',        minuteOfDay: 9 * 60 },
+  { id: 'flip',       time: '10:00 AM', label: 'Flip Stage',         minuteOfDay: 10 * 60 },
+  { id: 'rehearsal2', time: '10:20 AM', label: 'Rehearsal Begins',   minuteOfDay: 10 * 60 + 20 },
+  { id: 'encoders2',  time: '10:40 AM', label: 'Encoders Start',     minuteOfDay: 10 * 60 + 40 },
+  { id: 'service2',   time: '11:00 AM', label: '2nd Service',        minuteOfDay: 11 * 60 },
+  { id: 'release',    time: '12:00 PM', label: 'Release',            minuteOfDay: 12 * 60 },
 ]
 
-function getScheduleStatus(key: string): 'done' | 'active' | 'upcoming' {
-  const now = new Date()
-  const hour = now.getHours()
-  const min = now.getMinutes()
-  const totalMin = hour * 60 + min
-  const times: Record<string, number> = {
-    meeting:   7*60,     rehearsal1: 7*60+45, proj:      8*60+15,
-    encoders1: 8*60+40,  service1:   9*60,    flip:      10*60,
-    rehearsal2: 10*60+20, encoders2: 10*60+40, service2: 11*60,
-    release:   12*60,
+function getMinuteOfDay(date: Date, timezone: string): number | null {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour:     '2-digit',
+    minute:   '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+
+  const hour = Number(parts.find(part => part.type === 'hour')?.value)
+  const min  = Number(parts.find(part => part.type === 'minute')?.value)
+  if (Number.isNaN(hour) || Number.isNaN(min)) return null
+  return hour * 60 + min
+}
+
+function formatScheduleTime(iso: string, timezone: string) {
+  return new Date(iso).toLocaleTimeString('en-US', {
+    hour:     'numeric',
+    minute:   '2-digit',
+    timeZone: timezone,
+  })
+}
+
+function formatScheduleLabel(planTime: PcoPlanTimeResult) {
+  const name = planTime.name?.trim()
+  if (name) return name
+  if (!planTime.time_type) return 'Schedule Item'
+  return planTime.time_type
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function planTimeToScheduleItem(planTime: PcoPlanTimeResult, timezone: string): ScheduleItem {
+  const startsAt = new Date(planTime.starts_at)
+  return {
+    id:          `pco-${planTime.id}`,
+    time:        formatScheduleTime(planTime.starts_at, timezone),
+    label:       formatScheduleLabel(planTime),
+    minuteOfDay: getMinuteOfDay(startsAt, timezone),
   }
-  const t = times[key]
-  if (totalMin > t + 30) return 'done'
-  if (totalMin >= t - 5) return 'active'
+}
+
+function getScheduleStatus(
+  minuteOfDay: number | null,
+  eventDate: string,
+  timezone: string,
+): 'done' | 'active' | 'upcoming' {
+  if (minuteOfDay == null) return 'upcoming'
+
+  if (eventDate) {
+    const today = getChurchDateString(new Date(), timezone)
+    if (eventDate < today) return 'done'
+    if (eventDate > today) return 'upcoming'
+  }
+
+  const totalMin = getMinuteOfDay(new Date(), timezone)
+  if (totalMin == null) return 'upcoming'
+  if (totalMin > minuteOfDay + 30) return 'done'
+  if (totalMin >= minuteOfDay - 5) return 'active'
   return 'upcoming'
 }
 
 export function Dashboard({ setScreen }: DashboardProps) {
-  const { activeEventId, sundayId, serviceTypeSlug } = useSunday()
+  const {
+    activeEventId, sundayId, serviceTypeSlug, serviceTypeName,
+    eventName, sessionDate, timezone,
+  } = useSunday()
+  const { sessionToken } = useAuth()
 
   const [items, setItems] = useState<ChecklistItemRecord[]>([])
   const [completedIds, setCompletedIds] = useState<number[]>([])
   const [issues, setIssues] = useState<Issue[]>([])
+  const [pcoSchedule, setPcoSchedule] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -91,6 +150,31 @@ export function Dashboard({ setScreen }: DashboardProps) {
     return () => { cancelled = true }
   }, [activeEventId, sundayId, serviceTypeSlug])
 
+  useEffect(() => {
+    let cancelled = false
+    setPcoSchedule([])
+
+    if (!sessionToken || !activeEventId) return
+    const token = sessionToken
+    const eventId = activeEventId
+
+    async function loadPcoSchedule() {
+      try {
+        const planTimes = await fetchPcoPlanTimes(token, eventId)
+        if (cancelled) return
+        setPcoSchedule(planTimes.map(planTime => planTimeToScheduleItem(planTime, timezone)))
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('PCO schedule fetch failed (using fallback schedule):', err)
+          setPcoSchedule([])
+        }
+      }
+    }
+
+    void loadPcoSchedule()
+    return () => { cancelled = true }
+  }, [activeEventId, sessionToken, timezone])
+
   const total = items.length
   const done = completedIds.length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
@@ -109,6 +193,9 @@ export function Dashboard({ setScreen }: DashboardProps) {
   })
 
   const highIssues = issues.filter(i => !i.resolved_at && (i.severity === 'High' || i.severity === 'Critical'))
+  const scheduleItems = pcoSchedule.length > 0 ? pcoSchedule : FALLBACK_SCHEDULE
+  const isPcoSchedule = pcoSchedule.length > 0
+  const dashboardSubtitle = eventName ?? serviceTypeName
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -120,7 +207,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
     <div className="fade-in">
       <div className="px-6 pt-5 pb-5 border-b border-gray-100">
         <h1 className="text-gray-900 text-xl font-bold">Gameday Overview</h1>
-        <p className="text-gray-500 text-sm mt-0.5">Two services today</p>
+        <p className="text-gray-500 text-sm mt-0.5">{dashboardSubtitle}</p>
       </div>
 
       <div className="p-5 space-y-5">
@@ -163,13 +250,16 @@ export function Dashboard({ setScreen }: DashboardProps) {
           </Card>
 
           <Card className="overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
               <p className="text-gray-900 text-sm font-semibold">Today's Schedule</p>
+              {isPcoSchedule && (
+                <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full font-bold">PCO</span>
+              )}
             </div>
-            {SCHEDULE.map((item, i) => {
-              const st = getScheduleStatus(item.key)
+            {scheduleItems.map((item, i) => {
+              const st = getScheduleStatus(item.minuteOfDay, sessionDate, timezone)
               return (
-                <div key={i} className={`flex items-center gap-3 px-4 py-2 ${i < SCHEDULE.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                <div key={item.id} className={`flex items-center gap-3 px-4 py-2 ${i < scheduleItems.length - 1 ? 'border-b border-gray-50' : ''}`}>
                   <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st === 'done' ? 'bg-emerald-400' : st === 'active' ? 'bg-blue-500 pulse' : 'bg-gray-200'}`} />
                   <span className={`text-xs w-[60px] flex-shrink-0 font-mono ${st === 'done' ? 'text-gray-300' : st === 'active' ? 'text-blue-600' : 'text-gray-400'}`}>{item.time}</span>
                   <span className={`text-xs flex-1 font-medium ${st === 'done' ? 'line-through text-gray-300' : st === 'active' ? 'text-blue-600' : 'text-gray-600'}`}>{item.label}</span>

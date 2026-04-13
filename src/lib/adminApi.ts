@@ -82,6 +82,40 @@ export async function fetchPcoPlans(
   return (payload as { service_types: PcoServiceTypePlans[] }).service_types ?? []
 }
 
+// ── PCO Plan Times ───────────────────────────────────────────────────────────
+
+export interface PcoPlanTimeResult {
+  id:        string
+  name:      string | null
+  starts_at: string
+  ends_at:   string | null
+  time_type: string | null
+}
+
+export async function fetchPcoPlanTimes(
+  sessionToken: string,
+  eventId: string,
+): Promise<PcoPlanTimeResult[]> {
+  const response = await fetch(getFunctionUrl('pco-plan-times'), {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
+    },
+    body: JSON.stringify({ event_id: eventId }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.error === 'string' ? payload.error : `Plan times fetch failed with ${response.status}`
+    )
+  }
+
+  return (payload as { schedule: PcoPlanTimeResult[] }).schedule ?? []
+}
+
 export async function requestSummaryEmailAdmin<T>(
   sessionToken: string,
   method: string,
