@@ -191,7 +191,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
             : (legacyCompletionsRes.data ?? [])
 
         setItems(itemData)
-        setCompletedIds(completionData.map((r: { item_id: number }) => r.item_id))
+        setCompletedIds([...new Set(completionData.map((r: { item_id: number }) => r.item_id))])
         setIssues((issueRes.data || []) as Issue[])
       } finally {
         if (!cancelled) setLoading(false)
