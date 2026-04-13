@@ -278,8 +278,8 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
       <div className="p-5 space-y-5">
         {/* Overall Progress — compact horizontal strip */}
-        <Card className="px-5 py-3">
-          <div className="flex items-center gap-4">
+        <Card className="px-5 py-3 overflow-hidden">
+          <div className="flex items-center gap-4 min-w-0">
             {/* Dial */}
             <div className="relative w-12 h-12 flex-shrink-0">
               <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
@@ -287,7 +287,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
                 <circle cx="40" cy="40" r="32" fill="none" stroke={ringColor} strokeWidth="10"
                   strokeLinecap="round"
                   strokeDasharray={circ}
-                  strokeDashoffset={circ * (1 - pct / 100)}
+                  strokeDashoffset={circ * (1 - Math.min(pct, 100) / 100)}
                   style={{ transition: 'stroke-dashoffset .5s ease' }} />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
@@ -296,29 +296,29 @@ export function Dashboard({ setScreen }: DashboardProps) {
             </div>
 
             {/* Overall bar */}
-            <div className="flex-1 min-w-0">
+            <div className="w-48 flex-shrink-0">
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-gray-900 text-sm font-semibold">Overall Progress</span>
+                <span className="text-gray-900 text-sm font-semibold">Overall</span>
                 <span className="text-gray-400 text-xs">{done} of {total}</span>
               </div>
               <div className="bg-gray-100 rounded-full h-2">
-                <div className="h-2 rounded-full progress-fill" style={{ width: `${pct}%`, background: ringColor }} />
+                <div className="h-2 rounded-full progress-fill" style={{ width: `${Math.min(pct, 100)}%`, background: ringColor }} />
               </div>
             </div>
 
             {/* Divider */}
             <div className="hidden md:block w-px h-8 bg-gray-100 flex-shrink-0" />
 
-            {/* Role bars */}
-            <div className="hidden md:flex items-center gap-4 flex-shrink-0">
+            {/* Role bars — fill remaining space evenly */}
+            <div className="hidden md:grid grid-cols-5 gap-x-4 gap-y-0 flex-1 min-w-0">
               {roleStats.map(({ r, done, total, pct: rPct }) => (
-                <div key={r} className="w-20">
+                <div key={r} className="min-w-0">
                   <div className="flex justify-between items-baseline mb-1">
                     <span className="text-[10px] text-gray-500 font-medium">{r}</span>
                     <span className="text-[10px] text-gray-400">{done}/{total}</span>
                   </div>
-                  <div className="bg-gray-100 rounded-full h-1.5">
-                    <div className="h-1.5 rounded-full" style={{ width: `${rPct}%`, background: ROLE_COLORS[r] }} />
+                  <div className="bg-gray-100 rounded-full h-2">
+                    <div className="h-2 rounded-full" style={{ width: `${Math.min(rPct, 100)}%`, background: ROLE_COLORS[r] }} />
                   </div>
                 </div>
               ))}
@@ -369,26 +369,6 @@ export function Dashboard({ setScreen }: DashboardProps) {
             <ChevronRight className="w-4 h-4 text-red-400" />
           </button>
         )}
-
-        {/* Role Progress */}
-        <div>
-          <SectionLabel>Role Progress</SectionLabel>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-            {roleStats.map(({ r, done, total, pct }) => (
-              <Card key={r} className="p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 rounded-full" style={{ background: ROLE_COLORS[r] }} />
-                  <span className="text-gray-900 text-sm font-medium">{r}</span>
-                  <span className="ml-auto text-gray-400 text-xs">{done}/{total}</span>
-                </div>
-                <div className="bg-gray-100 rounded-full h-1.5">
-                  <div className="h-1.5 rounded-full progress-fill" style={{ width: `${pct}%`, background: ROLE_COLORS[r] }} />
-                </div>
-                <p className="text-gray-400 text-[10px] mt-1.5">{pct}% complete</p>
-              </Card>
-            ))}
-          </div>
-        </div>
 
         {/* Quick Actions */}
         <div>
