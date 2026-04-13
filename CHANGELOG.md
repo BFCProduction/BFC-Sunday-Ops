@@ -1,5 +1,80 @@
 # Changelog
 
+## 2026-04-13 (Session 8)
+
+### Summary
+
+Mobile and dashboard polish session. The mobile bottom navigation bar was redesigned from a flat full-width white tab bar into a floating dark pill that hovers above the bottom of the screen. The dashboard received two major additions: a PCO Run of Show card pulled directly from the linked Planning Center plan, and a full layout restructure that puts a compact progress strip across the top (dial, overall bar, and all five role bars in one row), then places Today's Schedule and the Run of Show side by side below it. The edge function powering the ROS was extended to fetch plan times in parallel with items and compute a cumulative start time for every item so each row shows its clock time alongside its type, title, description, key, and duration. A bug where checklist completion counts exceeded 100% (due to duplicate `item_id` rows when multiple operators sign off the same item) was also fixed.
+
+### Completed
+
+#### Mobile bottom nav redesign (`src/components/layout/MobileTabs.tsx`)
+
+- Replaced the full-width white border tab bar with a **floating dark pill**.
+- Pill is 80% of screen width, centered, `rounded-full`, `background: #1c1c1e`, with a drop shadow.
+- Active tab: white icon + white label + small `bg-blue-500` dot below the label.
+- Inactive tabs: `text-gray-500` icon and label; invisible dot spacer keeps row height stable.
+- Red pulse badge on Issues tab preserved.
+- Outer wrapper is a full-width white `div` that provides the background the pill floats over; safe-area-inset-bottom handled on the wrapper.
+- Main content `paddingBottom` bumped from `72px` to `80px` to clear the taller pill.
+
+#### PCO Run of Show (`supabase/functions/pco-plan-items/`, `src/lib/adminApi.ts`, `src/screens/Dashboard.tsx`)
+
+- **New edge function** `pco-plan-items`:
+  - `POST { event_id }` with `x-session-token`, same auth + token-refresh pattern as other PCO functions.
+  - Fetches `/plans/{id}/items` and `/plans/{id}/plan_times` from PCO in parallel.
+  - Locates the service start anchor from plan_times (prefers `time_type = "service"`).
+  - Computes `computed_starts_at` for every item: pre-service items are walked backwards from service start; service and post-service items walk forward using cumulative `length` durations.
+  - Returns `id`, `sequence`, `title`, `item_type`, `length`, `description`, `service_position`, `key_name`, `computed_starts_at`.
+  - Deployed to the linked Supabase project.
+
+- **`fetchPcoPlanItems()`** added to `src/lib/adminApi.ts`.
+
+- **`RunOfShow` component** in `Dashboard.tsx`:
+  - Shows time column (formatted in church timezone) when any item has a computed time.
+  - Type icon: music note (song), film (media), type (header), layers (other).
+  - Title + `description` as a subtitle line when present.
+  - Song key badge and `m:ss` duration on the right.
+  - Section headers rendered as gray divider rows with all-caps label.
+  - Scrollable, `maxHeight: 480px`.
+  - PCO badge and total runtime label in card header.
+  - Only rendered when the active event has a linked PCO plan.
+
+#### Dashboard layout restructure (`src/screens/Dashboard.tsx`)
+
+- **Progress strip** — full-width card across the top:
+  - Small dial (48px), fixed-width overall bar (`w-48`), vertical divider, then five role bars in `grid-cols-5` filling the remaining space.
+  - Role bars hidden on mobile (already shown in dedicated section below on mobile — now removed on desktop).
+  - All bar widths capped at `Math.min(pct, 100)` to prevent overflow when completion count temporarily exceeds item count.
+  - SVG ring also capped at 100%.
+
+- **Schedule + ROS row** — `md:grid-cols-4` grid:
+  - Today's Schedule: `col-span-1` (25%) when ROS is present, `col-span-4` when not.
+  - Run of Show: `col-span-3` (75%).
+  - Stacks vertically on mobile.
+
+- **Role Progress section removed** from below the grid — role bars now live exclusively in the top strip on desktop.
+
+#### Bug fix: checklist completion count inflation (`src/screens/Dashboard.tsx`)
+
+- `completedIds` was storing one entry per completion row. Multiple operators signing off the same item created duplicate `item_id` values, inflating `done` and pushing the percentage over 100%.
+- Fixed by deduplicating with `[...new Set(...)]` before setting state.
+
+### Verification
+
+- `npm run build` passed.
+- `pco-plan-items` deployed and verified on Supabase.
+- Commits pushed:
+  - `dcd1f51 Redesign mobile bottom nav as floating pill`
+  - `25399b2 Add PCO Run of Show to dashboard`
+  - `d11a24d Restructure dashboard layout`
+  - `c5bf17e Compact progress strip at top of dashboard`
+  - `b9be53c Fix inflated checklist completion count`
+  - `d7a9d91 Fix progress strip overflow and remove duplicate role section`
+  - `b30bd1b Add computed times and descriptions to ROS`
+
+---
+
 ## 2026-04-12 (Session 7)
 
 ### Summary

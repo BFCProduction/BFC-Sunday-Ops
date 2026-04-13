@@ -21,7 +21,9 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **Manual event creation** — all services (9am, 11am, Special) are created in Sunday Ops via the "New Event" modal; multiple services of the same type can exist on the same date (Easter, extra traditional services, etc.)
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
 - **PCO schedule integration** — the dashboard "Today's Schedule" pulls event-specific plan times from the linked Planning Center plan when available
+- **PCO Run of Show** — the dashboard pulls the ordered plan items from the linked PCO plan and displays them as a scrollable Run of Show card with computed start times, type icons, song keys, durations, and item descriptions
 - **PCO sync** — updates existing events with PCO plan metadata (name, date); no longer auto-creates Sunday events
+- **Mobile floating pill nav** — bottom navigation on mobile is a dark floating pill (80% width, centered) with white active state and a blue dot indicator
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -76,6 +78,16 @@ Live now:
 
 - RESI analytics importer (`scripts/fetch-resi.js`) — logs in via Playwright, downloads the session CSV for the target Sunday, computes per-service stats, and writes to Supabase. Supports `--now`, `--date`, and `--dry-run` flags.
 
+- **Dashboard layout** — compact progress strip (dial + overall bar + role bars) spans the full width at the top; Today's Schedule (25%) and Run of Show (75%) sit side by side below it; Quick Actions below that. Stacks vertically on mobile.
+
+- **PCO Run of Show** (`supabase/functions/pco-plan-items/`):
+  - Fetches ordered plan items from the linked PCO plan.
+  - Fetches `plan_times` in parallel and computes a cumulative `computed_starts_at` for each item (pre-service items walk backwards from service start; service/post items walk forward).
+  - Returns `title`, `item_type`, `length`, `description`, `service_position`, `key_name`, `computed_starts_at`.
+  - Dashboard ROS card shows time, type icon, title, description, song key, and duration per item.
+
+- **Mobile bottom nav** (`src/components/layout/MobileTabs.tsx`) redesigned as a floating dark pill.
+
 - **Special Events** (`src/components/admin/SpecialEventManager.tsx`, `src/components/admin/TemplateManager.tsx`, `src/screens/Checklist.tsx`):
   - Admin-managed event templates (reusable checklist blueprints) and special events with name, date, time, and template assignment.
   - Template seeding: when a template is selected in the QuickCreate modal, checklist items are snapshotted into the event at creation time — later template changes don't affect existing events.
@@ -105,7 +117,7 @@ Live now:
   - No longer auto-creates Sunday service events — creation is manual only.
   - Special events with explicit PCO titles still auto-create via sync.
   - Called automatically after login and manually via Settings → Sync Now (admin only).
-  - `pco-sync`, `pco-plans`, and `pco-plan-times` refresh expired Planning Center access tokens using the stored refresh token.
+  - `pco-sync`, `pco-plans`, `pco-plan-times`, and `pco-plan-items` refresh expired Planning Center access tokens using the stored refresh token.
 
 - **`service_records` table** (`supabase/migrations/012_create_service_records.sql`) — unified analytics table with one row per service per Sunday, storing attendance, runtimes, loudness, weather, and stream analytics in one place.
 
