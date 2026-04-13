@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ChevronRight, ClipboardCheck, BarChart2, Star } from 'lucide-react'
+import { AlertTriangle, ChevronRight, ClipboardCheck, BarChart2, Star, Music, Type, Film, Layers } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { ROLE_COLORS } from '../data/checklist'
 import { loadOrSeedChecklistItems } from '../lib/checklist'
 import { useSunday } from '../context/SundayContext'
 import { useAuth } from '../context/authState'
-import { fetchPcoPlanTimes, type PcoPlanTimeResult } from '../lib/adminApi'
+import { fetchPcoPlanTimes, fetchPcoPlanItems, type PcoPlanTimeResult, type PcoPlanItemResult } from '../lib/adminApi'
 import { getChurchDateString } from '../lib/churchTime'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
@@ -99,6 +99,57 @@ function getScheduleStatus(
   return 'upcoming'
 }
 
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return s > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${m}m`
+}
+
+function RosItemIcon({ type }: { type: string }) {
+  if (type === 'song')   return <Music   className="w-3 h-3 flex-shrink-0 text-purple-400" />
+  if (type === 'media')  return <Film    className="w-3 h-3 flex-shrink-0 text-blue-400" />
+  if (type === 'header') return <Type    className="w-3 h-3 flex-shrink-0 text-gray-300" />
+  return                        <Layers  className="w-3 h-3 flex-shrink-0 text-gray-400" />
+}
+
+function RunOfShow({ items, totalLabel }: { items: PcoPlanItemResult[]; totalLabel: string | null }) {
+  return (
+    <Card className="overflow-hidden flex flex-col">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-shrink-0">
+        <p className="text-gray-900 text-sm font-semibold">Run of Show</p>
+        <div className="flex items-center gap-2">
+          {totalLabel && <span className="text-[9px] text-gray-400 font-medium">{totalLabel}</span>}
+          <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full font-bold">PCO</span>
+        </div>
+      </div>
+      <div className="overflow-y-auto" style={{ maxHeight: 320 }}>
+        {items.map((item, i) => {
+          const isHeader = item.item_type === 'header'
+          if (isHeader) {
+            return (
+              <div key={item.id} className={`px-4 py-1.5 bg-gray-50 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{item.title}</span>
+              </div>
+            )
+          }
+          return (
+            <div key={item.id} className={`flex items-center gap-2.5 px-4 py-2 ${i < items.length - 1 ? 'border-b border-gray-50' : ''}`}>
+              <RosItemIcon type={item.item_type} />
+              <span className="text-xs text-gray-700 font-medium flex-1 leading-snug">{item.title}</span>
+              {item.key_name && (
+                <span className="text-[9px] bg-purple-50 text-purple-500 border border-purple-100 px-1 py-0.5 rounded font-bold flex-shrink-0">{item.key_name}</span>
+              )}
+              {item.length != null && item.length > 0 && (
+                <span className="text-[10px] text-gray-300 font-mono flex-shrink-0">{formatDuration(item.length)}</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
 export function Dashboard({ setScreen }: DashboardProps) {
   const {
     activeEventId, sundayId, serviceTypeSlug, serviceTypeName,
@@ -110,6 +161,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
   const [completedIds, setCompletedIds] = useState<number[]>([])
   const [issues, setIssues] = useState<Issue[]>([])
   const [pcoSchedule, setPcoSchedule] = useState<ScheduleItem[]>([])
+  const [rosItems, setRosItems] = useState<PcoPlanItemResult[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -153,25 +205,34 @@ export function Dashboard({ setScreen }: DashboardProps) {
   useEffect(() => {
     let cancelled = false
     setPcoSchedule([])
+    setRosItems([])
 
     if (!sessionToken || !activeEventId) return
     const token = sessionToken
     const eventId = activeEventId
 
-    async function loadPcoSchedule() {
-      try {
-        const planTimes = await fetchPcoPlanTimes(token, eventId)
-        if (cancelled) return
-        setPcoSchedule(planTimes.map(planTime => planTimeToScheduleItem(planTime, timezone)))
-      } catch (err) {
-        if (!cancelled) {
-          console.warn('PCO schedule fetch failed (using fallback schedule):', err)
-          setPcoSchedule([])
-        }
+    async function loadPcoData() {
+      const [planTimesResult, planItemsResult] = await Promise.allSettled([
+        fetchPcoPlanTimes(token, eventId),
+        fetchPcoPlanItems(token, eventId),
+      ])
+
+      if (cancelled) return
+
+      if (planTimesResult.status === 'fulfilled') {
+        setPcoSchedule(planTimesResult.value.map(pt => planTimeToScheduleItem(pt, timezone)))
+      } else {
+        console.warn('PCO schedule fetch failed (using fallback schedule):', planTimesResult.reason)
+      }
+
+      if (planItemsResult.status === 'fulfilled') {
+        setRosItems(planItemsResult.value)
+      } else {
+        console.warn('PCO run of show fetch failed:', planItemsResult.reason)
       }
     }
 
-    void loadPcoSchedule()
+    void loadPcoData()
     return () => { cancelled = true }
   }, [activeEventId, sessionToken, timezone])
 
@@ -197,6 +258,11 @@ export function Dashboard({ setScreen }: DashboardProps) {
   const isPcoSchedule = pcoSchedule.length > 0
   const dashboardSubtitle = eventName ?? serviceTypeName
 
+  const totalRosSeconds = rosItems.reduce((sum, item) => sum + (item.length ?? 0), 0)
+  const rosTotalLabel = totalRosSeconds > 0
+    ? `${Math.floor(totalRosSeconds / 60)}m total`
+    : null
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -211,8 +277,8 @@ export function Dashboard({ setScreen }: DashboardProps) {
       </div>
 
       <div className="p-5 space-y-5">
-        {/* Progress + Schedule */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {/* Progress + Schedule + Run of Show */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
           <Card className="p-5">
             <div className="flex items-center gap-5">
               <div className="relative w-[88px] h-[88px] flex-shrink-0">
@@ -268,6 +334,8 @@ export function Dashboard({ setScreen }: DashboardProps) {
               )
             })}
           </Card>
+
+          {rosItems.length > 0 && <RunOfShow items={rosItems} totalLabel={rosTotalLabel} />}
         </div>
 
         {/* High priority alert */}

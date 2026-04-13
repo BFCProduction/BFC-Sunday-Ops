@@ -116,6 +116,43 @@ export async function fetchPcoPlanTimes(
   return (payload as { schedule: PcoPlanTimeResult[] }).schedule ?? []
 }
 
+// ── PCO Plan Items (Run of Show) ─────────────────────────────────────────────
+
+export interface PcoPlanItemResult {
+  id:               string
+  sequence:         number
+  title:            string
+  item_type:        string  // 'song' | 'header' | 'item' | 'media'
+  length:           number | null  // seconds
+  description:      string | null
+  service_position: string | null  // 'pre_service' | 'service' | 'post_service'
+  key_name:         string | null  // song key, e.g. 'G', 'A'
+}
+
+export async function fetchPcoPlanItems(
+  sessionToken: string,
+  eventId: string,
+): Promise<PcoPlanItemResult[]> {
+  const response = await fetch(getFunctionUrl('pco-plan-items'), {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
+    },
+    body: JSON.stringify({ event_id: eventId }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.error === 'string' ? payload.error : `Plan items fetch failed with ${response.status}`
+    )
+  }
+
+  return (payload as { items: PcoPlanItemResult[] }).items ?? []
+}
+
 export async function requestSummaryEmailAdmin<T>(
   sessionToken: string,
   method: string,
