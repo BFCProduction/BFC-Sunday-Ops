@@ -122,7 +122,7 @@ function RunOfShow({ items, totalLabel }: { items: PcoPlanItemResult[]; totalLab
           <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full font-bold">PCO</span>
         </div>
       </div>
-      <div className="overflow-y-auto" style={{ maxHeight: 320 }}>
+      <div className="overflow-y-auto" style={{ maxHeight: 480 }}>
         {items.map((item, i) => {
           const isHeader = item.item_type === 'header'
           if (isHeader) {
@@ -277,45 +277,46 @@ export function Dashboard({ setScreen }: DashboardProps) {
       </div>
 
       <div className="p-5 space-y-5">
-        {/* Progress + Schedule + Run of Show */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
-          <Card className="p-5">
-            <div className="flex items-center gap-5">
-              <div className="relative w-[88px] h-[88px] flex-shrink-0">
-                <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
-                  <circle cx="40" cy="40" r="32" fill="none" stroke="#f3f4f6" strokeWidth="9" />
-                  <circle cx="40" cy="40" r="32" fill="none" stroke={ringColor} strokeWidth="9"
-                    strokeLinecap="round"
-                    strokeDasharray={circ}
-                    strokeDashoffset={circ * (1 - pct / 100)}
-                    style={{ transition: 'stroke-dashoffset .5s ease' }} />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-gray-900 text-xl font-bold leading-none">{pct}%</span>
-                  <span className="text-gray-400 text-[9px] font-semibold mt-0.5">DONE</span>
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-gray-900 font-semibold">Overall Progress</p>
-                <p className="text-gray-500 text-sm mt-0.5">{done} of {total} items checked</p>
-                <div className="mt-3 bg-gray-100 rounded-full h-1.5">
-                  <div className="h-1.5 rounded-full progress-fill" style={{ width: `${pct}%`, background: ringColor }} />
-                </div>
-                <div className="grid grid-cols-5 gap-1 mt-3">
-                  {roleStats.map(({ r, done, total }) => (
-                    <div key={r} className="text-center">
-                      <div className="h-1 rounded-full mb-1 bg-gray-100">
-                        <div className="h-1 rounded-full" style={{ width: `${total > 0 ? Math.round(done / total * 100) : 0}%`, background: ROLE_COLORS[r] }} />
-                      </div>
-                      <span className="text-[9px] text-gray-400 font-medium">{r}</span>
-                    </div>
-                  ))}
-                </div>
+        {/* Overall Progress — full width */}
+        <Card className="p-5">
+          <div className="flex items-center gap-5">
+            <div className="relative w-[88px] h-[88px] flex-shrink-0">
+              <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
+                <circle cx="40" cy="40" r="32" fill="none" stroke="#f3f4f6" strokeWidth="9" />
+                <circle cx="40" cy="40" r="32" fill="none" stroke={ringColor} strokeWidth="9"
+                  strokeLinecap="round"
+                  strokeDasharray={circ}
+                  strokeDashoffset={circ * (1 - pct / 100)}
+                  style={{ transition: 'stroke-dashoffset .5s ease' }} />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-gray-900 text-xl font-bold leading-none">{pct}%</span>
+                <span className="text-gray-400 text-[9px] font-semibold mt-0.5">DONE</span>
               </div>
             </div>
-          </Card>
+            <div className="flex-1 min-w-0">
+              <p className="text-gray-900 font-semibold">Overall Progress</p>
+              <p className="text-gray-500 text-sm mt-0.5">{done} of {total} items checked</p>
+              <div className="mt-3 bg-gray-100 rounded-full h-1.5">
+                <div className="h-1.5 rounded-full progress-fill" style={{ width: `${pct}%`, background: ringColor }} />
+              </div>
+              <div className="grid grid-cols-5 gap-1 mt-3">
+                {roleStats.map(({ r, done, total }) => (
+                  <div key={r} className="text-center">
+                    <div className="h-1 rounded-full mb-1 bg-gray-100">
+                      <div className="h-1 rounded-full" style={{ width: `${total > 0 ? Math.round(done / total * 100) : 0}%`, background: ROLE_COLORS[r] }} />
+                    </div>
+                    <span className="text-[9px] text-gray-400 font-medium">{r}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
 
-          <Card className="overflow-hidden">
+        {/* Schedule (25%) + Run of Show (75%) — stacks on mobile */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className={`overflow-hidden ${rosItems.length > 0 ? 'md:col-span-1' : 'md:col-span-4'}`}>
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
               <p className="text-gray-900 text-sm font-semibold">Today's Schedule</p>
               {isPcoSchedule && (
@@ -335,7 +336,11 @@ export function Dashboard({ setScreen }: DashboardProps) {
             })}
           </Card>
 
-          {rosItems.length > 0 && <RunOfShow items={rosItems} totalLabel={rosTotalLabel} />}
+          {rosItems.length > 0 && (
+            <div className="md:col-span-3">
+              <RunOfShow items={rosItems} totalLabel={rosTotalLabel} />
+            </div>
+          )}
         </div>
 
         {/* High priority alert */}
