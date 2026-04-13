@@ -218,7 +218,7 @@ function AppMain() {
             allSessions={allSessions}
             onSessionsChange={setAllSessions}
           />
-          <main className="flex-1 min-w-0 overflow-y-auto bg-white" style={{ paddingBottom: '72px' }}>
+          <main className="flex-1 min-w-0 overflow-y-auto bg-white" style={{ paddingBottom: '80px' }}>
             {screen === 'dashboard'  && <Dashboard   setScreen={setScreen} />}
             {screen === 'checklist'  && <Checklist />}
             {screen === 'issues'     && <IssueLog    sundayId={sundayId} eventId={eventId} />}
