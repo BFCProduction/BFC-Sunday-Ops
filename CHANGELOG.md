@@ -1,5 +1,87 @@
 # Changelog
 
+## 2026-04-12 (Session 7)
+
+### Summary
+
+Cleaned up several production-ops workflows after the manual event model landed. Runtime field management now happens directly in the real runtime list instead of a separate admin-only section. Service Data tabs now provide recent historical context for the active service type. The PCO plan picker sorts plans in ascending date order. The dashboard "Today's Schedule" now pulls event-specific times from the linked Planning Center plan via a new `pco-plan-times` edge function, with the previous static schedule retained as a fallback. A PCO token expiry bug was also fixed: Sunday Ops sessions can outlive PCO access tokens, so all PCO-facing edge functions now refresh expired access tokens with the stored refresh token before calling Planning Center. The new and updated functions were deployed, verified against the linked Supabase project, committed, and pushed.
+
+### Completed
+
+#### Runtime admin cleanup
+
+- **Inline runtime admin controls** (`src/screens/ServiceData/Runtimes.tsx`):
+  - Removed the separate bottom admin management section.
+  - Admins now reorder by dragging the actual runtime row in the main list.
+  - Admins edit the actual runtime row with a pencil button.
+  - The old "Add field" action is now **Add Runtime** and inserts into the main list.
+
+- **Runtime modal simplification** (`src/components/admin/RuntimeFieldModal.tsx`):
+  - Removed display-order editing from the modal; ordering is now controlled by drag-and-drop in the list.
+
+#### Service Data history
+
+- **Shared history helpers** (`src/screens/ServiceData/history.tsx`, `src/screens/ServiceData/historyData.ts`):
+  - Added reusable UI/data helpers for recent service history.
+
+- **Attendance, Runtimes, Weather, Loudness**:
+  - Attendance, Runtimes, and Weather now include recent historical data for roughly the past 10 Sundays for the active service type.
+  - Loudness history was already present, but now filters consistently to the active service type and caps visible history at 10 entries.
+
+#### PCO plan picker
+
+- **Plan ordering** (`src/components/layout/QuickCreateModal.tsx`):
+  - PCO plans in the picker now sort ascending by event date, which feels more natural when selecting an upcoming or recent plan.
+
+#### Dashboard PCO schedule
+
+- **Dashboard schedule rendering** (`src/screens/Dashboard.tsx`):
+  - "Today's Schedule" now fetches the active event's linked PCO plan times and renders those times in the configured church timezone.
+  - Schedule row status now respects the selected event date so past/future event dashboards do not light up based only on the current clock.
+  - A small `PCO` badge appears when the displayed schedule came from Planning Center.
+  - The original hardcoded schedule remains as a fallback for unlinked events or failed PCO calls.
+
+- **Frontend API helper** (`src/lib/adminApi.ts`):
+  - Added `fetchPcoPlanTimes()` for calling the new protected `pco-plan-times` function with the current session token.
+
+- **New edge function** (`supabase/functions/pco-plan-times/index.ts`):
+  - Added protected `POST { event_id }` endpoint.
+  - Looks up the active event, its `pco_plan_id`, and the service type's `pco_service_type_id`.
+  - Fetches the linked plan's PCO `plan_times`, filters them to the event date in the configured church timezone, and returns them sorted by `starts_at`.
+  - Deployed to the linked Supabase project.
+
+#### PCO token refresh and error handling
+
+- **Token refresh** (`supabase/functions/pco-plans/index.ts`, `supabase/functions/pco-plan-times/index.ts`, `supabase/functions/pco-sync/index.ts`):
+  - All PCO-facing edge functions now select `pco_refresh_token` and `pco_token_expires_at`.
+  - If the PCO access token is expired or near expiry, the function refreshes it with Planning Center and saves the new token metadata back to `user_sessions`.
+  - This fixes the "plan picker shows no plans" and "dashboard keeps showing the hardcoded schedule" symptoms that happened when the Sunday Ops session was still valid but the PCO token had expired.
+
+- **Plan fetch errors** (`supabase/functions/pco-plans/index.ts`):
+  - If every PCO fetch fails for a service type, the function now returns an error instead of silently returning an empty plan group.
+
+#### Repo hygiene
+
+- **Supabase temp state** (`.gitignore`):
+  - Added `supabase/.temp/` so local Supabase CLI state such as project ref and local version files does not appear in Git.
+
+### Verification
+
+- `npm run build` passed.
+- Focused frontend lint for the touched dashboard/API files passed.
+- `deno check` passed for `pco-plans`, `pco-plan-times`, and `pco-sync`.
+- `deno lint` passed for the touched PCO edge functions.
+- Deployed and smoke-tested `pco-plans`, `pco-plan-times`, and `pco-sync` on Supabase.
+- Verified `pco-plans` returned plans for all service types and `pco-plan-times` returned real schedule items for linked April 12 services.
+- Pushed commits:
+  - `a849275 Refine runtime admin controls`
+  - `75a7479 Add service data history and sort PCO plans`
+  - `df9490d Ignore Supabase temp state`
+  - `512e23d Populate dashboard schedule from PCO`
+  - `da16289 Refresh PCO tokens in edge functions`
+
+---
+
 ## 2026-04-12 (Session 6)
 
 ### Summary
@@ -104,7 +186,7 @@ Architectural shift to **fully manual event creation**. All events and services 
 
 ### Notes
 
-- PCO OAuth tokens expire after approximately 2 hours. If the plan picker shows no results, log out and log back in to refresh the token. Token auto-refresh is a future improvement.
+- PCO OAuth tokens expire after approximately 2 hours. Session 7 added token auto-refresh to the PCO-facing edge functions so the plan picker and PCO schedule fetch can continue across a longer Sunday Ops session.
 - After dropping the uniqueness constraint, the `events` table has no duplicate prevention for Sunday services — the team is responsible for not creating duplicate sessions for the same date and time.
 - Previously auto-created Sunday events (from PCO sync runs before this session) remain in the database and are unaffected.
 

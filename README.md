@@ -20,6 +20,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
 - **Manual event creation** — all services (9am, 11am, Special) are created in Sunday Ops via the "New Event" modal; multiple services of the same type can exist on the same date (Easter, extra traditional services, etc.)
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
+- **PCO schedule integration** — the dashboard "Today's Schedule" pulls event-specific plan times from the linked Planning Center plan when available
 - **PCO sync** — updates existing events with PCO plan metadata (name, date); no longer auto-creates Sunday events
 - GitHub Pages deployment
 
@@ -41,6 +42,7 @@ Live now:
 - Runtime fields support ProPresenter's native zero-based timer index. `0` is the first clock.
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
 - Runtime captured-at timestamps display in the configured church timezone, not the device timezone.
+- Runtime field admin controls are inline on the actual runtime list: admins drag the real row to reorder, use the row pencil to edit, and use **Add Runtime** to create a new row in place.
 - Weather location and pull schedule can be configured in the admin UI.
 - Weather is imported automatically on Sundays only via the weather workflow.
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
@@ -63,6 +65,7 @@ Live now:
 - PDF service report intentionally excludes issue photo thumbnails.
 - Historical loudness data imported from the BFC Audio Loudness Log Google Sheet — 144 Sundays (March 2023 – March 2026) via `scripts/import-loudness-history.js`.
 - Loudness Log includes a "Full History PDF" button that generates a styled multi-year report matching the Sunday report aesthetic, grouped by year with per-year averages and goal exceedance flags.
+- Service Data tabs show recent historical context for the active service type: Attendance, Runtimes, Loudness, and Weather include roughly the past 10 Sundays.
 - Sidebar date block has `‹` / `›` chevron arrows to step backward and forward through past Sundays. All screens reload with the selected Sunday's data. Past Sundays show an amber "Historical View" badge and a "Back to Today" link.
 - On weekdays the app defaults to the most recent past Sunday rather than the upcoming one, so data entered during the week lands on the right record. The crossover point ("Sunday Focus Flip") is configurable in Settings.
 - Service phase indicator time boundaries corrected: Pre-Service 7–9am, Service 1 9–10am, Between Services 10–11am, Service 2 11am–noon, Post-Service noon–6pm.
@@ -91,13 +94,18 @@ Live now:
 - **Manual event creation** (`src/components/layout/QuickCreateModal.tsx`):
   - All services created in Sunday Ops via the "New Event" modal: service type, name, date, time, optional PCO plan link, optional checklist template, notes.
   - Multiple services of the same type on the same date are fully supported (dropped uniqueness constraint in migration 033).
-  - PCO plan picker (`supabase/functions/pco-plans/`) shows recent and upcoming plans grouped by service type with search; multiple Sunday Ops events can link to the same PCO plan.
+  - PCO plan picker (`supabase/functions/pco-plans/`) shows recent and upcoming plans grouped by service type with search, sorted ascending by event date; multiple Sunday Ops events can link to the same PCO plan.
+
+- **Dashboard PCO schedule** (`src/screens/Dashboard.tsx`, `supabase/functions/pco-plan-times/`):
+  - The dashboard "Today's Schedule" fetches the active event's linked PCO plan times and displays them in the configured church timezone.
+  - If an event is not linked to PCO or the PCO call fails, the dashboard falls back to the original static schedule.
 
 - **PCO sync** (`supabase/functions/pco-sync/`, `supabase/migrations/023_pco_sync.sql`):
   - Updates existing events with PCO plan metadata (stamps `pco_plan_id`, refreshes name/date).
   - No longer auto-creates Sunday service events — creation is manual only.
   - Special events with explicit PCO titles still auto-create via sync.
   - Called automatically after login and manually via Settings → Sync Now (admin only).
+  - `pco-sync`, `pco-plans`, and `pco-plan-times` refresh expired Planning Center access tokens using the stored refresh token.
 
 - **`service_records` table** (`supabase/migrations/012_create_service_records.sql`) — unified analytics table with one row per service per Sunday, storing attendance, runtimes, loudness, weather, and stream analytics in one place.
 
@@ -106,7 +114,6 @@ Live now:
 Still pending:
 - Real YouTube analytics importer (`scripts/fetch-youtube.js` is a stub)
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
-- PCO OAuth token auto-refresh (tokens expire ~2 hours after login; the PCO plan picker will show no results until the user logs out and back in)
 - Any downstream reporting beyond the Sunday summary email
 
 Completed (previously listed as pending):
@@ -114,6 +121,7 @@ Completed (previously listed as pending):
 - Attendance and loudness data backfilled into `service_records` from legacy tables.
 - Sunday focus direction corrected (app now defaults to most recent past Sunday on weekdays).
 - Evaluation submissions now fail loudly instead of silently.
+- PCO OAuth token auto-refresh is implemented in the PCO-facing edge functions.
 
 ## Tech Stack
 
@@ -235,6 +243,7 @@ Frontend:
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key_here
+VITE_PCO_CLIENT_ID=your_pco_oauth_app_client_id
 VITE_ADMIN_PASSWORD=choose_a_shared_admin_password
 VITE_ENABLE_MONDAY_PUSH=false
 ```
@@ -249,6 +258,8 @@ Server-side scripts / edge functions:
 
 ```bash
 SUPABASE_SERVICE_KEY=your_service_role_key
+PCO_CLIENT_ID=your_pco_oauth_app_client_id
+PCO_CLIENT_SECRET=your_pco_oauth_app_client_secret
 MONDAY_API_TOKEN=your_monday_api_token
 MONDAY_BOARD_ID=your_board_id
 MONDAY_GROUP_ID=optional_group_id
@@ -408,6 +419,7 @@ supabase functions deploy summary-email-admin
 - Summary email recipients are stored in private tables and managed through edge functions rather than direct public table access.
 - The repo now matches the current checklist/runtime data model better than the original generated README did.
 - Scheduled analytics should stay disabled until their backing code exists.
+- `supabase/.temp/` is local Supabase CLI state and is intentionally ignored.
 - A session-level change summary is tracked in `CHANGELOG.md`.
 
 ## Credentials and Security
@@ -419,4 +431,3 @@ supabase functions deploy summary-email-admin
 - The Supabase anon key (`VITE_SUPABASE_ANON_KEY`) is intentionally public — it is embedded in the built frontend and is safe to expose because all sensitive tables are protected by RLS. Do not confuse it with the service role key (`SUPABASE_SERVICE_KEY`), which must never be committed or exposed to the frontend.
 - All other secrets (Monday API token, Google service account key, Gmail delegated credentials) must be added to Supabase project secrets for edge functions and to GitHub Actions secrets for workflows — never hardcoded.
 - When in doubt, treat a value as a secret. If it's genuinely non-sensitive (a feature flag, a public URL, a display name), it's fine in committed config.
-
