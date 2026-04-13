@@ -112,7 +112,16 @@ function RosItemIcon({ type }: { type: string }) {
   return                        <Layers  className="w-3 h-3 flex-shrink-0 text-gray-400" />
 }
 
-function RunOfShow({ items, totalLabel }: { items: PcoPlanItemResult[]; totalLabel: string | null }) {
+function RunOfShow({ items, totalLabel, timezone }: { items: PcoPlanItemResult[]; totalLabel: string | null; timezone: string }) {
+  function formatTime(iso: string) {
+    return new Date(iso).toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', timeZone: timezone,
+    })
+  }
+
+  // Determine if any item has a computed time so we know whether to reserve the time column
+  const hasTimes = items.some(i => i.computed_starts_at)
+
   return (
     <Card className="overflow-hidden flex flex-col">
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-shrink-0">
@@ -133,14 +142,31 @@ function RunOfShow({ items, totalLabel }: { items: PcoPlanItemResult[]; totalLab
             )
           }
           return (
-            <div key={item.id} className={`flex items-center gap-2.5 px-4 py-2 ${i < items.length - 1 ? 'border-b border-gray-50' : ''}`}>
-              <RosItemIcon type={item.item_type} />
-              <span className="text-xs text-gray-700 font-medium flex-1 leading-snug">{item.title}</span>
-              {item.key_name && (
-                <span className="text-[9px] bg-purple-50 text-purple-500 border border-purple-100 px-1 py-0.5 rounded font-bold flex-shrink-0">{item.key_name}</span>
+            <div key={item.id} className={`flex items-start gap-2.5 px-4 py-2 ${i < items.length - 1 ? 'border-b border-gray-50' : ''}`}>
+              {/* Time */}
+              {hasTimes && (
+                <span className="text-[10px] text-gray-400 font-mono w-14 flex-shrink-0 pt-0.5">
+                  {item.computed_starts_at ? formatTime(item.computed_starts_at) : ''}
+                </span>
               )}
+              {/* Icon */}
+              <div className="pt-0.5 flex-shrink-0">
+                <RosItemIcon type={item.item_type} />
+              </div>
+              {/* Title + description */}
+              <div className="flex-1 min-w-0">
+                <span className="text-xs text-gray-700 font-medium leading-snug">{item.title}</span>
+                {item.description && (
+                  <p className="text-[10px] text-gray-400 leading-snug mt-0.5 truncate">{item.description}</p>
+                )}
+              </div>
+              {/* Key badge */}
+              {item.key_name && (
+                <span className="text-[9px] bg-purple-50 text-purple-500 border border-purple-100 px-1 py-0.5 rounded font-bold flex-shrink-0 mt-0.5">{item.key_name}</span>
+              )}
+              {/* Duration */}
               {item.length != null && item.length > 0 && (
-                <span className="text-[10px] text-gray-300 font-mono flex-shrink-0">{formatDuration(item.length)}</span>
+                <span className="text-[10px] text-gray-300 font-mono flex-shrink-0 mt-0.5">{formatDuration(item.length)}</span>
               )}
             </div>
           )
@@ -350,7 +376,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
           {rosItems.length > 0 && (
             <div className="md:col-span-3">
-              <RunOfShow items={rosItems} totalLabel={rosTotalLabel} />
+              <RunOfShow items={rosItems} totalLabel={rosTotalLabel} timezone={timezone} />
             </div>
           )}
         </div>

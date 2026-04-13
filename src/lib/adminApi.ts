@@ -119,14 +119,15 @@ export async function fetchPcoPlanTimes(
 // ── PCO Plan Items (Run of Show) ─────────────────────────────────────────────
 
 export interface PcoPlanItemResult {
-  id:               string
-  sequence:         number
-  title:            string
-  item_type:        string  // 'song' | 'header' | 'item' | 'media'
-  length:           number | null  // seconds
-  description:      string | null
-  service_position: string | null  // 'pre_service' | 'service' | 'post_service'
-  key_name:         string | null  // song key, e.g. 'G', 'A'
+  id:                  string
+  sequence:            number
+  title:               string
+  item_type:           string  // 'song' | 'header' | 'item' | 'media'
+  length:              number | null  // seconds
+  description:         string | null
+  service_position:    string | null  // 'pre_service' | 'service' | 'post_service'
+  key_name:            string | null  // song key, e.g. 'G', 'A'
+  computed_starts_at:  string | null  // ISO timestamp
 }
 
 export async function fetchPcoPlanItems(

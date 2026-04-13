@@ -61,6 +61,16 @@ interface PcoPlanItem {
   }
 }
 
+interface PcoPlanTime {
+  id: string
+  attributes: {
+    starts_at: string | null
+    ends_at:   string | null
+    time_type: string | null
+    name:      string | null
+  }
+}
+
 interface UserSession {
   pco_access_token:     string | null
   pco_refresh_token:    string | null
@@ -68,14 +78,15 @@ interface UserSession {
 }
 
 export interface PcoPlanItemResult {
-  id:               string
-  sequence:         number
-  title:            string
-  item_type:        string
-  length:           number | null
-  description:      string | null
-  service_position: string | null
-  key_name:         string | null
+  id:                  string
+  sequence:            number
+  title:               string
+  item_type:           string
+  length:              number | null
+  description:         string | null
+  service_position:    string | null
+  key_name:            string | null
+  computed_starts_at:  string | null  // ISO timestamp, computed from plan_times + cumulative lengths
 }
 
 function shouldRefreshToken(expiresAt: string | null) {
@@ -220,41 +231,90 @@ Deno.serve(async (req) => {
     return json(cors, 200, { items: [] })
   }
 
-  // ── 3. Fetch plan items from PCO ──────────────────────────────────────────
-  const url = `${PCO_API_BASE}/service_types/${serviceType.pco_service_type_id}`
-    + `/plans/${typedEvent.pco_plan_id}/items`
-    + `?per_page=100&order=sequence`
+  // ── 3. Fetch plan items and plan times from PCO in parallel ──────────────
+  const planBase = `${PCO_API_BASE}/service_types/${serviceType.pco_service_type_id}`
+    + `/plans/${typedEvent.pco_plan_id}`
 
-  let rawItems: PcoPlanItem[] = []
+  const headers = { Authorization: `Bearer ${pcoToken}` }
+
+  let rawItems: PcoPlanItem[]     = []
+  let planTimes: PcoPlanTime[]    = []
+
   try {
-    const pcoRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${pcoToken}` },
-    })
+    const [itemsRes, timesRes] = await Promise.all([
+      fetch(`${planBase}/items?per_page=100&order=sequence`, { headers }),
+      fetch(`${planBase}/plan_times?per_page=25&order=starts_at`, { headers }),
+    ])
 
-    if (!pcoRes.ok) {
-      const errText = await pcoRes.text().catch(() => '')
-      return json(cors, pcoRes.status, {
-        error: `PCO API ${pcoRes.status}: ${errText.slice(0, 200)}`,
-      })
+    if (!itemsRes.ok) {
+      const errText = await itemsRes.text().catch(() => '')
+      return json(cors, itemsRes.status, { error: `PCO items ${itemsRes.status}: ${errText.slice(0, 200)}` })
     }
 
-    const body = await pcoRes.json() as { data: PcoPlanItem[] }
-    rawItems = body.data ?? []
+    const itemsBody = await itemsRes.json() as { data: PcoPlanItem[] }
+    rawItems = itemsBody.data ?? []
+
+    if (timesRes.ok) {
+      const timesBody = await timesRes.json() as { data: PcoPlanTime[] }
+      planTimes = timesBody.data ?? []
+    }
   } catch (err) {
     return json(cors, 502, {
-      error: err instanceof Error ? err.message : 'Unable to fetch PCO plan items',
+      error: err instanceof Error ? err.message : 'Unable to fetch PCO plan data',
     })
   }
 
+  // ── 4. Compute start times for each item ─────────────────────────────────
+  // Find the service start anchor: prefer time_type 'service', fall back to earliest.
+  const serviceTime = planTimes.find(pt => pt.attributes.time_type === 'service')
+    ?? planTimes.find(pt => pt.attributes.time_type === 'service_time')
+    ?? planTimes[0]
+
+  const serviceStartMs = serviceTime?.attributes.starts_at
+    ? Date.parse(serviceTime.attributes.starts_at)
+    : null
+
+  // Partition by service_position
+  const preItems     = rawItems.filter(i => i.attributes.service_position === 'pre_service')
+  const serviceItems = rawItems.filter(i => i.attributes.service_position !== 'pre_service' && i.attributes.service_position !== 'post_service')
+  const postItems    = rawItems.filter(i => i.attributes.service_position === 'post_service')
+
+  // Map from PCO item id → computed ISO start string
+  const startMap = new Map<string, string>()
+
+  if (serviceStartMs !== null) {
+    // Pre-service: work backwards from service start
+    const totalPreMs = preItems.reduce((s, i) => s + (i.attributes.length ?? 0) * 1000, 0)
+    let cursor = serviceStartMs - totalPreMs
+    for (const item of preItems) {
+      startMap.set(item.id, new Date(cursor).toISOString())
+      cursor += (item.attributes.length ?? 0) * 1000
+    }
+
+    // Service items: forward from service start
+    cursor = serviceStartMs
+    for (const item of serviceItems) {
+      startMap.set(item.id, new Date(cursor).toISOString())
+      cursor += (item.attributes.length ?? 0) * 1000
+    }
+
+    // Post-service: continue from where service ended
+    for (const item of postItems) {
+      startMap.set(item.id, new Date(cursor).toISOString())
+      cursor += (item.attributes.length ?? 0) * 1000
+    }
+  }
+
   const items: PcoPlanItemResult[] = rawItems.map((item, idx) => ({
-    id:               item.id,
-    sequence:         item.attributes.sequence ?? idx,
-    title:            item.attributes.title || 'Untitled',
-    item_type:        item.attributes.item_type || 'item',
-    length:           item.attributes.length ?? null,
-    description:      item.attributes.description || null,
-    service_position: item.attributes.service_position || null,
-    key_name:         item.attributes.key_name || null,
+    id:                 item.id,
+    sequence:           item.attributes.sequence ?? idx,
+    title:              item.attributes.title || 'Untitled',
+    item_type:          item.attributes.item_type || 'item',
+    length:             item.attributes.length ?? null,
+    description:        item.attributes.description || null,
+    service_position:   item.attributes.service_position || null,
+    key_name:           item.attributes.key_name || null,
+    computed_starts_at: startMap.get(item.id) ?? null,
   }))
 
   return json(cors, 200, { items })
