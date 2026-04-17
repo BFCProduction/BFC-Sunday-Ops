@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-04-17 (Session 9)
+
+### Summary
+
+Production Docs refinement session. The tab introduced in Session 8 was reshaped from a single scrollable page into a horizontal pill tab bar (Stage Plot / Input List / Run Sheets / Other), matching the Service Data tab pattern. The PDF viewer was made full-width by removing the `max-w-3xl` container constraint, and its height was increased to `calc(100vh - 190px)` so stage plots and run sheets fill the available screen real estate. Storage PDFs now load with `#toolbar=1&zoom=page-fit` in the URL so the browser's native viewer auto-fits the page — fixing the "can't zoom out far enough" complaint on the stage plot. On mobile, an initial solution using an open-in-new-tab button was replaced after user feedback: storage PDFs are now routed through Google Docs Viewer (which renders them as HTML) so they display inline within Sunday Ops with full pinch-to-zoom support. Google Sheets embeds continue to use `htmlview` on both platforms. Production Docs was also moved to appear before Gameday Checklist in both the desktop sidebar and the mobile bottom nav. The README was updated to document the new feature, the `production-docs` storage bucket setup, the Drive sync workflow, and the `034` migration. A stale env var name in `docs-sync.yml` was corrected.
+
+### Completed
+
+#### Production Docs tab bar (`src/screens/ProductionDocs.tsx`)
+
+- Replaced the four stacked sections with a **horizontal pill tab bar** — Stage Plot, Input List, Run Sheets, Other — using the same `bg-gray-100` pill and `bg-white shadow-sm` active tab styling as Service Data.
+- Count badge on each tab shows how many docs are attached; badge color shifts to `bg-blue-100 text-blue-700` on the active tab.
+- Only the active tab's docs are shown below the bar; switching tabs is instant (no network call).
+- First doc in the active tab auto-expands on load so the document is immediately visible.
+- "Add Document" modal pre-fills its type selector to the currently active tab.
+- When a new doc is added, the active tab jumps to that doc's type.
+- Empty state includes a hint: "Drive sync runs hourly · admins can add files manually above".
+
+#### PDF viewer size and zoom (`src/screens/ProductionDocs.tsx`)
+
+- Removed the `max-w-3xl mx-auto` outer wrapper — the viewer now fills the full content area (screen width minus the 260px sidebar on desktop).
+- Iframe height changed from a fixed `520px` / `620px` to `calc(100vh - 190px)`, giving a tall, near-full-screen viewer on all desktop sizes.
+- Storage PDF URLs get `#toolbar=1&zoom=page-fit` appended so the browser's built-in PDF viewer auto-fits the page on initial load. Fixes the "can't zoom out far enough on the stage plot" issue.
+
+#### Mobile inline PDF viewing with pinch-to-zoom (`src/screens/ProductionDocs.tsx`)
+
+- Initial implementation used an "Open PDF / Open in Drive" button on mobile. Replaced after user feedback — the goal is inline viewing within the app.
+- Storage PDFs on mobile are now routed through `https://docs.google.com/viewer?url=…&embedded=true`, which renders the PDF as HTML inside the iframe. This gives proper pinch-to-zoom within Sunday Ops on iOS and Android.
+- Desktop continues to use the native browser PDF viewer (unchanged).
+- Google Sheets `htmlview` embeds are used as-is on both platforms.
+- Mobile detection uses `window.innerWidth < 768` at render time — no media query listener needed.
+
+#### Navigation reorder (`src/components/layout/Sidebar.tsx`, `src/components/layout/MobileTabs.tsx`)
+
+- Production Docs moved to appear immediately before Gameday Checklist in both the desktop sidebar nav and the mobile bottom pill nav.
+- Mobile tab order is now: Docs · Checklist · Issues · Service · Eval.
+
+#### README and docs updates
+
+- Production Docs added to the "Current Scope" feature list.
+- Migration `034_production_docs.sql` added to the migrations list.
+- New `### production-docs bucket` section in "Supabase Storage" with bucket setup SQL and Drive sync configuration instructions (service account access, folder ID, filename convention).
+- `docs-sync.yml` added to the "GitHub Workflows" list.
+- Fixed stale env var name in `docs-sync.yml` comment: `DRIVE_SUNDAY_MORNINGS_FOLDER_ID` → `DRIVE_PRODUCTION_DOCS_FOLDER_ID`.
+
+### Verification
+
+- `npx tsc --noEmit` passed clean after each PR.
+- Commits merged:
+  - `4124fe5` Refine Production Docs tab layout and viewer
+  - `fced79e` Use Google Docs Viewer for PDFs on mobile for inline pinch-to-zoom
+
+---
+
 ## 2026-04-13 (Session 8)
 
 ### Summary

@@ -24,6 +24,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **PCO Run of Show** — the dashboard pulls the ordered plan items from the linked PCO plan and displays them as a scrollable Run of Show card with computed start times, type icons, song keys, durations, and item descriptions
 - **PCO sync** — updates existing events with PCO plan metadata (name, date); no longer auto-creates Sunday events
 - **Mobile floating pill nav** — bottom navigation on mobile is a dark floating pill (80% width, centered) with white active state and a blue dot indicator
+- **Production Docs** — per-event stage plots, input lists, run sheets, and other files; Google Drive auto-sync via a service account + filename convention; manual upload (PDF) or Drive/Sheets link via admin UI; horizontal tab bar, full-width inline viewer on desktop, Google Docs Viewer on mobile for pinch-to-zoom
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -209,6 +210,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/031_email_tables_service_role_grant.sql`
 - `supabase/migrations/032_runtime_fields_analytics_key.sql`
 - `supabase/migrations/033_drop_sunday_uniqueness.sql`
+- `supabase/migrations/034_production_docs.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -346,9 +348,11 @@ Notes:
 
 ## Supabase Storage
 
-The `issue-photos` bucket stores photos attached to issue log entries.
+### `issue-photos` bucket
 
-### Setup
+Stores photos attached to issue log entries.
+
+#### Setup
 
 1. Create a bucket named `issue-photos` in the Supabase dashboard → Storage.
 2. Set the bucket to **Public** (enables public URL access for thumbnails).
@@ -366,12 +370,52 @@ grant select, insert, update, delete on table issue_photos to anon;
 grant select, insert, update, delete on table issue_photos to authenticated;
 ```
 
+### `production-docs` bucket
+
+Stores PDFs and other files attached to production doc records.
+
+#### Setup
+
+1. Create a bucket named `production-docs` in the Supabase dashboard → Storage.
+2. Set the bucket to **Public** (enables public URL access for inline viewing).
+3. Run the following in the SQL Editor:
+
+```sql
+create policy "allow public uploads" on storage.objects
+  for insert to public with check (bucket_id = 'production-docs');
+create policy "allow public reads" on storage.objects
+  for select to public using (bucket_id = 'production-docs');
+create policy "allow public deletes" on storage.objects
+  for delete to public using (bucket_id = 'production-docs');
+```
+
+4. Run migration `034_production_docs.sql` to create the `production_docs` table.
+
+#### Drive sync setup
+
+The `docs-sync.yml` workflow uses a Google service account to read the `01 Sunday Mornings` subfolder inside the BFC production docs parent folder. Required secrets (same Google service account used for the summary email):
+
+- `GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL`
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+
+The service account must have at least **Viewer** access to the `00 Production Documents for this week` parent folder. The folder ID is hard-coded in `scripts/sync-production-docs.js` and can be overridden via the `DRIVE_PRODUCTION_DOCS_FOLDER_ID` environment variable.
+
+Files must follow the BFC filename convention to be picked up by the sync:
+
+```
+YYYY.MM.DD.S - Description[.ext]   → service-specific  (S=1 → 9am, S=2 → 11am)
+YYYY.MM.DD - Description[.ext]     → all services on that date
+```
+
+Doc type is inferred from the description: "Stage Plot", "Input List" / "IO", "Run Sheet", or "Other".
+
 ## GitHub Workflows
 
 - `deploy.yml`: builds and deploys to GitHub Pages on push to `main`
 - `summary-email.yml`: checks every 15 minutes on Sunday and sends the summary email once the configured local send time has passed
 - `sunday-analytics.yml`: manual-only placeholder workflow until real analytics importers are added
 - `weather-import.yml`: runs every 5 minutes **on Sundays only** and imports weather once the configured day/time has passed
+- `docs-sync.yml`: runs every hour and syncs production docs from the Google Drive `01 Sunday Mornings` folder into Supabase Storage; exits cleanly if there is nothing new
 
 ## Monday.com Push
 
