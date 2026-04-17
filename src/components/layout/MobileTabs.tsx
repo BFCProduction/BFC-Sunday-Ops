@@ -10,11 +10,11 @@ interface MobileTabsProps {
 
 // Dashboard is intentionally absent — tap the header logo to go there.
 const tabs = [
+  { id: 'docs'       as Screen, label: 'Docs',       icon: FolderOpen      },
   { id: 'checklist'  as Screen, label: 'Checklist',  icon: ClipboardCheck  },
   { id: 'issues'     as Screen, label: 'Issues',     icon: AlertTriangle   },
   { id: 'data'       as Screen, label: 'Service',    icon: BarChart2       },
   { id: 'evaluation' as Screen, label: 'Eval',       icon: Star            },
-  { id: 'docs'       as Screen, label: 'Docs',       icon: FolderOpen      },
 ]
 
 export function MobileTabs({ active, setActive, issueCount }: MobileTabsProps) {

@@ -25,11 +25,11 @@ interface SidebarProps {
 
 const navItems = [
   { id: 'dashboard'   as Screen, label: 'Dashboard',               icon: LayoutDashboard },
+  { id: 'docs'        as Screen, label: 'Production Docs',          icon: FolderOpen      },
   { id: 'checklist'   as Screen, label: 'Gameday Checklist',        icon: ClipboardCheck  },
   { id: 'issues'      as Screen, label: 'Issue Log',                icon: AlertTriangle   },
   { id: 'data'        as Screen, label: 'Service Data',             icon: BarChart2       },
   { id: 'evaluation'  as Screen, label: 'Post-Service Evaluation',  icon: Star            },
-  { id: 'docs'        as Screen, label: 'Production Docs',          icon: FolderOpen      },
 ]
 
 export function Sidebar({ active, setActive, issueCount, allSessions, onSessionsChange }: SidebarProps) {
