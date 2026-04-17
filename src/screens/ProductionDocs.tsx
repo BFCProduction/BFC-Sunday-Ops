@@ -243,10 +243,17 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
   const viewUrl = getViewUrl(doc)
   const isSheet = !doc.storage_path && !!doc.gdrive_file_id
 
-  // Append zoom hint for browser-native PDF viewer
-  const iframeSrc = viewUrl && doc.storage_path
-    ? `${viewUrl}#toolbar=1&zoom=page-fit`
-    : viewUrl
+  // On mobile, route storage PDFs through Google Docs Viewer (renders as HTML,
+  // supports pinch-to-zoom). Desktop uses the native browser PDF viewer.
+  const isMobile = window.innerWidth < 768
+  const iframeSrc = (() => {
+    if (!viewUrl) return null
+    if (doc.storage_path && isMobile) {
+      return `https://docs.google.com/viewer?url=${encodeURIComponent(viewUrl)}&embedded=true`
+    }
+    if (doc.storage_path) return `${viewUrl}#toolbar=1&zoom=page-fit`
+    return viewUrl
+  })()
 
   async function handleDelete() {
     setDeleting(true)
@@ -340,28 +347,13 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
       {/* Viewer */}
       {expanded && viewUrl && (
         <div className="border-t border-gray-200">
-          {/* Desktop: full-width inline iframe */}
-          <div className="hidden md:block">
-            <iframe
-              src={iframeSrc ?? undefined}
-              className="w-full border-0 block"
-              style={{ height: 'calc(100vh - 190px)' }}
-              title={doc.title}
-              sandbox={isSheet ? 'allow-scripts allow-same-origin allow-popups' : undefined}
-            />
-          </div>
-          {/* Mobile: open-in-new-tab button — iframes block pinch-zoom on iOS */}
-          <div className="md:hidden px-4 py-5">
-            <a
-              href={viewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm active:bg-blue-800 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              {doc.storage_path ? 'Open PDF' : 'Open in Drive'}
-            </a>
-          </div>
+          <iframe
+            src={iframeSrc ?? undefined}
+            className="w-full border-0 block"
+            style={{ height: 'calc(100vh - 190px)' }}
+            title={doc.title}
+            sandbox={isSheet ? 'allow-scripts allow-same-origin allow-popups' : undefined}
+          />
         </div>
       )}
 
