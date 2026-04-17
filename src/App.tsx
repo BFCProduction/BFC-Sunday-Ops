@@ -19,9 +19,10 @@ import { ServiceData }    from './screens/ServiceData'
 import { Evaluation }     from './screens/Evaluation'
 import { Analytics }      from './screens/Analytics'
 import { Settings }       from './screens/Settings'
+import { ProductionDocs } from './screens/ProductionDocs'
 import type { Session }   from './types'
 
-export type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings'
+export type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
 
 // ── Root: provides auth context ───────────────────────────────────────────────
 export default function App() {
@@ -209,7 +210,7 @@ function AppMain() {
       navigateToEvent, navigateSunday,
     }}>
       <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#111827' }}>
-        <SiteHeader allSessions={allSessions} />
+        <SiteHeader allSessions={allSessions} onGoToDashboard={() => setScreen('dashboard')} />
         <div className="flex flex-1 min-h-0">
           <Sidebar
             active={screen}
@@ -226,6 +227,7 @@ function AppMain() {
             {screen === 'evaluation' && <Evaluation />}
             {screen === 'analytics'  && <Analytics />}
             {screen === 'settings'   && <Settings onSessionsChange={setAllSessions} />}
+            {screen === 'docs'       && <ProductionDocs />}
           </main>
         </div>
         <MobileTabs active={screen} setActive={setScreen} issueCount={issueCount} />

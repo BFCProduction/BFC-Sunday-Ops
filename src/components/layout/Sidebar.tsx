@@ -3,7 +3,7 @@ import {
   LayoutDashboard, ClipboardCheck, AlertTriangle,
   BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
   Settings, ChevronLeft, ChevronRight, RotateCcw, TrendingUp,
-  CalendarDays, ChevronDown, Plus,
+  CalendarDays, ChevronDown, Plus, FolderOpen,
 } from 'lucide-react'
 import { SessionPicker } from './SessionPicker'
 import { QuickCreateModal } from './QuickCreateModal'
@@ -13,7 +13,7 @@ import { getServicePhase, type ServicePhase } from '../../lib/serviceStatus'
 import { useSunday } from '../../context/SundayContext'
 import type { Session } from '../../types'
 
-type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings'
+type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
 
 interface SidebarProps {
   active: Screen
@@ -29,6 +29,7 @@ const navItems = [
   { id: 'issues'      as Screen, label: 'Issue Log',                icon: AlertTriangle   },
   { id: 'data'        as Screen, label: 'Service Data',             icon: BarChart2       },
   { id: 'evaluation'  as Screen, label: 'Post-Service Evaluation',  icon: Star            },
+  { id: 'docs'        as Screen, label: 'Production Docs',          icon: FolderOpen      },
 ]
 
 export function Sidebar({ active, setActive, issueCount, allSessions, onSessionsChange }: SidebarProps) {
