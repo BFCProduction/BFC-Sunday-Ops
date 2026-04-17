@@ -1,6 +1,6 @@
-import { LayoutDashboard, ClipboardCheck, AlertTriangle, BarChart2, Star } from 'lucide-react'
+import { ClipboardCheck, AlertTriangle, BarChart2, Star, FolderOpen } from 'lucide-react'
 
-type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings'
+type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
 
 interface MobileTabsProps {
   active: Screen
@@ -8,12 +8,13 @@ interface MobileTabsProps {
   issueCount: number
 }
 
+// Dashboard is intentionally absent — tap the header logo to go there.
 const tabs = [
-  { id: 'dashboard'  as Screen, label: 'Dashboard',  icon: LayoutDashboard },
   { id: 'checklist'  as Screen, label: 'Checklist',  icon: ClipboardCheck  },
   { id: 'issues'     as Screen, label: 'Issues',     icon: AlertTriangle   },
   { id: 'data'       as Screen, label: 'Service',    icon: BarChart2       },
   { id: 'evaluation' as Screen, label: 'Eval',       icon: Star            },
+  { id: 'docs'       as Screen, label: 'Docs',       icon: FolderOpen      },
 ]
 
 export function MobileTabs({ active, setActive, issueCount }: MobileTabsProps) {

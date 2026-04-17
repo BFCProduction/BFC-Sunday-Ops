@@ -1,0 +1,26 @@
+name: Production Docs Sync
+on:
+  schedule:
+    # Every hour, every day. The script exits cleanly if there's nothing new.
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sync-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - name: Sync production docs from Google Drive
+        run: node scripts/sync-production-docs.js
+        env:
+          SUPABASE_URL:                          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:                  ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL:   ${{ secrets.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:    ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          # Optional override if the folder ID ever changes:
+          # DRIVE_SUNDAY_MORNINGS_FOLDER_ID: ${{ secrets.DRIVE_SUNDAY_MORNINGS_FOLDER_ID }}

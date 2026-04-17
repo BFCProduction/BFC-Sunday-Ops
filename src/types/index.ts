@@ -193,6 +193,21 @@ export interface EventChecklistCompletion {
   completed_at: string
 }
 
+// ── Production Documents ──────────────────────────────────────────────────────
+
+export interface ProductionDoc {
+  id: string
+  event_id: string
+  doc_type: 'stage_plot' | 'input_list' | 'run_sheet' | 'other'
+  title: string
+  storage_path: string | null      // Supabase Storage path (production-docs bucket)
+  gdrive_file_id: string | null    // Google Drive file ID
+  gdrive_url: string | null        // Google Drive webViewLink
+  source: 'drive_sync' | 'manual'
+  synced_at: string | null
+  uploaded_at: string
+}
+
 // ── Unified Event Model ───────────────────────────────────────────────────────
 
 /** A service type definition (Sunday 9am, 11am, Special Events, etc.) */

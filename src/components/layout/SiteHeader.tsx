@@ -9,9 +9,10 @@ import type { Session } from '../../types'
 
 interface SiteHeaderProps {
   allSessions: Session[]
+  onGoToDashboard: () => void
 }
 
-export function SiteHeader({ allSessions }: SiteHeaderProps) {
+export function SiteHeader({ allSessions, onGoToDashboard }: SiteHeaderProps) {
   const {
     timezone, activeEventId, sessionDate,
     serviceTypeSlug, serviceTypeColor, eventName,
@@ -51,12 +52,16 @@ export function SiteHeader({ allSessions }: SiteHeaderProps) {
     >
       {/* Main header row */}
       <div className="flex items-center justify-between px-4 md:px-6 h-14">
-        {/* Left: logo + app name */}
-        <div className="flex items-center gap-3">
+        {/* Left: logo + app name — clicking goes to Dashboard */}
+        <button
+          onClick={onGoToDashboard}
+          className="flex items-center gap-3 rounded-lg px-1 py-0.5 hover:opacity-80 transition-opacity"
+          title="Go to Dashboard"
+        >
           <img src={bfcLogo} alt="BFC Production" className="h-6 md:h-7 w-auto object-contain" />
           <span className="hidden md:inline text-gray-600 mx-1 text-sm">·</span>
           <span className="hidden md:inline text-gray-400 text-sm">Sunday Ops</span>
-        </div>
+        </button>
 
         {/* Right: service phase + user identity */}
         <div className="flex items-center gap-3 md:gap-5">
