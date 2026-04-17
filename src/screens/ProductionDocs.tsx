@@ -19,9 +19,6 @@ const DOC_TYPES = [
 
 type DocTypeId = typeof DOC_TYPES[number]['id']
 
-// For stage_plot and input_list there's normally one file; show it open by default.
-const AUTO_EXPAND_TYPES: DocTypeId[] = ['stage_plot', 'input_list']
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getViewUrl(doc: ProductionDoc): string | null {
@@ -30,7 +27,6 @@ function getViewUrl(doc: ProductionDoc): string | null {
     return data.publicUrl
   }
   if (doc.gdrive_file_id) {
-    // Sheets htmlview embed (read-only, works for org-shared files)
     return `https://docs.google.com/spreadsheets/d/${doc.gdrive_file_id}/htmlview?rm=minimal`
   }
   return doc.gdrive_url ?? null
@@ -42,7 +38,6 @@ function extractSheetId(url: string): string | null {
 }
 
 function extractDriveFileId(url: string): string | null {
-  // Handles /file/d/{id}/... and id= query params
   const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/) ?? url.match(/[?&]id=([a-zA-Z0-9_-]+)/)
   return m?.[1] ?? null
 }
@@ -51,18 +46,19 @@ function extractDriveFileId(url: string): string | null {
 
 interface AddDocModalProps {
   eventId: string
+  defaultDocType: DocTypeId
   onAdded: (doc: ProductionDoc) => void
   onClose: () => void
 }
 
-function AddDocModal({ eventId, onAdded, onClose }: AddDocModalProps) {
-  const [title,    setTitle]    = useState('')
-  const [docType,  setDocType]  = useState<DocTypeId>('other')
-  const [mode,     setMode]     = useState<'upload' | 'link'>('upload')
-  const [file,     setFile]     = useState<File | null>(null)
-  const [linkUrl,  setLinkUrl]  = useState('')
-  const [saving,   setSaving]   = useState(false)
-  const [error,    setError]    = useState('')
+function AddDocModal({ eventId, defaultDocType, onAdded, onClose }: AddDocModalProps) {
+  const [title,   setTitle]   = useState('')
+  const [docType, setDocType] = useState<DocTypeId>(defaultDocType)
+  const [mode,    setMode]    = useState<'upload' | 'link'>('upload')
+  const [file,    setFile]    = useState<File | null>(null)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -91,7 +87,6 @@ function AddDocModal({ eventId, onAdded, onClose }: AddDocModalProps) {
         onAdded(data as ProductionDoc)
 
       } else {
-        // Link mode — Google Sheets or generic Drive URL
         if (!linkUrl.trim()) { setError('Paste a Google Drive or Sheets URL'); setSaving(false); return }
 
         const sheetId = extractSheetId(linkUrl)
@@ -123,7 +118,6 @@ function AddDocModal({ eventId, onAdded, onClose }: AddDocModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-        {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Add Document</h2>
           <button onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
@@ -132,7 +126,6 @@ function AddDocModal({ eventId, onAdded, onClose }: AddDocModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
-          {/* Title */}
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1">Title</label>
             <input
@@ -143,7 +136,6 @@ function AddDocModal({ eventId, onAdded, onClose }: AddDocModalProps) {
             />
           </div>
 
-          {/* Doc type */}
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1">Type</label>
             <select
@@ -157,7 +149,6 @@ function AddDocModal({ eventId, onAdded, onClose }: AddDocModalProps) {
             </select>
           </div>
 
-          {/* Mode toggle */}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
             <button
               type="button"
@@ -245,12 +236,17 @@ interface DocCardProps {
 }
 
 function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardProps) {
-  const [expanded,  setExpanded]  = useState(defaultExpanded)
-  const [deleting,  setDeleting]  = useState(false)
+  const [expanded,   setExpanded]   = useState(defaultExpanded)
+  const [deleting,   setDeleting]   = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
 
   const viewUrl = getViewUrl(doc)
   const isSheet = !doc.storage_path && !!doc.gdrive_file_id
+
+  // Append zoom hint for browser-native PDF viewer
+  const iframeSrc = viewUrl && doc.storage_path
+    ? `${viewUrl}#toolbar=1&zoom=page-fit`
+    : viewUrl
 
   async function handleDelete() {
     setDeleting(true)
@@ -266,7 +262,7 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
   }
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
+    <div className="border border-gray-200 rounded-xl overflow-hidden mb-3">
       {/* Card header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-gray-50">
         <button
@@ -286,7 +282,7 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
         </button>
 
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Open in Drive link */}
+          {/* Open in Drive */}
           {doc.gdrive_url && (
             <a
               href={doc.gdrive_url}
@@ -298,7 +294,7 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
-          {/* Download link for storage PDFs */}
+          {/* Open storage PDF */}
           {doc.storage_path && viewUrl && (
             <a
               href={viewUrl}
@@ -341,78 +337,40 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
         </div>
       </div>
 
-      {/* Inline viewer */}
+      {/* Viewer */}
       {expanded && viewUrl && (
         <div className="border-t border-gray-200">
-          {isSheet ? (
+          {/* Desktop: full-width inline iframe */}
+          <div className="hidden md:block">
             <iframe
-              src={viewUrl}
-              className="w-full border-0"
-              style={{ height: '520px' }}
+              src={iframeSrc ?? undefined}
+              className="w-full border-0 block"
+              style={{ height: 'calc(100vh - 190px)' }}
               title={doc.title}
-              sandbox="allow-scripts allow-same-origin allow-popups"
+              sandbox={isSheet ? 'allow-scripts allow-same-origin allow-popups' : undefined}
             />
-          ) : (
-            <iframe
-              src={viewUrl}
-              className="w-full border-0"
-              style={{ height: '620px' }}
-              title={doc.title}
-            />
-          )}
+          </div>
+          {/* Mobile: open-in-new-tab button — iframes block pinch-zoom on iOS */}
+          <div className="md:hidden px-4 py-5">
+            <a
+              href={viewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-blue-600 text-white font-semibold text-sm active:bg-blue-800 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              {doc.storage_path ? 'Open PDF' : 'Open in Drive'}
+            </a>
+          </div>
         </div>
       )}
 
       {expanded && !viewUrl && (
         <div className="px-4 py-6 text-center text-sm text-gray-400 border-t border-gray-100">
-          No viewable URL — <a href={doc.gdrive_url ?? '#'} className="text-blue-500 underline" target="_blank" rel="noopener noreferrer">open in Drive</a>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Section ───────────────────────────────────────────────────────────────────
-
-interface SectionProps {
-  typeId:   DocTypeId
-  label:    string
-  Icon:     React.ElementType
-  docs:     ProductionDoc[]
-  isAdmin:  boolean
-  onDelete: (id: string) => void
-}
-
-function Section({ typeId, label, Icon, docs, isAdmin, onDelete }: SectionProps) {
-  const isEmpty = docs.length === 0
-
-  return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className="w-4 h-4 text-gray-400" />
-        <h3 className="text-sm font-semibold text-gray-700">{label}</h3>
-        {docs.length > 0 && (
-          <span className="text-[11px] text-gray-400 bg-gray-100 rounded-full px-1.5 py-0.5 font-medium">
-            {docs.length}
-          </span>
-        )}
-      </div>
-
-      {isEmpty ? (
-        <div className="border border-dashed border-gray-200 rounded-xl px-4 py-5 text-center text-sm text-gray-400">
-          No {label.toLowerCase()} attached yet
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {docs.map(doc => (
-            <DocCard
-              key={doc.id}
-              doc={doc}
-              defaultExpanded={AUTO_EXPAND_TYPES.includes(typeId)}
-              isAdmin={isAdmin}
-              onDelete={onDelete}
-            />
-          ))}
+          No viewable URL —{' '}
+          <a href={doc.gdrive_url ?? '#'} className="text-blue-500 underline" target="_blank" rel="noopener noreferrer">
+            open in Drive
+          </a>
         </div>
       )}
     </div>
@@ -427,9 +385,9 @@ export function ProductionDocs() {
 
   const [docs,         setDocs]         = useState<ProductionDoc[]>([])
   const [loading,      setLoading]      = useState(true)
+  const [activeTab,    setActiveTab]    = useState<DocTypeId>('stage_plot')
   const [showAddModal, setShowAddModal] = useState(false)
 
-  // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeEventId) return
     setLoading(true)
@@ -444,25 +402,25 @@ export function ProductionDocs() {
       })
   }, [activeEventId])
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
   function handleAdded(doc: ProductionDoc) {
     setDocs(prev => [...prev, doc])
+    setActiveTab(doc.doc_type as DocTypeId)
   }
 
   function handleDeleted(id: string) {
     setDocs(prev => prev.filter(d => d.id !== id))
   }
 
-  // ── Group by type ─────────────────────────────────────────────────────────
   const docsByType = Object.fromEntries(
     DOC_TYPES.map(t => [t.id, docs.filter(d => d.doc_type === t.id)])
   ) as Record<DocTypeId, ProductionDoc[]>
+
+  const activeDocs = docsByType[activeTab] ?? []
 
   const lastSynced = docs
     .filter(d => d.synced_at)
     .sort((a, b) => (b.synced_at! > a.synced_at! ? 1 : -1))[0]?.synced_at
 
-  // ── Render ────────────────────────────────────────────────────────────────
   const dateLabel = sessionDate
     ? new Date(sessionDate + 'T12:00:00').toLocaleDateString('en-US', {
         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -478,49 +436,88 @@ export function ProductionDocs() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-5 py-6 space-y-8">
-      {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Production Docs</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{serviceTypeName} · {dateLabel}</p>
-          {lastSynced && (
-            <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1">
-              <RefreshCw className="w-3 h-3" />
-              Last synced {new Date(lastSynced).toLocaleString('en-US', {
-                month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-              })}
-            </p>
+    <div className="fade-in">
+      {/* Sticky header + tab bar — matches ServiceData pattern */}
+      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-5 pt-4 pb-3">
+        <div className="flex items-start justify-between gap-4 mb-2.5">
+          <div>
+            <h2 className="text-gray-900 font-bold text-lg">Production Docs</h2>
+            <p className="text-sm text-gray-500">{serviceTypeName} · {dateLabel}</p>
+            {lastSynced && (
+              <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
+                <RefreshCw className="w-3 h-3" />
+                Last synced {new Date(lastSynced).toLocaleString('en-US', {
+                  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                })}
+              </p>
+            )}
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors flex-shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              Add Document
+            </button>
           )}
         </div>
-        {isAdmin && (
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors flex-shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            Add Document
-          </button>
+
+        {/* Horizontal doc-type tabs */}
+        <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5 w-fit">
+          {DOC_TYPES.map(t => {
+            const count = docsByType[t.id].length
+            const isActive = activeTab === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
+                  isActive ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t.label}
+                {count > 0 && (
+                  <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none ${
+                    isActive ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Doc list for active tab */}
+      <div className="p-5">
+        {activeDocs.length === 0 ? (
+          <div className="border border-dashed border-gray-200 rounded-xl px-4 py-10 text-center">
+            <p className="text-sm text-gray-400">
+              No {DOC_TYPES.find(t => t.id === activeTab)?.label.toLowerCase()} attached yet
+            </p>
+            <p className="text-[11px] text-gray-300 mt-1">
+              Drive sync runs hourly · admins can add files manually above
+            </p>
+          </div>
+        ) : (
+          activeDocs.map((doc, i) => (
+            <DocCard
+              key={doc.id}
+              doc={doc}
+              defaultExpanded={i === 0}
+              isAdmin={isAdmin}
+              onDelete={handleDeleted}
+            />
+          ))
         )}
       </div>
 
-      {/* Sections */}
-      {DOC_TYPES.map(({ id, label, icon: Icon }) => (
-        <Section
-          key={id}
-          typeId={id}
-          label={label}
-          Icon={Icon}
-          docs={docsByType[id]}
-          isAdmin={isAdmin}
-          onDelete={handleDeleted}
-        />
-      ))}
-
-      {/* Add modal */}
       {showAddModal && (
         <AddDocModal
           eventId={activeEventId}
+          defaultDocType={activeTab}
           onAdded={handleAdded}
           onClose={() => setShowAddModal(false)}
         />
