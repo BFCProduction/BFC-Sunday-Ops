@@ -22,7 +22,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
 - **PCO schedule integration** — the dashboard "Today's Schedule" pulls event-specific plan times from the linked Planning Center plan when available
 - **PCO Run of Show** — the dashboard pulls the ordered plan items from the linked PCO plan and displays them as a scrollable Run of Show card with computed start times, type icons, song keys, durations, and item descriptions
-- **PCO sync** — updates existing events with PCO plan metadata (name, date); no longer auto-creates Sunday events
+- **PCO sync** — updates existing manually-created events with PCO plan metadata (name, date); no longer auto-creates Sunday Ops events
 - **Mobile floating pill nav** — bottom navigation on mobile is a dark floating pill (80% width, centered) with white active state and a blue dot indicator
 - **Production Docs** — per-event stage plots, input lists, run sheets, and other files; Google Drive auto-sync via a service account + filename convention; manual upload (PDF) or Drive/Sheets link via admin UI; horizontal tab bar, full-width inline viewer on desktop, Google Docs Viewer on mobile for pinch-to-zoom
 - GitHub Pages deployment
@@ -115,8 +115,8 @@ Live now:
 
 - **PCO sync** (`supabase/functions/pco-sync/`, `supabase/migrations/023_pco_sync.sql`):
   - Updates existing events with PCO plan metadata (stamps `pco_plan_id`, refreshes name/date).
-  - No longer auto-creates Sunday service events — creation is manual only.
-  - Special events with explicit PCO titles still auto-create via sync.
+  - No longer auto-creates Sunday Ops events — creation is manual only through the "New Event" modal.
+  - Special events update only when an existing Sunday Ops event is already linked to the same PCO plan.
   - Called automatically after login and manually via Settings → Sync Now (admin only).
   - `pco-sync`, `pco-plans`, `pco-plan-times`, and `pco-plan-items` refresh expired Planning Center access tokens using the stored refresh token.
 
@@ -477,6 +477,7 @@ supabase functions deploy summary-email-admin
 - Scheduled analytics should stay disabled until their backing code exists.
 - `supabase/.temp/` is local Supabase CLI state and is intentionally ignored.
 - A session-level change summary is tracked in `CHANGELOG.md`.
+- As of the April 17, 2026 cleanup, the unified `events` navigation table is intentionally kept to real Sunday Ops usage: March–April 2026 operational sessions plus future events created manually through **New Event**. Historical analytics before March 2026 remain in `service_records` / `analytics_records` and are separate from the removed navigation events.
 
 ## Credentials and Security
 

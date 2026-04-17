@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-04-17 (Session 10)
+
+### Summary
+
+Cleaned up event backlogs created by earlier auto-generation behavior and tightened the sync path so Planning Center no longer creates new Sunday Ops events. The remaining unified event list now starts with March 2026 services and stops before May 2026; future services and special events are expected to be created manually through the **New Event** workflow, with optional PCO linking.
+
+### Completed
+
+- Deleted 715 unified `events` rows dated May 1, 2026 or later from Supabase after saving a local JSON backup.
+- Deleted 282 unified `events` rows dated before March 1, 2026 from Supabase after saving a local JSON backup.
+- Deleted 10 duplicate unified `events` rows for the April 22, 2026 "ARMM Breakfast - ATRIUM" PCO plan after saving a local JSON backup.
+- Deleted 11 additional unneeded special-event rows from April 2026 after saving a local JSON backup: WA Spring Party, Special Events · April 13, all 7 Jadean Murray funeral duplicates, Test Event Sprint 3, and Spring Tea.
+- Deleted 3 final unneeded special-event rows from April 2026 after saving a local JSON backup: Senior Supper, Special Events · April 17, and Robinson Missionary Chapter.
+- Updated `pco-sync` so special events are update-only: linked events can still refresh name/date from PCO, but unmatched PCO special plans are skipped instead of inserted.
+- Preserved manually-entered special-event times during sync when the PCO sync path has no event time to apply.
+- Updated the README to describe PCO sync as fully manual-event based.
+- Fixed the session picker Sunday service ordering so upcoming dates list 9am before 11am while past dates keep reverse-chronological ordering.
+- Deployed the updated `pco-sync` Supabase Edge Function.
+
+### Verification
+
+- `deno check supabase/functions/pco-sync/index.ts` passed.
+- `deno lint supabase/functions/pco-sync/index.ts` passed.
+- `npm run build` passed.
+- Verified Supabase has 0 unified `events` rows on or after May 1, 2026 after cleanup.
+- Verified Supabase has 0 unified `events` rows before March 1, 2026 after cleanup.
+- Verified historical `analytics_records` / `service_records` rows before March 1, 2026 remain intact.
+
+---
+
 ## 2026-04-17 (Session 9)
 
 ### Summary

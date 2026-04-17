@@ -53,6 +53,18 @@ function formatDayLabel(dateStr: string) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
+function sessionTimeValue(s: Session): string {
+  if (s.eventTime) return s.eventTime
+  if (s.serviceTypeSlug === 'sunday-9am') return '09:00:00'
+  if (s.serviceTypeSlug === 'sunday-11am') return '11:00:00'
+  return '23:59:59'
+}
+
+function compareByTime(a: Session, b: Session, descending = false): number {
+  const diff = sessionTimeValue(a).localeCompare(sessionTimeValue(b))
+  return descending ? -diff : diff
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }: Props) {
@@ -143,23 +155,23 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }:
     )
   }
 
-  function DateRow({ dg }: { dg: DateGroup }) {
+  function DateRow({ dg, descending = false }: { dg: DateGroup; descending?: boolean }) {
     return (
       <div className="py-1.5">
-        {[...dg.sundays].sort((a, b) => a.serviceTypeSlug.localeCompare(b.serviceTypeSlug)).map(s => <SundayRow key={s.id} s={s} />)}
+        {[...dg.sundays].sort((a, b) => compareByTime(a, b, descending)).map(s => <SundayRow key={s.id} s={s} />)}
         {dg.specials.map(s => <SpecialRow key={s.id} s={s} />)}
       </div>
     )
   }
 
-  function MonthSection({ mg }: { mg: MonthGroup }) {
+  function MonthSection({ mg, descending = false }: { mg: MonthGroup; descending?: boolean }) {
     return (
       <div>
         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-3 pt-4 pb-1">
           {mg.label}
         </p>
         <div className="divide-y divide-gray-50">
-          {mg.dateGroups.map(dg => <DateRow key={dg.date} dg={dg} />)}
+          {mg.dateGroups.map(dg => <DateRow key={dg.date} dg={dg} descending={descending} />)}
         </div>
       </div>
     )
@@ -245,7 +257,7 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }:
                     <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Past</p>
                     <p className="text-xs text-gray-400">{pastCount} session{pastCount !== 1 ? 's' : ''}</p>
                   </div>
-                  {pastMonths.map(mg => <MonthSection key={mg.monthKey} mg={mg} />)}
+                  {pastMonths.map(mg => <MonthSection key={mg.monthKey} mg={mg} descending />)}
                 </div>
               )}
             </>

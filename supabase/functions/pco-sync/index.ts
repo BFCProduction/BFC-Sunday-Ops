@@ -4,8 +4,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 // ─────────────────────────────────────────────────────────────────────────────
 // pco-sync edge function
 //
-// Pulls upcoming service plans from Planning Center and upserts them into the
-// events table. Called:
+// Pulls upcoming service plans from Planning Center and refreshes matching
+// manually-created Sunday Ops events. Unmatched PCO plans are skipped. Called:
 //   • Automatically after a user logs in (from AuthContext)
 //   • Manually via the "Sync Now" button in Settings (admin only)
 //
@@ -218,7 +218,7 @@ Deno.serve(async (req) => {
   futureDate.setMonth(futureDate.getMonth() + SYNC_MONTHS_AHEAD)
   const futureDateStr = futureDate.toISOString().slice(0, 10)
 
-  // ── 4. Fetch plans and upsert for each service type ───────────────────────
+  // ── 4. Fetch plans and update matching events for each service type ───────
   const results: SyncResult[] = []
   let syncedCount  = 0
   let skippedCount = 0
@@ -299,34 +299,39 @@ Deno.serve(async (req) => {
       const eventTime = DEFAULT_EVENT_TIMES[st.slug] ?? null
       const isSpecial = st.slug === 'special'
 
-      // For Sunday services (9am/11am): upsert on pco_plan_id, OR find the
-      // existing event by (service_type_id, event_date) and stamp it.
-      // For special events: match on pco_plan_id only — multiple specials can
-      // share the same date so we never conflict on (service_type_id, event_date).
+      // Sync only updates matching Sunday Ops events. PCO is no longer allowed
+      // to create events; the "+ New Event" flow is the source of truth.
+      //
+      // Sunday services can fall back to (service_type_id, event_date) so an
+      // unlinked manually-created service can be stamped with its PCO plan.
+      // Specials match by pco_plan_id only because multiple unrelated special
+      // events can share a date.
       let upsertErr: { message: string } | null = null
 
       if (isSpecial) {
-        // Check if this PCO plan already has an events row
         const { data: existing } = await supabase
           .from('events')
           .select('id')
           .eq('pco_plan_id', plan.id)
           .maybeSingle()
 
-        if (existing) {
-          // Update name/date in case PCO changed them
-          const { error: upErr } = await supabase
-            .from('events')
-            .update({ name: eventName, event_date: eventDate, event_time: eventTime })
-            .eq('id', existing.id)
-          upsertErr = upErr
-        } else {
-          // Insert new special event row
-          const { error: insErr } = await supabase
-            .from('events')
-            .insert({ service_type_id: st.id, pco_plan_id: plan.id, name: eventName, event_date: eventDate, event_time: eventTime })
-          upsertErr = insErr
+        if (!existing) {
+          results.push({ pco_plan_id: plan.id, event_date: eventDate, name: eventName, action: 'skipped' })
+          skippedCount++
+          continue
         }
+
+        const updatePayload: Record<string, string | null> = {
+          name:       eventName,
+          event_date: eventDate,
+        }
+        if (eventTime) updatePayload.event_time = eventTime
+
+        const { error: upErr } = await supabase
+          .from('events')
+          .update(updatePayload)
+          .eq('id', existing.id)
+        upsertErr = upErr
       } else {
         // Sunday service: events are now created manually in Sunday Ops.
         // Sync only UPDATES existing events (stamps pco_plan_id and refreshes name).
