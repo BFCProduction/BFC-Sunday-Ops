@@ -29,6 +29,7 @@
 
 import { createClient }      from '@supabase/supabase-js'
 import { google }            from 'googleapis'
+import { createPrivateKey }  from 'crypto'
 import { existsSync, readFileSync } from 'fs'
 import { join, dirname }     from 'path'
 import { fileURLToPath }     from 'url'
@@ -105,15 +106,94 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1)
 }
 
-const SA_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL
-// Replace literal \n sequences in case the key came from an env var set
-// outside this script's own .env.local parser (e.g. GitHub Actions).
-const SA_KEY   = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
+function maybeJsonParse(value) {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function unwrapQuotedEnvValue(raw) {
+  let value = raw.trim()
+  const parsed = maybeJsonParse(value)
+  if (typeof parsed === 'string') return parsed
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1)
+  }
+  return value
+}
+
+function decodeBase64ServiceAccount(value) {
+  const compact = value.replace(/\s/g, '')
+  if (!compact || compact.includes('-----BEGIN')) return null
+  if (!/^[A-Za-z0-9+/=]+$/.test(compact)) return null
+
+  try {
+    const decoded = Buffer.from(compact, 'base64').toString('utf8').trim()
+    return decoded.includes('-----BEGIN') || decoded.startsWith('{') ? decoded : null
+  } catch {
+    return null
+  }
+}
+
+function readServiceAccountCredentials() {
+  const rawEmail = process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL?.trim()
+  const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+  const rawJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_CREDENTIALS
+
+  let jsonCandidate = rawJson ? unwrapQuotedEnvValue(rawJson) : null
+  if (!jsonCandidate && rawKey) {
+    const unwrappedKey = unwrapQuotedEnvValue(rawKey)
+    const decoded = decodeBase64ServiceAccount(unwrappedKey)
+    const maybeJson = decoded ?? unwrappedKey
+    if (maybeJson.trim().startsWith('{')) jsonCandidate = maybeJson
+  }
+
+  const parsedJson = jsonCandidate ? maybeJsonParse(jsonCandidate) : null
+  const email = rawEmail || parsedJson?.client_email
+  const keySource = parsedJson?.private_key || rawKey
+
+  if (!keySource) return { email, key: null }
+
+  let key = unwrapQuotedEnvValue(keySource)
+  key = decodeBase64ServiceAccount(key) ?? key
+
+  const parsedKeyJson = key.trim().startsWith('{') ? maybeJsonParse(key) : null
+  if (parsedKeyJson?.private_key) {
+    return {
+      email: email || parsedKeyJson.client_email,
+      key: parsedKeyJson.private_key.replace(/\\n/g, '\n').trim(),
+    }
+  }
+
+  return {
+    email,
+    key: key.replace(/\\n/g, '\n').trim(),
+  }
+}
+
+const { email: SA_EMAIL, key: SA_KEY } = readServiceAccountCredentials()
 
 if (!SA_EMAIL || !SA_KEY) {
   console.error(
     'Error: GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required.\n' +
     'The service account must have Viewer access to the Sunday Mornings folder in Google Drive.'
+  )
+  process.exit(1)
+}
+
+try {
+  createPrivateKey(SA_KEY)
+} catch (err) {
+  console.error(
+    'Error: GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY could not be parsed as a private key.\n' +
+    'Store either the service-account JSON private_key value, the full service-account JSON in GOOGLE_SERVICE_ACCOUNT_JSON, ' +
+    'or a base64-encoded version of one of those values.\n' +
+    `OpenSSL said: ${err.message}`
   )
   process.exit(1)
 }
