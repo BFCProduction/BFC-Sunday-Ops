@@ -212,6 +212,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/033_drop_sunday_uniqueness.sql`
 - `supabase/migrations/034_production_docs.sql`
 - `supabase/migrations/035_add_ptz_op_checklist_role.sql`
+- `supabase/migrations/036_rename_ptz_op_role_to_ptz.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

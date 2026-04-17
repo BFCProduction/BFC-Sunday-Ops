@@ -133,13 +133,13 @@ export interface IssuePhoto {
 export interface ChecklistItem {
   id: number
   task: string
-  role: 'A1' | 'Video' | 'Graphics' | 'PTZ Op' | 'Lighting' | 'Stage'
+  role: 'A1' | 'Video' | 'Graphics' | 'PTZ' | 'Lighting' | 'Stage'
   section: string
   subsection?: string
   note?: string
 }
 
-export type Role = 'All' | 'A1' | 'Video' | 'Graphics' | 'PTZ Op' | 'Lighting' | 'Stage'
+export type Role = 'All' | 'A1' | 'Video' | 'Graphics' | 'PTZ' | 'Lighting' | 'Stage'
 
 // ── Special Events (legacy — kept for checklist/template system) ──────────────
 

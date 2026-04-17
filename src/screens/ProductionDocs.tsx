@@ -21,6 +21,48 @@ type DocTypeId = typeof DOC_TYPES[number]['id']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function useIsMobileViewport() {
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches)
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(media.matches)
+
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  return isMobile
+}
+
+function useMobileViewerViewportLock() {
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)')
+    if (!media.matches) return
+
+    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+    if (!viewport) return
+
+    const previousContent = viewport.getAttribute('content')
+    const preventAppZoom = (event: Event) => event.preventDefault()
+
+    viewport.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
+    document.addEventListener('gesturestart', preventAppZoom, { passive: false })
+    document.addEventListener('gesturechange', preventAppZoom, { passive: false })
+
+    return () => {
+      document.removeEventListener('gesturestart', preventAppZoom)
+      document.removeEventListener('gesturechange', preventAppZoom)
+      if (previousContent === null) {
+        viewport.removeAttribute('content')
+      } else {
+        viewport.setAttribute('content', previousContent)
+      }
+    }
+  }, [])
+}
+
 function getViewUrl(doc: ProductionDoc): string | null {
   if (doc.storage_path) {
     const { data } = supabase.storage.from('production-docs').getPublicUrl(doc.storage_path)
@@ -239,13 +281,13 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
   const [expanded,   setExpanded]   = useState(defaultExpanded)
   const [deleting,   setDeleting]   = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
+  const isMobile = useIsMobileViewport()
 
   const viewUrl = getViewUrl(doc)
   const isSheet = !doc.storage_path && !!doc.gdrive_file_id
 
   // On mobile, route storage PDFs through Google Docs Viewer (renders as HTML,
   // supports pinch-to-zoom). Desktop uses the native browser PDF viewer.
-  const isMobile = window.innerWidth < 768
   const iframeSrc = (() => {
     if (!viewUrl) return null
     if (doc.storage_path && isMobile) {
@@ -254,6 +296,9 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
     if (doc.storage_path) return `${viewUrl}#toolbar=1&zoom=page-fit`
     return viewUrl
   })()
+  const storageOpenUrl = doc.storage_path && viewUrl
+    ? (isMobile && iframeSrc ? iframeSrc : viewUrl)
+    : null
 
   async function handleDelete() {
     setDeleting(true)
@@ -302,9 +347,9 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
             </a>
           )}
           {/* Open storage PDF */}
-          {doc.storage_path && viewUrl && (
+          {storageOpenUrl && (
             <a
-              href={viewUrl}
+              href={storageOpenUrl}
               target="_blank"
               rel="noopener noreferrer"
               title="Open PDF"
@@ -346,11 +391,14 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
 
       {/* Viewer */}
       {expanded && viewUrl && (
-        <div className="border-t border-gray-200">
+        <div
+          className="border-t border-gray-200"
+          style={{ overscrollBehavior: 'contain', touchAction: doc.storage_path && isMobile ? 'pan-x pan-y' : undefined }}
+        >
           <iframe
             src={iframeSrc ?? undefined}
             className="w-full border-0 block"
-            style={{ height: 'calc(100vh - 190px)' }}
+            style={{ height: 'calc(100vh - 190px)', overscrollBehavior: 'contain' }}
             title={doc.title}
             sandbox={isSheet ? 'allow-scripts allow-same-origin allow-popups' : undefined}
           />
@@ -374,6 +422,7 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
 export function ProductionDocs() {
   const { activeEventId, sessionDate, serviceTypeName } = useSunday()
   const { isAdmin } = useAdmin()
+  useMobileViewerViewportLock()
 
   const [docs,         setDocs]         = useState<ProductionDoc[]>([])
   const [loading,      setLoading]      = useState(true)
