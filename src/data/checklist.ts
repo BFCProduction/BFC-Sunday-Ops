@@ -97,8 +97,10 @@ export const ROLE_COLORS: Record<string, string> = {
   A1: '#f59e0b',
   Video: '#3b82f6',
   Graphics: '#8b5cf6',
+  'PTZ Op': '#06b6d4',
   Lighting: '#f97316',
   Stage: '#10b981',
 }
 
-export const ROLES = ['All', 'A1', 'Video', 'Graphics', 'Lighting', 'Stage'] as const
+export const CHECKLIST_ROLE_OPTIONS = ['A1', 'Video', 'Graphics', 'PTZ Op', 'Lighting', 'Stage'] as const
+export const ROLES = ['All', ...CHECKLIST_ROLE_OPTIONS] as const

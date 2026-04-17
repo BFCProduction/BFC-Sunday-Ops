@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { ROLE_COLORS } from '../../data/checklist'
+import { CHECKLIST_ROLE_OPTIONS, ROLE_COLORS } from '../../data/checklist'
 import type { ChecklistItemRecord } from '../../lib/checklist'
 
 interface Props {
@@ -15,7 +15,6 @@ interface Props {
   onSaved: () => void
 }
 
-const ROLES_LIST = ['A1', 'Video', 'Graphics', 'Lighting', 'Stage']
 const ADD_NEW = '__add_new__'
 
 export function ItemFormModal({ item, defaultSection, defaultServiceTypeSlug, sectionOptions = [], subsectionsBySection = {}, onClose, onSaved }: Props) {
@@ -110,7 +109,7 @@ export function ItemFormModal({ item, defaultSection, defaultServiceTypeSlug, se
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Role *</label>
             <div className="flex flex-wrap gap-2">
-              {ROLES_LIST.map(r => (
+              {CHECKLIST_ROLE_OPTIONS.map(r => (
                 <button key={r} onClick={() => setRole(r)}
                   className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                   style={role === r

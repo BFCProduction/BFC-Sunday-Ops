@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, ChevronRight, ClipboardCheck, BarChart2, Star, Music, Type, Film, Layers } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { ROLE_COLORS } from '../data/checklist'
+import { CHECKLIST_ROLE_OPTIONS, ROLE_COLORS } from '../data/checklist'
 import { loadOrSeedChecklistItems } from '../lib/checklist'
 import { useSunday } from '../context/SundayContext'
 import { useAuth } from '../context/authState'
@@ -268,7 +268,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
   const circ = 2 * Math.PI * 32
   const ringColor = pct === 100 ? '#10b981' : pct > 60 ? '#3b82f6' : '#f59e0b'
 
-  const roleStats = ['A1', 'Video', 'Graphics', 'Lighting', 'Stage'].map(r => {
+  const roleStats = CHECKLIST_ROLE_OPTIONS.map(r => {
     const roleItems = items.filter(i => i.role === r)
     const roleDone = roleItems.filter(i => completedIds.includes(i.id)).length
     return {
@@ -336,7 +336,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
             <div className="hidden md:block w-px h-8 bg-gray-100 flex-shrink-0" />
 
             {/* Role bars — fill remaining space evenly */}
-            <div className="hidden md:grid grid-cols-5 gap-x-4 gap-y-0 flex-1 min-w-0">
+            <div className="hidden md:grid grid-cols-6 gap-x-4 gap-y-0 flex-1 min-w-0">
               {roleStats.map(({ r, done, total, pct: rPct }) => (
                 <div key={r} className="min-w-0">
                   <div className="flex justify-between items-baseline mb-1">
