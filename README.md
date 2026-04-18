@@ -19,6 +19,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
 - **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
 - **Manual event creation** — all services (9am, 11am, Special) are created in Sunday Ops via the "New Event" modal; multiple services of the same type can exist on the same date (Easter, extra traditional services, etc.)
+- **Admin-only event deletion** — admins can delete the currently selected event through the sidebar; deletes are routed through the protected `event-admin` Supabase Edge Function and public `events` table deletes are blocked by migration `037`
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
 - **PCO schedule integration** — the dashboard "Today's Schedule" pulls event-specific plan times from the linked Planning Center plan when available
 - **PCO Run of Show** — the dashboard pulls the ordered plan items from the linked PCO plan and displays them as a scrollable Run of Show card with computed start times, type icons, song keys, durations, and item descriptions
@@ -51,6 +52,7 @@ Live now:
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
 - Monday.com push can be enabled with the edge function and related secrets.
 - Admins can delete issue log entries directly in the app (photos are cleaned up from Storage).
+- Admins can delete the currently selected event from the desktop sidebar; deletion is verified server-side by the `event-admin` Edge Function and direct public deletes on `events` are blocked.
 - Admin Settings page (gear icon in sidebar) provides PDF export, church timezone selection, and summary email management.
 - Church timezone is configurable in Settings and stored in `app_config`; falls back to `America/Chicago`.
 - PDF service report can be exported for the current Sunday or any of the previous 14 Sundays.
@@ -108,6 +110,13 @@ Live now:
   - All services created in Sunday Ops via the "New Event" modal: service type, name, date, time, optional PCO plan link, optional checklist template, notes.
   - Multiple services of the same type on the same date are fully supported (dropped uniqueness constraint in migration 033).
   - PCO plan picker (`supabase/functions/pco-plans/`) shows recent and upcoming plans grouped by service type with search, sorted ascending by event date; multiple Sunday Ops events can link to the same PCO plan.
+
+- **Admin-only event deletion** (`src/components/layout/Sidebar.tsx`, `supabase/functions/event-admin/`, `supabase/migrations/037_admin_only_event_deletes.sql`):
+  - Admins see a **Delete Current Event** action in the desktop sidebar.
+  - The frontend calls the protected `event-admin` Edge Function with the current PCO session token.
+  - The Edge Function verifies the session is still valid and belongs to an admin user before deleting the event.
+  - Deletion cleans up event-scoped issue photo storage objects, production document storage objects, event checklist data, operational rows, and the legacy `special_events` bridge row when present.
+  - Migration `037` removes public delete grants/policies on `events`, so direct anon/authenticated table deletes are blocked even if a non-admin tries to bypass the UI.
 
 - **Dashboard PCO schedule** (`src/screens/Dashboard.tsx`, `supabase/functions/pco-plan-times/`):
   - The dashboard "Today's Schedule" fetches the active event's linked PCO plan times and displays them in the configured church timezone.
@@ -206,13 +215,14 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/027_fix_events_unique_constraint.sql`
 - `supabase/migrations/028_analytics_records_view.sql`
 - `supabase/migrations/029_fix_event_id_fk_to_events.sql`
-- `supabase/migrations/030_service_records_event_native.sql`
+- `supabase/migrations/030_fix_checklist_event_id_fk_to_events.sql`
 - `supabase/migrations/031_email_tables_service_role_grant.sql`
 - `supabase/migrations/032_runtime_fields_analytics_key.sql`
 - `supabase/migrations/033_drop_sunday_uniqueness.sql`
 - `supabase/migrations/034_production_docs.sql`
 - `supabase/migrations/035_add_ptz_op_checklist_role.sql`
 - `supabase/migrations/036_rename_ptz_op_role_to_ptz.sql`
+- `supabase/migrations/037_admin_only_event_deletes.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -469,6 +479,21 @@ Deploy the new edge functions after adding secrets:
 ```bash
 supabase functions deploy admin-session
 supabase functions deploy summary-email-admin
+```
+
+## Admin Event Deletion
+
+Admins can delete the currently selected session from the desktop sidebar. Deletion is intentionally protected in two places:
+
+- The UI only renders the delete action for admins.
+- The `event-admin` Supabase Edge Function verifies the `x-session-token` belongs to an active admin user before deleting anything.
+
+Migration `037_admin_only_event_deletes.sql` removes public delete access from the `events` table. That means event deletion must go through the Edge Function; direct anon/authenticated table deletes are rejected by Supabase.
+
+Deploy the function after adding or changing it:
+
+```bash
+supabase functions deploy event-admin
 ```
 
 ## Notes

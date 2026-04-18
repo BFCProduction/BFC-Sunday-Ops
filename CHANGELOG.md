@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-04-18 (Session 11)
+
+### Summary
+
+Added admin-only deletion for unified Sunday Ops events. Admins now have a guarded **Delete Current Event** action in the desktop sidebar, backed by a protected `event-admin` Supabase Edge Function. The database was also locked down so public clients can no longer delete from the `events` table directly. During deployment, the remote migration history was repaired for migrations `030` through `036` after live schema checks showed those changes had already been applied outside the recorded migration history, then migration `037` was applied normally.
+
+### Completed
+
+- Added **Delete Current Event** to the admin-only sidebar controls in `src/components/layout/Sidebar.tsx`.
+- Added `deleteEventAsAdmin()` to `src/lib/adminApi.ts`.
+- Added `supabase/functions/event-admin/index.ts`:
+  - Verifies the `x-session-token` against `user_sessions`.
+  - Confirms the associated user has `is_admin = true`.
+  - Deletes the target unified `events` row only after admin verification.
+  - Removes event-scoped issue photo storage objects from the `issue-photos` bucket.
+  - Removes event-scoped production document storage objects from the `production-docs` bucket.
+  - Deletes the legacy `special_events` bridge row when the event has `legacy_special_event_id`.
+- Added `supabase/migrations/037_admin_only_event_deletes.sql`:
+  - Replaces the broad `public_all_events` policy with explicit read/insert/update policies.
+  - Revokes `delete` on `public.events` from `anon` and `authenticated`.
+  - Leaves delete capability available to `service_role` for the protected Edge Function path.
+- Deployed the `event-admin` Supabase Edge Function to project `jrvootvytlzrymwoufzu`.
+- Verified the remote migration history was missing `030` through `036`, then checked live schema/API behavior before repairing history:
+  - `event_checklist_items` and `event_checklist_completions` already referenced unified `events.id` values.
+  - `runtime_fields.analytics_key` was selectable.
+  - `production_docs` existed and was selectable.
+  - Summary email tables were accessible with `service_role`.
+- Repaired the remote Supabase migration history for `030` through `036` as applied.
+- Dry-ran `supabase db push` and confirmed only `037_admin_only_event_deletes.sql` remained pending.
+- Applied migration `037` to the remote database.
+- Updated the README to document admin-only event deletion, the `event-admin` function, and migration `037`.
+- Corrected the README migration list entry for migration `030`.
+
+### Verification
+
+- `npm run build` passed.
+- Focused ESLint for changed frontend files passed.
+- `supabase functions deploy event-admin` completed successfully.
+- `supabase migration list` now shows local and remote history aligned through `037`.
+- A no-op anon delete probe against `events` now returns `permission denied for table events`.
+
+### Notes
+
+- The existing untracked `.claude/` directory was left untouched.
+- Full `npm run lint` still reports pre-existing issues in repo files and `.claude` worktrees; this session verified the changed files directly instead.
+
+---
+
 ## 2026-04-17 (Session 10)
 
 ### Summary
