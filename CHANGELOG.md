@@ -4,11 +4,11 @@
 
 ### Summary
 
-Added admin-only deletion for unified Sunday Ops events. Admins now have a guarded **Delete Current Event** action in the desktop sidebar, backed by a protected `event-admin` Supabase Edge Function. The database was also locked down so public clients can no longer delete from the `events` table directly. During deployment, the remote migration history was repaired for migrations `030` through `036` after live schema checks showed those changes had already been applied outside the recorded migration history, then migration `037` was applied normally. Reporting was also brought onto the unified event model: manual exports and automated summary emails now work per service/event instead of per old Sunday shell.
+This session finished the shift from old Sunday-shell reporting to unified event/service reporting. Automated summary emails now send one report per active event/service, manual report export now uses a single event picker, and the printable report template describes one selected event instead of a fixed 9am/11am Sunday rollup. We also added protected admin event deletion, moved that delete action into the desktop session picker, locked down direct public deletes on `events`, repaired remote migration history for already-applied migrations `030` through `036`, and applied migrations `037` and `038`.
 
 ### Completed
 
-- Added **Delete Current Event** to the admin-only sidebar controls in `src/components/layout/Sidebar.tsx`.
+- Added guarded admin event deletion to the desktop session picker in `src/components/layout/SessionPicker.tsx`, wired from `src/components/layout/Sidebar.tsx`.
 - Added `deleteEventAsAdmin()` to `src/lib/adminApi.ts`.
 - Added `supabase/functions/event-admin/index.ts`:
   - Verifies the `x-session-token` against `user_sessions`.
@@ -41,7 +41,7 @@ Added admin-only deletion for unified Sunday Ops events. Admins now have a guard
 - Replaced the two old Settings PDF export controls ("most recent Sunday" and "previous Sunday") with one **Export a Report** picker that targets any unified event/service.
 - Added event-native report export loading for checklist completions, attendance, runtimes, weather, issues, and evaluations, with legacy Sunday fallback for older records.
 - Updated the printable report template from a fixed 9am/11am Sunday rollup to a single selected event/service report.
-- Updated README feature notes to describe event-based report export.
+- Updated README feature notes to describe event-based report export, per-event summary email behavior, and session-picker event deletion.
 
 ### Verification
 

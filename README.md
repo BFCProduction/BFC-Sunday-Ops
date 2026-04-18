@@ -19,7 +19,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
 - **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
 - **Manual event creation** — all services (9am, 11am, Special) are created in Sunday Ops via the "New Event" modal; multiple services of the same type can exist on the same date (Easter, extra traditional services, etc.)
-- **Admin-only event deletion** — admins can delete the currently selected event through the sidebar; deletes are routed through the protected `event-admin` Supabase Edge Function and public `events` table deletes are blocked by migration `037`
+- **Admin-only event deletion** — admins can delete events from the desktop session picker; deletes are routed through the protected `event-admin` Supabase Edge Function and public `events` table deletes are blocked by migration `037`
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
 - **PCO schedule integration** — the dashboard "Today's Schedule" pulls event-specific plan times from the linked Planning Center plan when available
 - **PCO Run of Show** — the dashboard pulls the ordered plan items from the linked PCO plan and displays them as a scrollable Run of Show card with computed start times, type icons, song keys, durations, and item descriptions
@@ -52,12 +52,12 @@ Live now:
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
 - Monday.com push can be enabled with the edge function and related secrets.
 - Admins can delete issue log entries directly in the app (photos are cleaned up from Storage).
-- Admins can delete the currently selected event from the desktop sidebar; deletion is verified server-side by the `event-admin` Edge Function and direct public deletes on `events` are blocked.
+- Admins can delete events from the desktop session picker; deletion is verified server-side by the `event-admin` Edge Function and direct public deletes on `events` are blocked.
 - Admin Settings page (gear icon in sidebar) provides event-based report export, church timezone selection, and summary email management.
 - Church timezone is configurable in Settings and stored in `app_config`; falls back to `America/Chicago`.
 - Report export can generate a PDF-style print report for any unified event/service.
 - Dynamic service phase indicator in the sidebar and header (Pre-Service, Service 1, Between Services, Service 2, Post-Service) updates every 60 seconds.
-- Sunday summary email settings and recipients are managed in Settings → Summary Email.
+- Sunday summary email settings and recipients are managed in Settings → Reporting.
 - Sunday summary email can be sent automatically through Google Workspace Gmail API once the related secrets are configured.
 - Post-service evaluation redesigned: anonymous multi-submission, outcome-based questions, conditional broken-moment detail, collapsible aggregate response view.
 - BFC Production branding applied: logo in header, icon as favicon, iOS home screen icon. App name is "Sunday Ops" throughout.
@@ -67,7 +67,7 @@ Live now:
 - Checklist subsection deduplication enforced — new items land in the existing subsection rather than creating a duplicate.
 - Empty subsections are auto-deleted when the last item referencing them is removed.
 - Loudness Log has separate 9 AM and 11 AM submission buttons, stored as a single row per Sunday (one row, two service readings).
-- PDF service report intentionally excludes issue photo thumbnails.
+- Event/service report export intentionally excludes issue photo thumbnails.
 - Historical loudness data imported from the BFC Audio Loudness Log Google Sheet — 144 Sundays (March 2023 – March 2026) via `scripts/import-loudness-history.js`.
 - Loudness Log includes a "Full History PDF" button that generates a styled multi-year report matching the Sunday report aesthetic, grouped by year with per-year averages and goal exceedance flags.
 - Service Data tabs show recent historical context for the active service type: Attendance, Runtimes, Loudness, and Weather include roughly the past 10 Sundays.
@@ -75,7 +75,7 @@ Live now:
 - On weekdays the app defaults to the most recent past Sunday rather than the upcoming one, so data entered during the week lands on the right record. The crossover point ("Sunday Focus Flip") is configurable in Settings.
 - Service phase indicator time boundaries corrected: Pre-Service 7–9am, Service 1 9–10am, Between Services 10–11am, Service 2 11am–noon, Post-Service noon–6pm.
 - Post-service evaluations now surface Supabase errors on submit instead of silently showing a false success screen.
-- Settings page reorganized into **App Settings** (Timezone, Sunday Focus Flip) and **Reporting** (PDF export, summary email) sections.
+- Settings page reorganized into **App Settings** (Timezone, Sunday Focus Flip) and **Reporting** (event report export, summary email) sections.
 - ProPresenter relay supports a `countdown_target` on any runtime field. When set, the relay reads ProPresenter's timer `state` (`overran` / `complete` / `stopped`) and computes the true elapsed time rather than storing the raw overrun value. Useful for message timers configured as countdown-with-overrun. Set once in the runtime field admin UI.
 - New `--dump-timers` flag on the relay prints the full raw JSON for every timer on every connected ProPresenter host (useful for debugging and field setup).
 
@@ -111,8 +111,8 @@ Live now:
   - Multiple services of the same type on the same date are fully supported (dropped uniqueness constraint in migration 033).
   - PCO plan picker (`supabase/functions/pco-plans/`) shows recent and upcoming plans grouped by service type with search, sorted ascending by event date; multiple Sunday Ops events can link to the same PCO plan.
 
-- **Admin-only event deletion** (`src/components/layout/Sidebar.tsx`, `supabase/functions/event-admin/`, `supabase/migrations/037_admin_only_event_deletes.sql`):
-  - Admins see a **Delete Current Event** action in the desktop sidebar.
+- **Admin-only event deletion** (`src/components/layout/SessionPicker.tsx`, `src/components/layout/Sidebar.tsx`, `supabase/functions/event-admin/`, `supabase/migrations/037_admin_only_event_deletes.sql`):
+  - Admins see a guarded delete action on each event row in the desktop session picker.
   - The frontend calls the protected `event-admin` Edge Function with the current PCO session token.
   - The Edge Function verifies the session is still valid and belongs to an admin user before deleting the event.
   - Deletion cleans up event-scoped issue photo storage objects, production document storage objects, event checklist data, operational rows, and the legacy `special_events` bridge row when present.
@@ -490,9 +490,19 @@ node scripts/send-sunday-summary.js --now --event-id <events-id> --to you@exampl
 node scripts/send-sunday-summary.js --now --force --event-id <events-id>
 ```
 
+## Report Export
+
+Manual report export lives in `Settings -> Reporting` as a single **Export a Report** control.
+
+- The dropdown selects from unified `events`, so reports can target any Sunday service, combined service, extra service, or special event.
+- Reports are generated for one selected event/service at a time, matching the summary email methodology.
+- Event-native data is used first for checklist completions, attendance, runtimes, weather, issues, and evaluations.
+- Older records still work through legacy Sunday fallback where applicable.
+- The export opens a self-contained printable report in a new tab and triggers the browser print dialog.
+
 ## Admin Event Deletion
 
-Admins can delete the currently selected session from the desktop sidebar. Deletion is intentionally protected in two places:
+Admins can delete events from the desktop session picker. Deletion is intentionally protected in two places:
 
 - The UI only renders the delete action for admins.
 - The `event-admin` Supabase Edge Function verifies the `x-session-token` belongs to an active admin user before deleting anything.
