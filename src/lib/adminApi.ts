@@ -172,6 +172,7 @@ export async function fetchAppUsers(sessionToken: string): Promise<AppUser[]> {
     method: 'GET',
     headers: {
       'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
       'x-session-token': sessionToken,
     },
   })
