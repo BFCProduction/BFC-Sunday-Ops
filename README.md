@@ -12,14 +12,15 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - Issue log with severity tracking, photo attachments, resolution, and Monday.com follow-up sync
 - Attendance, runtime, loudness, weather, and evaluation tabs
 - Anonymous multi-submission post-service evaluation with outcome-based questions and aggregate response view
-- Admin Settings page: event-based report export, configurable church timezone, summary email management, and checklist template manager
+- Admin Settings page: event-based report export, configurable church timezone, summary email management, checklist template manager, and People & Access admin management
 - Admin mode for checklist items, runtime definitions, issue cleanup, and weather settings
 - Event/service report export with logo, KPIs, issues, and evaluation responses
 - ProPresenter relay script for runtime capture
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
 - **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
 - **Manual event creation** — all services (9am, 11am, Special) are created in Sunday Ops via the "New Event" modal; multiple services of the same type can exist on the same date (Easter, extra traditional services, etc.)
-- **Admin-only event deletion** — admins can delete events from the desktop session picker; deletes are routed through the protected `event-admin` Supabase Edge Function and public `events` table deletes are blocked by migration `037`
+- **Admin-only event deletion** — admins can delete events from the desktop session picker via a hover-reveal trash icon with a two-step confirmation; deletes are routed through the protected `event-admin` Supabase Edge Function and public `events` table deletes are blocked by migration `037`
+- **People & Access** — Settings section lets admins view all users who have logged into Sunday Ops (with last login dates) and toggle admin status, backed by the `user-admin` Edge Function
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
 - **PCO schedule integration** — the dashboard "Today's Schedule" pulls event-specific plan times from the linked Planning Center plan when available
 - **PCO Run of Show** — the dashboard pulls the ordered plan items from the linked PCO plan and displays them as a scrollable Run of Show card with computed start times, type icons, song keys, durations, and item descriptions
@@ -72,10 +73,10 @@ Live now:
 - Loudness Log includes a "Full History PDF" button that generates a styled multi-year report matching the Sunday report aesthetic, grouped by year with per-year averages and goal exceedance flags.
 - Service Data tabs show recent historical context for the active service type: Attendance, Runtimes, Loudness, and Weather include roughly the past 10 Sundays.
 - Sidebar date block has `‹` / `›` chevron arrows to step backward and forward through past Sundays. All screens reload with the selected Sunday's data. Past Sundays show an amber "Historical View" badge and a "Back to Today" link.
-- On weekdays the app defaults to the most recent past Sunday rather than the upcoming one, so data entered during the week lands on the right record. The crossover point ("Sunday Focus Flip") is configurable in Settings.
+- On weekdays the app automatically focuses on the most relevant session using midpoint logic: if the current time is past the halfway point between the last event's end (6 PM approximation) and the next event's start time, focus shifts to the next event. This works for all session types — Sundays, special events, mid-week services — with no configuration required.
 - Service phase indicator time boundaries corrected: Pre-Service 7–9am, Service 1 9–10am, Between Services 10–11am, Service 2 11am–noon, Post-Service noon–6pm.
 - Post-service evaluations now surface Supabase errors on submit instead of silently showing a false success screen.
-- Settings page reorganized into **App Settings** (Timezone, Sunday Focus Flip) and **Reporting** (event report export, summary email) sections.
+- Settings page sections: **App Settings** (Timezone), **Reporting** (event report export, summary email), **Checklist Templates**, and **People & Access** (admin user management).
 - ProPresenter relay supports a `countdown_target` on any runtime field. When set, the relay reads ProPresenter's timer `state` (`overran` / `complete` / `stopped`) and computes the true elapsed time rather than storing the raw overrun value. Useful for message timers configured as countdown-with-overrun. Set once in the runtime field admin UI.
 - New `--dump-timers` flag on the relay prints the full raw JSON for every timer on every connected ProPresenter host (useful for debugging and field setup).
 
@@ -359,6 +360,22 @@ Notes:
 - It writes the imported weather into the `weather` table for the current or upcoming Sunday.
 - Weather import and ProPresenter runtime import were both verified live on March 19, 2026.
 
+### Historical weather backfill
+
+The Data Explorer and Service Data history tabs read weather from `service_records`, not the `weather` table. If `weather_temp_f` is null for older records, use the backfill script:
+
+```bash
+node scripts/backfill-service-records-weather.js
+```
+
+This fetches historical 9am weather from the Open-Meteo archive API for every past `service_records` row that is missing weather and writes it directly into `service_records.weather_temp_f` / `weather_condition`. Safe to re-run — only updates null rows.
+
+To copy weather from the `weather` table into `service_records` for records that do have a `weather` entry:
+
+```bash
+node scripts/sync-weather-to-service-records.js
+```
+
 ## Supabase Storage
 
 ### `issue-photos` bucket
@@ -513,6 +530,16 @@ Deploy the function after adding or changing it:
 
 ```bash
 supabase functions deploy event-admin
+```
+
+## People & Access
+
+Admins can manage who has admin access to Sunday Ops from **Settings → People & Access** without touching Supabase directly. The section lists every user who has logged in, shows their last login date, and provides a toggle to grant or revoke admin access. Self-demotion is blocked server-side.
+
+This is backed by the `user-admin` Supabase Edge Function:
+
+```bash
+supabase functions deploy user-admin
 ```
 
 ## Notes

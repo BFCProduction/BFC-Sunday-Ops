@@ -1,5 +1,73 @@
 # Changelog
 
+## 2026-04-18 (Session 12)
+
+### Summary
+
+Settings cleanup and UX improvements session. Removed three stale Settings sections (Planning Center Sync, Special Events, Sunday Focus Flip) that were superseded by other features. Added a **People & Access** section to Settings so admins can manage who has admin credentials and see login history without touching Supabase. Replaced the configurable Sunday Focus Flip with automatic midpoint-based session focus that works for every event type, not just Sundays. Moved the event delete action out of the sidebar and into the session picker modal where it's harder to hit accidentally — each row now shows a hover-reveal trash icon with a two-step "Are you sure?" confirmation. Finished with a historical weather backfill that filled in missing weather data for 244 `service_records` rows going back to December 2020.
+
+### Completed
+
+#### Settings cleanup (`src/screens/Settings.tsx`)
+
+- Removed **Planning Center Sync** section (sync now happens automatically in the background on login).
+- Removed **Special Events** section (special events are managed via the "New Event" modal in the sidebar).
+- Removed **Sunday Focus Flip** card and all associated state, functions, and imports (`flipDay`, `flipHour`, `savingFlip`, `loadFlipConfig`, `getOperationalSundayDateString`).
+- Removed `SettingsProps` interface and `onSessionsChange` parameter — Settings no longer needs sessions passed in.
+- Updated `src/App.tsx` and `src/components/layout/Sidebar.tsx` call sites accordingly.
+
+#### People & Access section (`src/screens/Settings.tsx`, `supabase/functions/user-admin/index.ts`, `src/lib/adminApi.ts`)
+
+- New **People & Access** card in Settings lists every user who has ever logged into Sunday Ops with name, email, avatar, and last login date.
+- Admins can toggle `is_admin` on/off for any user via a pill button; self-demotion is blocked with a server-side guard.
+- New `user-admin` Supabase Edge Function:
+  - `GET`: returns all users ordered by most recent login.
+  - `PATCH`: updates `is_admin` for a given `user_id`; rejects requests where the acting admin would remove their own access.
+  - Auth: verifies `x-session-token` header against `user_sessions` and confirms `is_admin = true`.
+  - CORS: `GET, PATCH, OPTIONS` methods allowed; origin-checked against the same allowlist as other functions.
+- Added `fetchAppUsers()` and `setUserAdmin()` helpers to `src/lib/adminApi.ts`.
+- Added `AppUser` interface to `src/lib/adminApi.ts`.
+- Fixed a CORS preflight bug: added explicit `Access-Control-Allow-Methods: GET, PATCH, OPTIONS` and `Content-Type: application/json` header on the GET fetch.
+- Deployed `user-admin` edge function to project `jrvootvytlzrymwoufzu`.
+
+#### Automatic session focus (`src/App.tsx`, `src/lib/supabase.ts`, `src/lib/churchTime.ts`)
+
+- Replaced the configurable Sunday Focus Flip with a pure `getActiveFocusSession(sessions, now)` function.
+- Logic: finds the last event that has started and the next one coming up; if now is past the midpoint between the last event's end (approximated as 6 PM) and the next event's start time, it focuses on the next event; otherwise it stays on the last one.
+- Works for all session types — Sunday services, special events, mid-week services — with no configuration required.
+- Removed `loadFlipConfig()` from `src/lib/supabase.ts`.
+- Renamed `getOperationalSundayDateString` → `getUpcomingSundayDateString` in `src/lib/churchTime.ts`; updated `getOrCreateTodayEvents` to use it (this function is now data-integrity only, not focus selection).
+
+#### Delete event UX: sidebar → session picker (`src/components/layout/SessionPicker.tsx`, `src/components/layout/Sidebar.tsx`)
+
+- Removed the "Delete Current Event" button, `deletingEvent`/`deleteError` state, and `handleDeleteCurrentEvent` from the sidebar.
+- Rewrote `SessionPicker` to support per-row delete:
+  - New props: `isAdmin?: boolean`, `onDelete?: (sessionId: string) => Promise<void>`.
+  - New state: `confirmingId`, `deletingId`, `deleteError`.
+  - `DeleteBtn` inner component: hidden by default (`opacity-0`), visible on `group-hover:opacity-100`; first click shows "Are you sure?" (red); mouse-leave resets to trash icon; second click executes the delete with a spinner.
+  - `SundayRow`, `SpecialRow`, and search result rows refactored from `<button>` to `<div className="group …">` to support the side-by-side select/delete layout.
+  - Error shown in a footer bar at the bottom of the modal.
+  - `canDelete` guard: delete only available when `isAdmin`, `onDelete` is provided, and more than one session exists.
+- Sidebar passes `isAdmin`, and an `onDelete` callback to `SessionPicker`; on success the callback refreshes sessions and navigates to the nearest surviving session.
+
+#### Historical weather backfill (`scripts/backfill-weather.js`, `scripts/backfill-service-records-weather.js`, `scripts/sync-weather-to-service-records.js`)
+
+- Identified that the data explorer reads `weather_temp_f` / `weather_condition` from `service_records` (via the `analytics_records` view), not from the `weather` table.
+- `scripts/backfill-weather.js`: fills in missing `weather` table rows for events/sundays by querying Open-Meteo's archive API.
+- `scripts/backfill-service-records-weather.js`: the comprehensive fix — queries all `service_records` rows with `weather_temp_f IS NULL`, collects unique dates, fetches historical 9am weather from the Open-Meteo archive API, and updates `service_records` directly. Skips invalid dates (e.g. year-200 typo).
+- `scripts/sync-weather-to-service-records.js`: utility that copies weather data from the `weather` table into matching `service_records` rows for records that do have a `weather` table entry.
+- Result: **244 service_records rows updated** covering December 2020 through April 2026. 1 row skipped (invalid `0200-04-17` date typo in legacy data).
+
+### Verification
+
+- `npx tsc --noEmit` passed clean after all changes.
+- `supabase functions deploy user-admin` completed successfully.
+- People & Access toggle confirmed working after CORS fix.
+- Session picker delete confirmed: hover reveals trash icon, first click → "Are you sure?", mouse-leave resets, second click → delete with spinner → modal closes.
+- Weather data visible in Data Explorer for all backfilled dates.
+
+---
+
 ## 2026-04-18 (Session 11)
 
 ### Summary
