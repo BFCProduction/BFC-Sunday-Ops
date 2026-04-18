@@ -154,6 +154,61 @@ export async function fetchPcoPlanItems(
   return (payload as { items: PcoPlanItemResult[] }).items ?? []
 }
 
+// ── User Admin ────────────────────────────────────────────────────────────────
+
+export interface AppUser {
+  id:         string
+  pco_id:     string
+  name:       string
+  email:      string | null
+  avatar_url: string | null
+  is_admin:   boolean
+  last_login: string | null
+  created_at: string
+}
+
+export async function fetchAppUsers(sessionToken: string): Promise<AppUser[]> {
+  const response = await fetch(getFunctionUrl('user-admin'), {
+    method: 'GET',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'x-session-token': sessionToken,
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed with ${response.status}`)
+  }
+
+  return (payload as { users: AppUser[] }).users ?? []
+}
+
+export async function setUserAdmin(
+  sessionToken: string,
+  userId: string,
+  isAdmin: boolean,
+): Promise<AppUser> {
+  const response = await fetch(getFunctionUrl('user-admin'), {
+    method: 'PATCH',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
+    },
+    body: JSON.stringify({ user_id: userId, is_admin: isAdmin }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(typeof payload?.error === 'string' ? payload.error : `Request failed with ${response.status}`)
+  }
+
+  return (payload as { user: AppUser }).user
+}
+
+// ── Summary Email Admin ───────────────────────────────────────────────────────
+
 export async function requestSummaryEmailAdmin<T>(
   sessionToken: string,
   method: string,

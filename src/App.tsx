@@ -4,8 +4,8 @@ import { useAuth }        from './context/authState'
 import { triggerPcoSync } from './lib/adminApi'
 import { SundayContext }  from './context/SundayContext'
 import {
-  loadChurchTimezone, loadFlipConfig, loadAllSessions,
-  getOrCreateTodayEvents, getEventById, getFirstEventForDate, supabase,
+  loadChurchTimezone, loadAllSessions,
+  getOrCreateTodayEvents, getEventById, getFirstEventForDate,
 } from './lib/supabase'
 import { CHURCH_TIME_ZONE } from './lib/churchTime'
 import { SiteHeader }     from './components/layout/SiteHeader'
@@ -52,6 +52,31 @@ function AppShell() {
   return <AppMain />
 }
 
+// ── Focus selection: midpoint between the last event's end and next event's start ──
+// "Last event ended" is approximated as 6 PM on the event date.
+// "Next event starts" uses the stored event_time, defaulting to 9 AM.
+function getActiveFocusSession(sessions: Session[], now = new Date()): Session | null {
+  if (sessions.length === 0) return null
+
+  const startMs = (s: Session) => {
+    const time = s.eventTime?.slice(0, 5) ?? '09:00'
+    return new Date(`${s.date}T${time}:00`).getTime()
+  }
+  const endMs = (s: Session) => new Date(`${s.date}T18:00:00`).getTime()
+
+  const nowMs  = now.getTime()
+  const sorted = [...sessions].sort((a, b) => startMs(a) - startMs(b))
+  const past   = sorted.filter(s => startMs(s) <= nowMs)
+  const future = sorted.filter(s => startMs(s) >  nowMs)
+  const last   = past[past.length - 1] ?? null
+  const next   = future[0] ?? null
+
+  if (!last) return next
+  if (!next) return last
+
+  return nowMs >= (endMs(last) + startMs(next)) / 2 ? next : last
+}
+
 // ── Main app ──────────────────────────────────────────────────────────────────
 function AppMain() {
   const { sessionToken } = useAuth()
@@ -71,53 +96,19 @@ function AppMain() {
   // ── Initial load ────────────────────────────────────────────────────────────
   useEffect(() => {
     async function init() {
-      const [tz, flip] = await Promise.all([loadChurchTimezone(), loadFlipConfig()])
+      const tz = await loadChurchTimezone()
       setTimezone(tz)
 
-      // Create today's 9am + 11am events (and parent Sunday record) if needed.
-      // Returns the 9am event as the default focus.
-      const { defaultSession, sundayDate } = await getOrCreateTodayEvents(
-        tz, flip.flipDay, flip.flipHour
-      )
-      setTodaySundayDate(sundayDate)
+      // Ensure this Sunday's 9am/11am events (and parent Sunday record) exist.
+      await getOrCreateTodayEvents(tz)
 
-      // Check if there's an upcoming special event that should take focus
-      // (same logic as before: first event between today and the Sunday date)
-      const today = new Date().toISOString().slice(0, 10)
-      // Use !inner so the eq filter on the joined table actually excludes rows
-      // (without !inner, PostgREST nulls out the join result instead of filtering the row)
-      const { data: upcomingSpecial } = await supabase
-        .from('events')
-        .select(`
-          id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
-          service_types!inner ( slug, name, color, sort_order )
-        `)
-        .eq('service_types.slug', 'special')
-        .gte('event_date', today)
-        .lte('event_date', sundayDate)
-        .order('event_date', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-
-      const focusSession = upcomingSpecial
-        ? {
-            id:                   upcomingSpecial.id,
-            type:                 'event' as const,
-            serviceTypeSlug:      (upcomingSpecial.service_types as unknown as { slug: string; name: string; color: string; sort_order: number }).slug,
-            serviceTypeName:      (upcomingSpecial.service_types as unknown as { slug: string; name: string; color: string; sort_order: number }).name,
-            serviceTypeColor:     (upcomingSpecial.service_types as unknown as { slug: string; name: string; color: string; sort_order: number }).color,
-            name:                 upcomingSpecial.name,
-            date:                 upcomingSpecial.event_date,
-            eventTime:            upcomingSpecial.event_time,
-            legacySundayId:       upcomingSpecial.legacy_sunday_id,
-            legacySpecialEventId: upcomingSpecial.legacy_special_event_id,
-          }
-        : defaultSession
-
-      setSession(focusSession)
-
+      // Load all sessions, then pick focus via midpoint logic.
       const sessions = await loadAllSessions()
       setAllSessions(sessions)
+
+      const focusSession = getActiveFocusSession(sessions) ?? sessions[0] ?? null
+      setSession(focusSession)
+      setTodaySundayDate(focusSession?.date ?? '')
 
       await refreshIssueCount(focusSession)
 
@@ -226,7 +217,7 @@ function AppMain() {
             {screen === 'data'       && <ServiceData />}
             {screen === 'evaluation' && <Evaluation />}
             {screen === 'analytics'  && <Analytics />}
-            {screen === 'settings'   && <Settings onSessionsChange={setAllSessions} />}
+            {screen === 'settings'   && <Settings />}
             {screen === 'docs'       && <ProductionDocs />}
           </main>
         </div>
