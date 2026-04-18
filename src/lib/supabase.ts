@@ -424,8 +424,8 @@ export async function createSpecialEvent(opts: {
 }
 
 /** @deprecated Use getOrCreateTodayEvents instead */
-export async function getOrCreateSunday(timezone = CHURCH_TIME_ZONE, flipDay = 1, flipHour = 12) {
-  const today = getOperationalSundayDateString(new Date(), timezone, flipDay, flipHour)
+export async function getOrCreateSunday(timezone = CHURCH_TIME_ZONE) {
+  const today = getUpcomingSundayDateString(new Date(), timezone)
   const { data: existing } = await supabase
     .from('sundays')
     .select('*')

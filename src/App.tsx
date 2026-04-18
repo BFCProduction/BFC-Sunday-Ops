@@ -5,7 +5,7 @@ import { triggerPcoSync } from './lib/adminApi'
 import { SundayContext }  from './context/SundayContext'
 import {
   loadChurchTimezone, loadAllSessions,
-  getOrCreateTodayEvents, getEventById, getFirstEventForDate,
+  getOrCreateTodayEvents, getEventById, getFirstEventForDate, supabase,
 } from './lib/supabase'
 import { CHURCH_TIME_ZONE } from './lib/churchTime'
 import { SiteHeader }     from './components/layout/SiteHeader'
