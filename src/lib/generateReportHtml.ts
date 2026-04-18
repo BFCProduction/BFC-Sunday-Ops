@@ -37,10 +37,22 @@ function feelPill(feel: string | null): string {
     background:${c.bg};color:${c.color};border:1px solid ${c.border};">${esc(label)}</span>`
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
+function formatDateLabel(dateStr: string): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
+}
+
+function formatEventTimeLabel(time: string | null): string {
+  if (!time) return ''
+  const [hourStr, minuteStr] = time.split(':')
+  const hour = parseInt(hourStr, 10)
+  const minute = parseInt(minuteStr || '0', 10)
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return time
+
+  const suffix = hour >= 12 ? 'PM' : 'AM'
+  const displayHour = hour % 12 || 12
+  return `${displayHour}:${minute.toString().padStart(2, '0')} ${suffix}`
 }
 
 function formatTime(iso: string): string {
@@ -62,14 +74,15 @@ function buildAttendance(data: ReportData): string {
   const { attendance } = data
   if (!attendance) {
     return `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;
-      font-size:10px;color:#9ca3af;">Attendance not recorded for this Sunday.</div>`
+      font-size:10px;color:#9ca3af;">Attendance not recorded for this event.</div>`
   }
-  const s1 = attendance.service_1_count ?? '—'
-  const s2 = attendance.service_2_count ?? '—'
-  const total =
-    (attendance.service_1_count ?? 0) + (attendance.service_2_count ?? 0) || '—'
+  const count = attendance.count ?? '—'
+  const eventTime = formatEventTimeLabel(data.eventTime)
+  const serviceLabel = eventTime
+    ? `${data.serviceTypeName} (${eventTime})`
+    : data.serviceTypeName
   const noteRow = attendance.notes
-    ? `<tr><td colspan="4" style="padding:7px 10px;border:1px solid #f3f4f6;font-size:10px;color:#6b7280;
+    ? `<tr><td colspan="2" style="padding:7px 10px;border:1px solid #f3f4f6;font-size:10px;color:#6b7280;
         font-style:italic;">Note: ${esc(attendance.notes)}</td></tr>`
     : ''
   return `<table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -78,10 +91,7 @@ function buildAttendance(data: ReportData): string {
       <th style="${thStyle()}">Count</th>
     </tr></thead>
     <tbody>
-      <tr><td style="${tdStyle()}">9:00 AM</td><td style="${tdStyle()}">${s1}</td></tr>
-      <tr><td style="${tdStyle(true)}">11:00 AM</td><td style="${tdStyle(true)}">${s2}</td></tr>
-      <tr><td style="${tdStyle()} ${totalTdExtra()}">Total</td>
-          <td style="${tdStyle()} ${totalTdExtra()}">${total}</td></tr>
+      <tr><td style="${tdStyle()}">${esc(serviceLabel)}</td><td style="${tdStyle()}">${count}</td></tr>
       ${noteRow}
     </tbody>
   </table>`
@@ -115,7 +125,7 @@ function buildIssues(data: ReportData): string {
   const { issues } = data
   if (issues.length === 0) {
     return `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:10px 12px;
-      font-size:10px;color:#065f46;font-weight:600;">✓ No issues logged for this Sunday.</div>`
+      font-size:10px;color:#065f46;font-weight:600;">✓ No issues logged for this event.</div>`
   }
   const rows = issues.map((issue, i) => {
     const even = i % 2 === 1
@@ -193,7 +203,7 @@ function buildWeather(data: ReportData): string {
   const { weather } = data
   if (!weather) {
     return `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;
-      font-size:10px;color:#9ca3af;">No weather data recorded for this Sunday.</div>`
+      font-size:10px;color:#9ca3af;">No weather data recorded for this event.</div>`
   }
   const cells = [
     { l: 'Condition',    v: weather.condition ?? '—' },
@@ -215,7 +225,7 @@ function buildEvaluations(data: ReportData): string {
   const { evaluations } = data
   if (evaluations.length === 0) {
     return `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;
-      font-size:10px;color:#9ca3af;">No evaluations submitted for this Sunday.</div>`
+      font-size:10px;color:#9ca3af;">No evaluations submitted for this event.</div>`
   }
 
   // Feel tally
@@ -289,9 +299,6 @@ function thStyle(): string {
 function tdStyle(even = false): string {
   return `padding:7px 10px;border:1px solid #f3f4f6;color:#374151;${even ? 'background:#fafafa;' : ''}`
 }
-function totalTdExtra(): string {
-  return `font-weight:700;color:#111827;background:#f3f4f6 !important;`
-}
 
 // ── KPI cards ─────────────────────────────────────────────────────────────────
 function kpiCard(value: string | number, label: string): string {
@@ -304,21 +311,19 @@ function kpiCard(value: string | number, label: string): string {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export function generateReportHtml(data: ReportData, logoBase64?: string): string {
-  const dateLabel = data.sundayDate
-    ? new Date(data.sundayDate + 'T12:00:00').toLocaleDateString('en-US', {
-        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-      })
-    : formatDate(new Date().toISOString())
+  const reportDate = data.eventDate || data.sundayDate
+  const dateLabel = reportDate ? formatDateLabel(reportDate) : formatDateLabel(new Date().toISOString().slice(0, 10))
+  const timeLabel = formatEventTimeLabel(data.eventTime)
+  const eventLabel = data.eventName || data.serviceTypeName || 'Selected Event'
+  const serviceMeta = [data.serviceTypeName, timeLabel].filter(Boolean).join(' · ')
 
-  const totalAttendance =
-    (data.attendance?.service_1_count ?? 0) + (data.attendance?.service_2_count ?? 0)
-  const attendanceDisplay = totalAttendance > 0 ? totalAttendance.toString() : '—'
+  const attendanceDisplay = data.attendance?.count != null ? data.attendance.count.toString() : '—'
 
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>BFC Sunday Service Report — ${esc(data.sundayDate)}</title>
+  <title>BFC Event Report — ${esc(eventLabel)} — ${esc(reportDate)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body {
@@ -353,8 +358,9 @@ export function generateReportHtml(data: ReportData, logoBase64?: string): strin
       <div style="color:#9ca3af;font-size:10px;margin-top:5px;">Bethany First Church · Sunday Ops</div>
     </div>
     <div style="text-align:right;">
-      <div style="color:#fff;font-size:20px;font-weight:800;letter-spacing:-.01em;">Sunday Service Report</div>
-      <div style="color:#9ca3af;font-size:10px;margin-top:4px;">${esc(dateLabel)} · Generated ${formatGeneratedAt()}</div>
+      <div style="color:#fff;font-size:20px;font-weight:800;letter-spacing:-.01em;">Event Report</div>
+      <div style="color:#9ca3af;font-size:10px;margin-top:4px;">${esc(eventLabel)}</div>
+      <div style="color:#9ca3af;font-size:10px;margin-top:4px;">${esc(dateLabel)}${serviceMeta ? ' · ' + esc(serviceMeta) : ''} · Generated ${formatGeneratedAt()}</div>
     </div>
   </div>
   <div style="height:4px;background:linear-gradient(90deg,#2563eb 0%,#10b981 100%);"></div>
@@ -364,7 +370,7 @@ export function generateReportHtml(data: ReportData, logoBase64?: string): strin
 
     <!-- KPI row -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:26px;">
-      ${kpiCard(attendanceDisplay, 'Total Attendance')}
+      ${kpiCard(attendanceDisplay, 'Attendance')}
       ${kpiCard(data.issues.length, 'Issues Logged')}
       ${kpiCard(data.checklistExceptions.length, 'Checklist Exceptions')}
       ${kpiCard(data.evaluations.length, 'Eval Responses')}
@@ -415,7 +421,7 @@ export function generateReportHtml(data: ReportData, logoBase64?: string): strin
   <div style="background:#f9fafb;border-bottom:1px solid #e5e7eb;padding:10px 40px;
     display:flex;align-items:center;justify-content:space-between;">
     <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#9ca3af;">
-      Sunday Service Report — Continued
+      Event Report — Continued
     </span>
     <span style="font-size:9px;color:#9ca3af;">${esc(dateLabel)}</span>
   </div>

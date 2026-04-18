@@ -4,10 +4,10 @@ import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
 import { fetchAppUsers, setUserAdmin, requestSummaryEmailAdmin, type AppUser } from '../lib/adminApi'
 import { useSunday } from '../context/SundayContext'
-import { fetchReportData } from '../lib/reportData'
+import { fetchEventReportData } from '../lib/reportData'
 import { generateReportHtml } from '../lib/generateReportHtml'
-import { supabase } from '../lib/supabase'
-import type { ReportEmailRecipient, ReportEmailSettings } from '../types'
+import { loadAllSessions, supabase } from '../lib/supabase'
+import type { ReportEmailRecipient, ReportEmailSettings, Session } from '../types'
 import bfcLogo from '../assets/BFC_Production_Logo_Hor reverse.png'
 
 
@@ -23,7 +23,6 @@ const DEFAULT_SETTINGS: ReportEmailSettings = {
   reply_to_email: 'production@bethanynaz.org',
 }
 
-interface SundayRecord { id: string; date: string }
 interface SummaryEmailAdminResponse {
   settings: ReportEmailSettings
   recipients: ReportEmailRecipient[]
@@ -43,9 +42,9 @@ async function getLogoBase64(): Promise<string> {
   }
 }
 
-async function openPdf(sundayId: string, sundayDate: string) {
+async function openPdf(eventId: string) {
   const [data, logoBase64] = await Promise.all([
-    fetchReportData(sundayId, sundayDate),
+    fetchEventReportData(eventId),
     getLogoBase64(),
   ])
   const html = generateReportHtml(data, logoBase64)
@@ -62,7 +61,7 @@ async function openPdf(sundayId: string, sundayDate: string) {
 
 export function Settings() {
   const { isAdmin, sessionToken, user } = useAdmin()
-  const { sundayId, sundayDate, timezone } = useSunday()
+  const { activeEventId, timezone } = useSunday()
 
   // ── Timezone state ──
   const [churchTimezone, setChurchTimezone] = useState(timezone)
@@ -70,10 +69,11 @@ export function Settings() {
   const [tzNotice, setTzNotice]             = useState('')
 
   // ── PDF Export state ──
-  const [exportingCurrent, setExportingCurrent] = useState(false)
-  const [exportingPast, setExportingPast]       = useState(false)
-  const [pastSundays, setPastSundays]           = useState<SundayRecord[]>([])
-  const [selectedPast, setSelectedPast]         = useState<SundayRecord | null>(null)
+  const [exportingReport, setExportingReport]       = useState(false)
+  const [reportEvents, setReportEvents]             = useState<Session[]>([])
+  const [selectedReportEventId, setSelectedReportEventId] = useState('')
+  const [loadingReportEvents, setLoadingReportEvents] = useState(false)
+  const [reportEventsError, setReportEventsError]   = useState('')
 
   // ── People & Access state ──
   const [appUsers,      setAppUsers]      = useState<AppUser[]>([])
@@ -91,17 +91,37 @@ export function Settings() {
   const [newName, setNewName]             = useState('')
   const [newEmail, setNewEmail]           = useState('')
 
-  // Load past Sundays for the picker + flip config
+  // Load all events for report export
   useEffect(() => {
-    supabase.from('sundays').select('id, date')
-      .order('date', { ascending: false })
-      .limit(14)
-      .then(({ data }) => {
-        setPastSundays(data || [])
-        const prev = (data || []).find(s => s.date !== sundayDate)
-        if (prev) setSelectedPast(prev)
+    let active = true
+
+    setLoadingReportEvents(true)
+    setReportEventsError('')
+
+    loadAllSessions()
+      .then(events => {
+        if (!active) return
+        const sorted = [...events].sort((a, b) => {
+          if (a.date !== b.date) return b.date.localeCompare(a.date)
+          return (b.eventTime || '').localeCompare(a.eventTime || '')
+        })
+        setReportEvents(sorted)
+        setSelectedReportEventId(prev => {
+          if (prev && sorted.some(event => event.id === prev)) return prev
+          if (activeEventId && sorted.some(event => event.id === activeEventId)) return activeEventId
+          return sorted[0]?.id ?? ''
+        })
       })
-  }, [sundayDate])
+      .catch(err => {
+        if (!active) return
+        setReportEventsError(err instanceof Error ? err.message : 'Unable to load events for report export.')
+      })
+      .finally(() => {
+        if (active) setLoadingReportEvents(false)
+      })
+
+    return () => { active = false }
+  }, [activeEventId])
 
   // Load user list (admin only)
   useEffect(() => {
@@ -149,20 +169,17 @@ export function Settings() {
   }, [sessionToken, isAdmin])
 
   const activeRecipients = useMemo(() => recipients.filter(r => r.active), [recipients])
+  const selectedReportEvent = useMemo(
+    () => reportEvents.find(event => event.id === selectedReportEventId) ?? null,
+    [reportEvents, selectedReportEventId],
+  )
 
-  const exportCurrentPdf = async () => {
-    setExportingCurrent(true)
-    try { await openPdf(sundayId, sundayDate) }
+  const exportReportPdf = async () => {
+    if (!selectedReportEventId) return
+    setExportingReport(true)
+    try { await openPdf(selectedReportEventId) }
     catch { alert('Failed to generate report. Please try again.') }
-    finally { setExportingCurrent(false) }
-  }
-
-  const exportPastPdf = async () => {
-    if (!selectedPast) return
-    setExportingPast(true)
-    try { await openPdf(selectedPast.id, selectedPast.date) }
-    catch { alert('Failed to generate report. Please try again.') }
-    finally { setExportingPast(false) }
+    finally { setExportingReport(false) }
   }
 
   const saveSettings = async () => {
@@ -231,10 +248,30 @@ export function Settings() {
     setTzNotice('Saved — reload the page for changes to take effect.')
   }
 
-  const formatSundayDate = (dateStr: string) =>
+  const formatEventDate = (dateStr: string) =>
     new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     })
+
+  const formatEventTime = (time: string | null) => {
+    if (!time) return ''
+    const [hourStr, minuteStr] = time.split(':')
+    const hour = parseInt(hourStr, 10)
+    const minute = parseInt(minuteStr || '0', 10)
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return time
+    const suffix = hour >= 12 ? 'PM' : 'AM'
+    const displayHour = hour % 12 || 12
+    return `${displayHour}:${minute.toString().padStart(2, '0')} ${suffix}`
+  }
+
+  const reportEventName = (event: Session) =>
+    event.serviceTypeSlug === 'special' ? event.name : event.serviceTypeName
+
+  const formatReportEventOption = (event: Session) => {
+    const time = formatEventTime(event.eventTime)
+    const pieces = [formatEventDate(event.date), time, reportEventName(event)].filter(Boolean)
+    return pieces.join(' - ')
+  }
 
   return (
     <div className="fade-in">
@@ -339,55 +376,40 @@ export function Settings() {
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Reporting</p>
 
-          {/* Most recent Sunday PDF */}
-          <div className="rounded-xl p-5 flex items-center justify-between gap-4 mb-3"
-            style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)' }}>
-            <div>
-              <p className="text-white font-bold text-sm">Most Recent Sunday</p>
-              <p className="text-blue-200 text-xs mt-1">{formatSundayDate(sundayDate)}</p>
-            </div>
-            <button onClick={exportCurrentPdf} disabled={exportingCurrent}
-              className="flex items-center gap-2 bg-white text-blue-700 font-bold text-xs px-4 py-2.5 rounded-lg
-                shadow-md hover:bg-blue-50 active:scale-95 transition-all disabled:opacity-60 flex-shrink-0 whitespace-nowrap">
-              {exportingCurrent
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-                : <><FileDown className="w-4 h-4" /> Export PDF</>
-              }
-            </button>
-          </div>
-
-          {/* Previous Sunday picker */}
+          {/* Report export */}
           <Card className="p-5 mb-3">
-            <p className="text-gray-900 text-sm font-semibold mb-1">Export a Previous Sunday</p>
-            <p className="text-gray-400 text-xs mb-4">Pick any past Sunday to download its full report.</p>
+            <p className="text-gray-900 text-sm font-semibold mb-1">Export a Report</p>
+            <p className="text-gray-400 text-xs mb-4">Choose any service or special event and generate its report.</p>
             <div className="flex gap-3 items-center flex-wrap">
               <select
-                value={selectedPast?.id ?? ''}
-                onChange={e => {
-                  const found = pastSundays.find(s => s.id === e.target.value)
-                  setSelectedPast(found ?? null)
-                }}
+                value={selectedReportEventId}
+                onChange={e => setSelectedReportEventId(e.target.value)}
+                disabled={loadingReportEvents || reportEvents.length === 0}
                 className="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
               >
-                <option value="" disabled>Select a Sunday…</option>
-                {pastSundays
-                  .filter(s => s.date !== sundayDate)
-                  .map(s => (
-                    <option key={s.id} value={s.id}>{formatSundayDate(s.date)}</option>
-                  ))
-                }
+                <option value="" disabled>{loadingReportEvents ? 'Loading events...' : 'Select an event...'}</option>
+                {reportEvents.map(event => (
+                  <option key={event.id} value={event.id}>{formatReportEventOption(event)}</option>
+                ))}
               </select>
               <button
-                onClick={exportPastPdf}
-                disabled={exportingPast || !selectedPast}
+                onClick={exportReportPdf}
+                disabled={exportingReport || !selectedReportEventId}
                 className="flex items-center gap-2 bg-gray-900 text-white font-semibold text-sm px-4 py-2.5 rounded-lg
                   hover:bg-gray-800 active:scale-95 transition-all disabled:opacity-40 whitespace-nowrap">
-                {exportingPast
+                {exportingReport
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-                  : <><FileDown className="w-4 h-4" /> Export PDF</>
+                  : <><FileDown className="w-4 h-4" /> Export Report</>
                 }
               </button>
             </div>
+            {selectedReportEvent && (
+              <p className="text-gray-500 text-xs mt-3">
+                Selected: {reportEventName(selectedReportEvent)} on {formatEventDate(selectedReportEvent.date)}
+                {selectedReportEvent.eventTime ? ` at ${formatEventTime(selectedReportEvent.eventTime)}` : ''}
+              </p>
+            )}
+            {reportEventsError && <p className="text-red-600 text-xs mt-3">{reportEventsError}</p>}
           </Card>
 
           {/* Summary email status */}
@@ -399,7 +421,7 @@ export function Settings() {
                   Automated Summary Email
                 </p>
                 <p className="text-gray-500 text-xs mt-1 leading-relaxed">
-                  Sends a Sunday afternoon report with checklist exceptions, issues, service data, and evaluation notes.
+                  Sends one report per service or event with checklist exceptions, issues, service data, and evaluation notes.
                 </p>
               </div>
               <span className={`text-[10px] font-bold px-2 py-1 rounded-full border flex-shrink-0 ${
@@ -492,7 +514,7 @@ export function Settings() {
                 <div className="flex items-center justify-between gap-4 mb-4">
                   <div>
                     <p className="text-gray-900 text-sm font-semibold">Recipients</p>
-                    <p className="text-gray-400 text-xs mt-0.5">People who receive the Sunday afternoon summary.</p>
+                    <p className="text-gray-400 text-xs mt-0.5">People who receive service and event reports.</p>
                   </div>
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
                     {activeRecipients.length} active

@@ -4,7 +4,7 @@
 
 ### Summary
 
-Added admin-only deletion for unified Sunday Ops events. Admins now have a guarded **Delete Current Event** action in the desktop sidebar, backed by a protected `event-admin` Supabase Edge Function. The database was also locked down so public clients can no longer delete from the `events` table directly. During deployment, the remote migration history was repaired for migrations `030` through `036` after live schema checks showed those changes had already been applied outside the recorded migration history, then migration `037` was applied normally.
+Added admin-only deletion for unified Sunday Ops events. Admins now have a guarded **Delete Current Event** action in the desktop sidebar, backed by a protected `event-admin` Supabase Edge Function. The database was also locked down so public clients can no longer delete from the `events` table directly. During deployment, the remote migration history was repaired for migrations `030` through `036` after live schema checks showed those changes had already been applied outside the recorded migration history, then migration `037` was applied normally. Reporting was also brought onto the unified event model: manual exports and automated summary emails now work per service/event instead of per old Sunday shell.
 
 ### Completed
 
@@ -38,6 +38,10 @@ Added admin-only deletion for unified Sunday Ops events. Admins now have a guard
 - Added sender validation flags: `--dry-run`, `--date`, `--event-id`, `--to`, and `--include-empty`.
 - Updated Issue Log writes to use the active unified event id going forward, while still reading legacy Sunday-scoped rows for transition history.
 - Updated summary email deployment docs for the per-event methodology.
+- Replaced the two old Settings PDF export controls ("most recent Sunday" and "previous Sunday") with one **Export a Report** picker that targets any unified event/service.
+- Added event-native report export loading for checklist completions, attendance, runtimes, weather, issues, and evaluations, with legacy Sunday fallback for older records.
+- Updated the printable report template from a fixed 9am/11am Sunday rollup to a single selected event/service report.
+- Updated README feature notes to describe event-based report export.
 
 ### Verification
 
@@ -52,6 +56,8 @@ Added admin-only deletion for unified Sunday Ops events. Admins now have a guard
 - `node --check scripts/send-sunday-summary.js` passed.
 - `npm run build` passed after the summary email changes.
 - Focused ESLint for `src/App.tsx`, `src/screens/IssueLog.tsx`, and `scripts/send-sunday-summary.js` passed with one existing `react-hooks/exhaustive-deps` warning in `src/App.tsx`.
+- `npm run build` passed after the report export changes.
+- Focused ESLint for `src/screens/Settings.tsx`, `src/lib/reportData.ts`, and `src/lib/generateReportHtml.ts` passed.
 
 ### Notes
 

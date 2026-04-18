@@ -12,9 +12,9 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - Issue log with severity tracking, photo attachments, resolution, and Monday.com follow-up sync
 - Attendance, runtime, loudness, weather, and evaluation tabs
 - Anonymous multi-submission post-service evaluation with outcome-based questions and aggregate response view
-- Admin Settings page: PDF export, configurable church timezone, summary email management, and checklist template manager
+- Admin Settings page: event-based report export, configurable church timezone, summary email management, and checklist template manager
 - Admin mode for checklist items, runtime definitions, issue cleanup, and weather settings
-- PDF service report export with logo, KPIs, issues, and evaluation responses
+- Event/service report export with logo, KPIs, issues, and evaluation responses
 - ProPresenter relay script for runtime capture
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
 - **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
@@ -53,9 +53,9 @@ Live now:
 - Monday.com push can be enabled with the edge function and related secrets.
 - Admins can delete issue log entries directly in the app (photos are cleaned up from Storage).
 - Admins can delete the currently selected event from the desktop sidebar; deletion is verified server-side by the `event-admin` Edge Function and direct public deletes on `events` are blocked.
-- Admin Settings page (gear icon in sidebar) provides PDF export, church timezone selection, and summary email management.
+- Admin Settings page (gear icon in sidebar) provides event-based report export, church timezone selection, and summary email management.
 - Church timezone is configurable in Settings and stored in `app_config`; falls back to `America/Chicago`.
-- PDF service report can be exported for the current Sunday or any of the previous 14 Sundays.
+- Report export can generate a PDF-style print report for any unified event/service.
 - Dynamic service phase indicator in the sidebar and header (Pre-Service, Service 1, Between Services, Service 2, Post-Service) updates every 60 seconds.
 - Sunday summary email settings and recipients are managed in Settings → Summary Email.
 - Sunday summary email can be sent automatically through Google Workspace Gmail API once the related secrets are configured.
