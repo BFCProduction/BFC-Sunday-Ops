@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { getOperationalSundayDateString, CHURCH_TIME_ZONE } from './churchTime'
+import { getUpcomingSundayDateString, CHURCH_TIME_ZONE } from './churchTime'
 import type { Session } from '../types'
 
 const supabaseUrl    = import.meta.env.VITE_SUPABASE_URL    as string
@@ -18,18 +18,6 @@ export async function loadChurchTimezone(): Promise<string> {
   return data?.value || CHURCH_TIME_ZONE
 }
 
-export async function loadFlipConfig(): Promise<{ flipDay: number; flipHour: number }> {
-  const { data } = await supabase
-    .from('app_config')
-    .select('key, value')
-    .in('key', ['sunday_flip_day', 'sunday_flip_hour'])
-  const map: Record<string, string> = {}
-  ;(data || []).forEach((r: { key: string; value: string }) => { map[r.key] = r.value })
-  return {
-    flipDay:  parseInt(map['sunday_flip_day']  ?? '1',  10),
-    flipHour: parseInt(map['sunday_flip_hour'] ?? '12', 10),
-  }
-}
 
 // ── Raw DB row type for events join ──────────────────────────────────────────
 
@@ -149,10 +137,8 @@ export async function getEventsForDate(date: string): Promise<Session[]> {
  */
 export async function getOrCreateTodayEvents(
   timezone = CHURCH_TIME_ZONE,
-  flipDay  = 1,
-  flipHour = 12,
-): Promise<{ defaultSession: Session; sundayDate: string }> {
-  const today = getOperationalSundayDateString(new Date(), timezone, flipDay, flipHour)
+): Promise<{ sundayDate: string }> {
+  const today = getUpcomingSundayDateString(new Date(), timezone)
 
   // Ensure the underlying sundays record exists (data tables still need it)
   let sundayId: string
@@ -194,20 +180,16 @@ export async function getOrCreateTodayEvents(
     return `${label} · ${month} ${day}, ${year}`
   }
 
-  // Get-or-create 9am event (check first to avoid constraint dependency)
+  // Get-or-create 9am event
   const { data: existing9am } = await supabase
     .from('events').select('id').eq('service_type_id', st9am.id).eq('event_date', today).maybeSingle()
 
-  let event9amId: string
-  if (existing9am) {
-    event9amId = existing9am.id
-  } else {
-    const { data: new9am, error } = await supabase
+  if (!existing9am) {
+    const { error } = await supabase
       .from('events')
       .insert({ service_type_id: st9am.id, name: formatName('Sunday 9:00 AM'), event_date: today, event_time: '09:00:00', legacy_sunday_id: sundayId })
       .select('id').single()
     if (error) throw error
-    event9amId = new9am.id
   }
 
   // Get-or-create 11am event
@@ -220,11 +202,7 @@ export async function getOrCreateTodayEvents(
       .insert({ service_type_id: st11am.id, name: formatName('Sunday 11:00 AM'), event_date: today, event_time: '11:00:00', legacy_sunday_id: sundayId })
   }
 
-  // Return the 9am event as default session
-  const defaultSession = await getEventById(event9amId)
-  if (!defaultSession) throw new Error('Failed to load created event')
-
-  return { defaultSession, sundayDate: today }
+  return { sundayDate: today }
 }
 
 // ── Legacy helpers (kept for transition; used by App.tsx focus logic) ─────────

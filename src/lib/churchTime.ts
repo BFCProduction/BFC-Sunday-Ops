@@ -36,6 +36,14 @@ function addDaysToDateString(dateString: string, daysToAdd: number) {
   return base.toISOString().slice(0, 10)
 }
 
+// Returns the current Sunday's date, or the upcoming Sunday if today is a weekday.
+// Used purely for data-integrity: ensuring this Sunday's events exist in the DB.
+export function getUpcomingSundayDateString(date = new Date(), tz = CHURCH_TIME_ZONE): string {
+  const dayOfWeek = getChurchDayOfWeek(date, tz)
+  if (dayOfWeek === 0) return getChurchDateString(date, tz)
+  return addDaysToDateString(getChurchDateString(date, tz), 7 - dayOfWeek)
+}
+
 export function getOperationalSundayDateString(
   date = new Date(),
   tz = CHURCH_TIME_ZONE,

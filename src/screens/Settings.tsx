@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Cloud, FileDown, Globe, Loader2, Mail, Plus, RefreshCw, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { FileDown, Globe, Loader2, Mail, Plus, Settings as SettingsIcon, Trash2, Users } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
-import { requestSummaryEmailAdmin, triggerPcoSync, type PcoSyncResult } from '../lib/adminApi'
-import { loadAllSessions } from '../lib/supabase'
+import { fetchAppUsers, setUserAdmin, requestSummaryEmailAdmin, type AppUser } from '../lib/adminApi'
 import { useSunday } from '../context/SundayContext'
 import { fetchReportData } from '../lib/reportData'
 import { generateReportHtml } from '../lib/generateReportHtml'
 import { supabase } from '../lib/supabase'
-import type { ReportEmailRecipient, ReportEmailSettings, Session } from '../types'
+import type { ReportEmailRecipient, ReportEmailSettings } from '../types'
 import bfcLogo from '../assets/BFC_Production_Logo_Hor reverse.png'
-import { SpecialEventManager } from '../components/admin/SpecialEventManager'
 
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -62,12 +60,8 @@ async function openPdf(sundayId: string, sundayDate: string) {
   setTimeout(() => win.print(), 600)
 }
 
-interface SettingsProps {
-  onSessionsChange?: (sessions: Session[]) => void
-}
-
-export function Settings({ onSessionsChange }: SettingsProps = {}) {
-  const { isAdmin, sessionToken } = useAdmin()
+export function Settings() {
+  const { isAdmin, sessionToken, user } = useAdmin()
   const { sundayId, sundayDate, timezone } = useSunday()
 
   // ── Timezone state ──
@@ -75,23 +69,17 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
   const [savingTz, setSavingTz]             = useState(false)
   const [tzNotice, setTzNotice]             = useState('')
 
-  // ── Focus flip state ──
-  const [flipDay,      setFlipDay]      = useState(1)
-  const [flipHour,     setFlipHour]     = useState(12)
-  const [savingFlip,   setSavingFlip]   = useState(false)
-  const [flipNotice,   setFlipNotice]   = useState('')
-
   // ── PDF Export state ──
   const [exportingCurrent, setExportingCurrent] = useState(false)
   const [exportingPast, setExportingPast]       = useState(false)
   const [pastSundays, setPastSundays]           = useState<SundayRecord[]>([])
   const [selectedPast, setSelectedPast]         = useState<SundayRecord | null>(null)
 
-  // ── PCO Sync state ──
-  const [syncing,      setSyncing]      = useState(false)
-  const [syncResult,   setSyncResult]   = useState<PcoSyncResult | null>(null)
-  const [syncError,    setSyncError]    = useState('')
-  const [lastSynced,   setLastSynced]   = useState<string | null>(null)
+  // ── People & Access state ──
+  const [appUsers,      setAppUsers]      = useState<AppUser[]>([])
+  const [loadingUsers,  setLoadingUsers]  = useState(false)
+  const [usersError,    setUsersError]    = useState('')
+  const [togglingUser,  setTogglingUser]  = useState<string | null>(null)
 
   // ── Email settings state ──
   const [settings, setSettings]           = useState<ReportEmailSettings>(DEFAULT_SETTINGS)
@@ -103,12 +91,6 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
   const [newName, setNewName]             = useState('')
   const [newEmail, setNewEmail]           = useState('')
 
-  // Load last PCO sync time
-  useEffect(() => {
-    supabase.from('app_config').select('value').eq('key', 'pco_last_synced').maybeSingle()
-      .then(({ data }) => { if (data?.value) setLastSynced(data.value) })
-  }, [])
-
   // Load past Sundays for the picker + flip config
   useEffect(() => {
     supabase.from('sundays').select('id, date')
@@ -119,15 +101,33 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
         const prev = (data || []).find(s => s.date !== sundayDate)
         if (prev) setSelectedPast(prev)
       })
-    supabase.from('app_config').select('key, value')
-      .in('key', ['sunday_flip_day', 'sunday_flip_hour'])
-      .then(({ data }) => {
-        const map: Record<string, string> = {}
-        ;(data || []).forEach((r: { key: string; value: string }) => { map[r.key] = r.value })
-        if (map['sunday_flip_day'])  setFlipDay(parseInt(map['sunday_flip_day'], 10))
-        if (map['sunday_flip_hour']) setFlipHour(parseInt(map['sunday_flip_hour'], 10))
-      })
   }, [sundayDate])
+
+  // Load user list (admin only)
+  useEffect(() => {
+    if (!isAdmin || !sessionToken) return
+    let active = true
+    setLoadingUsers(true)
+    fetchAppUsers(sessionToken)
+      .then(users => { if (active) setAppUsers(users) })
+      .catch(err => { if (active) setUsersError(err instanceof Error ? err.message : 'Failed to load users') })
+      .finally(() => { if (active) setLoadingUsers(false) })
+    return () => { active = false }
+  }, [isAdmin, sessionToken])
+
+  const toggleAdmin = async (target: AppUser) => {
+    if (!sessionToken) return
+    setTogglingUser(target.id)
+    setUsersError('')
+    try {
+      const updated = await setUserAdmin(sessionToken, target.id, !target.is_admin)
+      setAppUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : 'Failed to update user')
+    } finally {
+      setTogglingUser(null)
+    }
+  }
 
   // Load email settings (admin only)
   useEffect(() => {
@@ -219,18 +219,6 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
     }
   }
 
-  const saveFlip = async () => {
-    setSavingFlip(true)
-    setFlipNotice('')
-    const { error } = await supabase.from('app_config').upsert([
-      { key: 'sunday_flip_day',  value: String(flipDay),  updated_at: new Date().toISOString() },
-      { key: 'sunday_flip_hour', value: String(flipHour), updated_at: new Date().toISOString() },
-    ])
-    setSavingFlip(false)
-    if (error) { setFlipNotice('Failed to save: ' + error.message); return }
-    setFlipNotice('Saved — takes effect on next page load.')
-  }
-
   const saveTimezone = async () => {
     if (!churchTimezone.trim()) return
     setSavingTz(true)
@@ -241,27 +229,6 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
     setSavingTz(false)
     if (error) { setTzNotice('Failed to save: ' + error.message); return }
     setTzNotice('Saved — reload the page for changes to take effect.')
-  }
-
-  const runPcoSync = async () => {
-    if (!sessionToken) return
-    setSyncing(true)
-    setSyncResult(null)
-    setSyncError('')
-    try {
-      const result = await triggerPcoSync(sessionToken)
-      setSyncResult(result)
-      setLastSynced(new Date().toISOString())
-      // Reload sessions so the sidebar navigation picks up newly synced events
-      if (onSessionsChange) {
-        const fresh = await loadAllSessions()
-        onSessionsChange(fresh)
-      }
-    } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Sync failed. Please try again.')
-    } finally {
-      setSyncing(false)
-    }
   }
 
   const formatSundayDate = (dateStr: string) =>
@@ -366,58 +333,6 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
             )}
           </Card>
 
-          {/* Focus flip */}
-          <Card className="p-5">
-            <p className="text-gray-900 text-sm font-semibold flex items-center gap-2 mb-1">
-              <RefreshCw className="w-4 h-4 text-blue-600" />
-              Sunday Focus Flip
-            </p>
-            <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-              Controls when the app switches from last Sunday to next Sunday as the active date.
-              Before this point the app stays on last Sunday for post-service review;
-              after it the focus moves forward to the upcoming Sunday.
-            </p>
-            <div className="flex gap-3 flex-wrap items-end">
-              <div>
-                <label className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide block mb-1">Day</label>
-                <select
-                  value={flipDay}
-                  onChange={e => setFlipDay(Number(e.target.value))}
-                  className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
-                >
-                  {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => (
-                    <option key={d} value={i + 1}>{d}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-gray-500 text-[11px] font-semibold uppercase tracking-wide block mb-1">Time</label>
-                <select
-                  value={flipHour}
-                  onChange={e => setFlipHour(Number(e.target.value))}
-                  className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
-                >
-                  {Array.from({ length: 18 }, (_, i) => i + 6).map(h => {
-                    const label = h === 12 ? '12:00 PM (noon)'
-                      : h < 12 ? `${h}:00 AM`
-                      : `${h - 12}:00 PM`
-                    return <option key={h} value={h}>{label}</option>
-                  })}
-                </select>
-              </div>
-              <button
-                onClick={saveFlip}
-                disabled={savingFlip}
-                className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 whitespace-nowrap">
-                {savingFlip ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-            {flipNotice && (
-              <p className={`text-xs mt-2 ${flipNotice.startsWith('Failed') ? 'text-red-600' : 'text-emerald-700'}`}>
-                {flipNotice}
-              </p>
-            )}
-          </Card>
         </div>
 
         {/* ── Reporting ── */}
@@ -641,85 +556,99 @@ export function Settings({ onSessionsChange }: SettingsProps = {}) {
           )}
         </div>
 
-        {/* ── Planning Center Sync ── */}
+        {/* ── People & Access ── */}
         {isAdmin && (
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
-              <Cloud className="w-3.5 h-3.5 text-blue-500" />
-              Planning Center Sync
+              <Users className="w-3.5 h-3.5 text-blue-500" />
+              People &amp; Access
             </p>
+
             <Card className="p-5">
-              <p className="text-gray-900 text-sm font-semibold mb-1">Sync Upcoming Services</p>
+              <p className="text-gray-900 text-sm font-semibold mb-1">Admin Access</p>
               <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-                Pulls the next {3} months of service plans from Planning Center and creates
-                matching events in Sunday Ops. Runs automatically when you log in.
-                Existing events are updated in place — no data is lost.
+                Everyone who has logged in to Sunday Ops via Planning Center. Toggle admin access to grant or revoke
+                admin-only features. You cannot remove your own admin access.
               </p>
 
-              <div className="flex items-center gap-4 flex-wrap">
-                <button
-                  onClick={runPcoSync}
-                  disabled={syncing || !sessionToken}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold
-                    hover:bg-blue-700 disabled:opacity-60 transition-colors">
-                  {syncing
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Syncing…</>
-                    : <><RefreshCw className="w-4 h-4" /> Sync Now</>
-                  }
-                </button>
-                {lastSynced && !syncing && (
-                  <p className="text-gray-400 text-xs">
-                    Last synced: {new Date(lastSynced).toLocaleString('en-US', {
-                      month: 'short', day: 'numeric', year: 'numeric',
-                      hour: 'numeric', minute: '2-digit',
-                    })}
-                  </p>
-                )}
-              </div>
-
-              {syncError && (
-                <p className="text-red-600 text-xs mt-3">{syncError}</p>
+              {usersError && (
+                <p className="text-red-600 text-xs mb-3">{usersError}</p>
               )}
 
-              {syncResult && !syncError && (
-                <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                  <p className="text-emerald-700 text-sm font-semibold">
-                    ✓ Sync complete — {syncResult.synced} event{syncResult.synced !== 1 ? 's' : ''} synced
-                    {syncResult.skipped > 0 ? `, ${syncResult.skipped} skipped` : ''}
-                  </p>
-                  {syncResult.details.filter(d => d.action === 'error').length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {syncResult.details.filter(d => d.action === 'error').map((d, i) => (
-                        <p key={i} className="text-red-600 text-xs">{d.name}: {d.error}</p>
-                      ))}
-                    </div>
-                  )}
-                  {syncResult.details.filter(d => d.action === 'upserted').length > 0 && (
-                    <div className="mt-2 space-y-0.5">
-                      {syncResult.details.filter(d => d.action === 'upserted').map((d, i) => (
-                        <p key={i} className="text-emerald-600 text-xs">
-                          {new Date(d.event_date + 'T12:00:00').toLocaleDateString('en-US', {
-                            month: 'short', day: 'numeric',
-                          })} — {d.name}
-                        </p>
-                      ))}
-                    </div>
-                  )}
+              {loadingUsers ? (
+                <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading…
+                </div>
+              ) : appUsers.length === 0 ? (
+                <div className="border border-dashed border-gray-200 rounded-xl px-4 py-6 text-center">
+                  <p className="text-gray-400 text-sm">No users have logged in yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {appUsers.map(u => {
+                    const isSelf    = u.id === user?.id
+                    const toggling  = togglingUser === u.id
+                    const initials  = u.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()
+                    const lastLogin = u.last_login
+                      ? new Date(u.last_login).toLocaleDateString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                        })
+                      : 'Never'
+
+                    return (
+                      <div key={u.id}
+                        className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50">
+
+                        {/* Avatar */}
+                        {u.avatar_url ? (
+                          <img src={u.avatar_url} alt={u.name}
+                            className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center
+                            text-xs font-bold flex-shrink-0">
+                            {initials}
+                          </div>
+                        )}
+
+                        {/* Name / email */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-900 text-sm font-medium truncate">
+                            {u.name}
+                            {isSelf && (
+                              <span className="ml-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">you</span>
+                            )}
+                          </p>
+                          <p className="text-gray-400 text-xs truncate">{u.email ?? '—'}</p>
+                        </div>
+
+                        {/* Last login */}
+                        <div className="hidden sm:block text-right flex-shrink-0">
+                          <p className="text-gray-400 text-[11px] uppercase tracking-wide font-semibold">Last login</p>
+                          <p className="text-gray-600 text-xs">{lastLogin}</p>
+                        </div>
+
+                        {/* Admin toggle */}
+                        <button
+                          onClick={() => void toggleAdmin(u)}
+                          disabled={toggling || isSelf}
+                          title={isSelf ? 'You cannot remove your own admin access' : undefined}
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
+                            disabled:opacity-50 disabled:cursor-not-allowed
+                            ${u.is_admin
+                              ? 'bg-blue-600 text-white hover:bg-blue-700'
+                              : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                            }`}>
+                          {toggling
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : u.is_admin ? 'Admin' : 'Operator'
+                          }
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
-            </Card>
-          </div>
-        )}
-
-        {/* ── Special Events ── */}
-        {isAdmin && (
-          <div className="mt-6">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
-              <CalendarDays className="w-3.5 h-3.5 text-purple-500" />
-              Special Events
-            </p>
-            <Card className="p-5">
-              <SpecialEventManager onSessionsChange={onSessionsChange ?? (() => {})} />
             </Card>
           </div>
         )}
