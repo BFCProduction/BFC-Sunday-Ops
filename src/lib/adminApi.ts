@@ -154,6 +154,30 @@ export async function fetchPcoPlanItems(
   return (payload as { items: PcoPlanItemResult[] }).items ?? []
 }
 
+// ── Event Admin ──────────────────────────────────────────────────────────────
+
+export async function deleteEventAsAdmin(
+  sessionToken: string,
+  eventId: string,
+): Promise<void> {
+  const response = await fetch(getFunctionUrl('event-admin'), {
+    method: 'DELETE',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
+    },
+    body: JSON.stringify({ event_id: eventId }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.error === 'string' ? payload.error : `Delete failed with ${response.status}`
+    )
+  }
+}
+
 export async function requestSummaryEmailAdmin<T>(
   sessionToken: string,
   method: string,
