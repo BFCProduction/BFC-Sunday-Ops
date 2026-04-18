@@ -223,6 +223,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/035_add_ptz_op_checklist_role.sql`
 - `supabase/migrations/036_rename_ptz_op_role_to_ptz.sql`
 - `supabase/migrations/037_admin_only_event_deletes.sql`
+- `supabase/migrations/038_event_scoped_summary_email_runs.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -454,12 +455,14 @@ supabase functions deploy push-monday-issue
 
 ## Sunday Summary Email
 
-Summary email settings live in `Service Data -> Reporting` and include:
+Summary email settings live in `Settings -> Reporting` and include:
 
 - enabled / paused state
 - send day and time
 - reply-to address
 - recipient list
+
+The sender sends **one report per event/service**, not one combined Sunday report. On a normal Sunday that means separate 9am and 11am reports if both services have operational activity. On Sundays with one combined service or extra services, each active event gets its own report and blank auto-created service shells are skipped.
 
 The sender currently assumes Google Workspace Gmail API delivery using:
 
@@ -470,15 +473,21 @@ The sender currently assumes Google Workspace Gmail API delivery using:
 Supporting pieces:
 
 - `scripts/send-sunday-summary.js`
-- `supabase/functions/admin-session`
 - `supabase/functions/summary-email-admin`
 - `.github/workflows/summary-email.yml`
 
 Deploy the new edge functions after adding secrets:
 
 ```bash
-supabase functions deploy admin-session
 supabase functions deploy summary-email-admin
+```
+
+Useful validation flags:
+
+```bash
+node scripts/send-sunday-summary.js --dry-run --now --date 2026-04-12
+node scripts/send-sunday-summary.js --now --event-id <events-id> --to you@example.com
+node scripts/send-sunday-summary.js --now --force --event-id <events-id>
 ```
 
 ## Admin Event Deletion

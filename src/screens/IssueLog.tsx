@@ -154,10 +154,36 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
 
   // ── Load issues ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const q = supabase.from('issues').select('*')
-    const filtered = eventId ? q.eq('event_id', eventId) : q.eq('sunday_id', sundayId)
-    filtered.order('created_at', { ascending: false })
-      .then(({ data }) => { setIssues((data || []) as Issue[]); setLoading(false) })
+    let cancelled = false
+
+    async function load() {
+      const queries = []
+      if (eventId) {
+        queries.push(supabase.from('issues').select('*').eq('event_id', eventId))
+      }
+      if (sundayId) {
+        queries.push(supabase.from('issues').select('*').eq('sunday_id', sundayId))
+      }
+
+      const results = await Promise.all(queries)
+      if (cancelled) return
+
+      const seen = new Set<string>()
+      const rows = results
+        .flatMap(result => result.data || [])
+        .filter(row => {
+          if (seen.has(row.id)) return false
+          seen.add(row.id)
+          return true
+        })
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+      setIssues(rows as Issue[])
+      setLoading(false)
+    }
+
+    void load()
+    return () => { cancelled = true }
   }, [sundayId, eventId])
 
   // ── Load photos for all issues ───────────────────────────────────────────

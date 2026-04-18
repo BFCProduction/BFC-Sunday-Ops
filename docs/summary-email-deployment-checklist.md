@@ -14,7 +14,6 @@ Run these from the repo root after authenticating the Supabase CLI:
 supabase login
 supabase migration list --linked
 supabase db push
-supabase functions deploy admin-session
 supabase functions deploy summary-email-admin
 ```
 
@@ -29,8 +28,9 @@ supabase secrets set SUPABASE_SERVICE_KEY=your_service_role_key
 Notes:
 
 - `ADMIN_PASSWORD` should match the password the team will use to unlock admin mode.
-- `SUPABASE_SERVICE_KEY` is required by `summary-email-admin`.
+- `SUPABASE_SERVICE_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`) is required by `summary-email-admin`.
 - `SUPABASE_URL` is required by the edge functions and sender script.
+- Migration `038_event_scoped_summary_email_runs.sql` is required before the sender can record one run per event/service.
 
 ## 2. Google Workspace / Gmail API
 
@@ -86,20 +86,22 @@ After the migration and edge functions are live:
 
 1. Open the app.
 2. Enter admin mode.
-3. Go to `Service Data -> Reporting`.
+3. Go to `Settings -> Reporting`.
 4. Confirm:
    - enabled
    - send day = Sunday
    - send time = `15:00`
    - reply-to = `production@bethanynaz.org`
 5. Add the recipient email addresses.
+6. Confirm at least one PCO user who manages recipients has `users.is_admin = true`.
 
 ## 5. First Validation Run
 
 Recommended first validation flow:
 
 ```bash
-node scripts/send-sunday-summary.js --now --force
+node scripts/send-sunday-summary.js --dry-run --now --date YYYY-MM-DD
+node scripts/send-sunday-summary.js --now --event-id <events-id> --to your-test-address@example.com
 ```
 
 Then verify:
@@ -109,6 +111,7 @@ Then verify:
 - reply-to goes to `production@bethanynaz.org`
 - a row is written to `report_email_runs`
 - recipient addresses are not exposed in the public app client
+- the test-recipient override does not mark the event as sent; a normal run without `--to` records the run
 
 ## 6. Scheduled Run
 
@@ -120,11 +123,10 @@ Behavior:
 
 - runs every 15 minutes on Sunday UTC
 - checks the configured local church time
-- sends only once for the target Sunday unless `--force` is used manually
+- sends one report per event/service with operational activity
+- skips blank auto-created service shells
+- sends each event only once unless `--force` is used manually
 
-## Current Blocker
+## Current Status
 
-The local Supabase CLI is not authenticated yet, so remote inspection and deployment cannot continue from this machine until one of these is done:
-
-- run `supabase login`
-- or export `SUPABASE_ACCESS_TOKEN`
+Migration `038_event_scoped_summary_email_runs.sql` has been applied to the linked Supabase project, and a dry-run generated separate 9am and 11am reports for April 12, 2026 without sending mail.

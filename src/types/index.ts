@@ -112,7 +112,8 @@ export interface ReportEmailRecipient {
 
 export interface ReportEmailRun {
   id: string
-  sunday_id: string
+  sunday_id: string | null
+  event_id: string | null
   status: 'pending' | 'sent' | 'failed'
   sent_at: string | null
   recipient_count: number

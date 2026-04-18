@@ -32,6 +32,12 @@ Added admin-only deletion for unified Sunday Ops events. Admins now have a guard
 - Applied migration `037` to the remote database.
 - Updated the README to document admin-only event deletion, the `event-admin` function, and migration `037`.
 - Corrected the README migration list entry for migration `030`.
+- Reworked the Sunday summary email sender to send one report per `events.id` instead of one combined report per `sundays.id`.
+- Added `supabase/migrations/038_event_scoped_summary_email_runs.sql` so `report_email_runs` can track idempotency per event/service.
+- Updated the email report data loader for event-native checklist completions, attendance, runtimes, loudness, weather, issues, and multiple outcome-based evaluations.
+- Added sender validation flags: `--dry-run`, `--date`, `--event-id`, `--to`, and `--include-empty`.
+- Updated Issue Log writes to use the active unified event id going forward, while still reading legacy Sunday-scoped rows for transition history.
+- Updated summary email deployment docs for the per-event methodology.
 
 ### Verification
 
@@ -40,6 +46,12 @@ Added admin-only deletion for unified Sunday Ops events. Admins now have a guard
 - `supabase functions deploy event-admin` completed successfully.
 - `supabase migration list` now shows local and remote history aligned through `037`.
 - A no-op anon delete probe against `events` now returns `permission denied for table events`.
+- `supabase db push --dry-run` showed only migration `038`, then `supabase db push` applied it successfully.
+- A second `supabase db push --dry-run` reported the remote database is up to date.
+- `node scripts/send-sunday-summary.js --dry-run --now --date 2026-04-12` generated two event-scoped reports (9am and 11am) without sending mail.
+- `node --check scripts/send-sunday-summary.js` passed.
+- `npm run build` passed after the summary email changes.
+- Focused ESLint for `src/App.tsx`, `src/screens/IssueLog.tsx`, and `scripts/send-sunday-summary.js` passed with one existing `react-hooks/exhaustive-deps` warning in `src/App.tsx`.
 
 ### Notes
 
