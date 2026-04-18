@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Calendar, CalendarDays, Search, X } from 'lucide-react'
+import { Calendar, CalendarDays, Loader2, Search, Trash2, X } from 'lucide-react'
 import type { Session } from '../../types'
 
 interface Props {
@@ -7,6 +7,8 @@ interface Props {
   activeEventId: string
   onSelect: (id: string) => void
   onClose: () => void
+  isAdmin?: boolean
+  onDelete?: (sessionId: string) => Promise<void>
 }
 
 // ── Grouping helpers ───────────────────────────────────────────────────────────
@@ -67,28 +69,53 @@ function compareByTime(a: Session, b: Session, descending = false): number {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }: Props) {
+export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, isAdmin, onDelete }: Props) {
   const [query, setQuery] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-  const activeRef = useRef<HTMLButtonElement>(null)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [deletingId,   setDeletingId]   = useState<string | null>(null)
+  const [deleteError,  setDeleteError]  = useState('')
+  const inputRef  = useRef<HTMLInputElement>(null)
+  const activeRef = useRef<HTMLDivElement>(null)
   const today = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
     inputRef.current?.focus()
-    // Scroll active item into view after mount
     setTimeout(() => activeRef.current?.scrollIntoView({ block: 'center', behavior: 'instant' }), 50)
   }, [])
 
-  // Close on Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  async function handleDelete(id: string) {
+    if (!onDelete) return
+    setDeletingId(id)
+    setDeleteError('')
+    setConfirmingId(null)
+    try {
+      await onDelete(id)
+      onClose()
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete event')
+      setDeletingId(null)
+    }
+  }
+
+  function handleDeleteClick(e: React.MouseEvent, id: string) {
+    e.stopPropagation()
+    if (confirmingId === id) {
+      void handleDelete(id)
+    } else {
+      setConfirmingId(id)
+    }
+  }
+
+  const canDelete = isAdmin && !!onDelete && allSessions.length > 1
+
   const q = query.trim().toLowerCase()
 
-  // When searching: flat filtered list
   const searchResults = useMemo(() => {
     if (!q) return null
     return allSessions.filter(s =>
@@ -98,7 +125,6 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }:
     )
   }, [allSessions, q])
 
-  // When not searching: split upcoming/past, group by month
   const { upcomingMonths, pastMonths } = useMemo(() => {
     if (searchResults) return { upcomingMonths: [], pastMonths: [] }
     const upcoming = allSessions.filter(s => s.date >= today)
@@ -114,44 +140,81 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }:
     onClose()
   }
 
-  // ── Render helpers ───────────────────────────────────────────────────────────
+  // ── Delete button ─────────────────────────────────────────────────────────────
+
+  function DeleteBtn({ s }: { s: Session }) {
+    if (!canDelete) return null
+    const isDeleting   = deletingId === s.id
+    const isConfirming = confirmingId === s.id
+
+    return (
+      <button
+        onClick={e => handleDeleteClick(e, s.id)}
+        onMouseLeave={() => { if (confirmingId === s.id) setConfirmingId(null) }}
+        disabled={isDeleting}
+        className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all
+          opacity-0 group-hover:opacity-100 focus:opacity-100
+          ${isConfirming
+            ? 'bg-red-100 text-red-700 hover:bg-red-200 opacity-100'
+            : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+          }
+          disabled:opacity-40 disabled:cursor-not-allowed`}
+        title={isConfirming ? 'Click again to confirm deletion' : 'Delete this event'}
+      >
+        {isDeleting
+          ? <Loader2 className="w-3 h-3 animate-spin" />
+          : isConfirming
+            ? 'Are you sure?'
+            : <Trash2 className="w-3.5 h-3.5" />
+        }
+      </button>
+    )
+  }
+
+  // ── Row components ────────────────────────────────────────────────────────────
 
   function SundayRow({ s }: { s: Session }) {
     const isActive = s.id === activeEventId
     const label = s.serviceTypeSlug === 'sunday-9am' ? '9:00 AM' : '11:00 AM'
     return (
-      <button
+      <div
         ref={isActive ? activeRef : undefined}
-        onClick={() => handleSelect(s.id)}
-        className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm ${
-          isActive
-            ? 'bg-blue-50 text-blue-800 ring-1 ring-blue-300'
-            : 'hover:bg-gray-50 text-gray-700'
+        className={`group flex items-center gap-1 px-2 py-1 rounded-lg transition-all ${
+          isActive ? 'bg-blue-50 ring-1 ring-blue-300' : 'hover:bg-gray-50'
         }`}
       >
-        <Calendar className="w-3.5 h-3.5 flex-shrink-0" style={{ color: s.serviceTypeColor }} />
-        <span className="flex-1 truncate font-medium">{label}</span>
-        <span className="text-xs text-gray-400 flex-shrink-0">{formatDayLabel(s.date)}</span>
-      </button>
+        <button
+          onClick={() => handleSelect(s.id)}
+          className="flex-1 flex items-center gap-2 px-1 py-1 text-sm text-left min-w-0"
+        >
+          <Calendar className="w-3.5 h-3.5 flex-shrink-0" style={{ color: s.serviceTypeColor }} />
+          <span className={`flex-1 truncate font-medium ${isActive ? 'text-blue-800' : 'text-gray-700'}`}>{label}</span>
+          <span className="text-xs text-gray-400 flex-shrink-0">{formatDayLabel(s.date)}</span>
+        </button>
+        <DeleteBtn s={s} />
+      </div>
     )
   }
 
   function SpecialRow({ s }: { s: Session }) {
     const isActive = s.id === activeEventId
     return (
-      <button
+      <div
         ref={isActive ? activeRef : undefined}
-        onClick={() => handleSelect(s.id)}
-        className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm ${
-          isActive
-            ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-300'
-            : 'hover:bg-gray-50 text-gray-700'
+        className={`group flex items-center gap-1 px-2 py-1 rounded-lg transition-all ${
+          isActive ? 'bg-amber-50 ring-1 ring-amber-300' : 'hover:bg-gray-50'
         }`}
       >
-        <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" style={{ color: s.serviceTypeColor }} />
-        <span className="flex-1 truncate font-medium">{s.name}</span>
-        <span className="text-xs text-gray-400 flex-shrink-0">{formatDayLabel(s.date)}</span>
-      </button>
+        <button
+          onClick={() => handleSelect(s.id)}
+          className="flex-1 flex items-center gap-2 px-1 py-1 text-sm text-left min-w-0"
+        >
+          <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" style={{ color: s.serviceTypeColor }} />
+          <span className={`flex-1 truncate font-medium ${isActive ? 'text-amber-800' : 'text-gray-700'}`}>{s.name}</span>
+          <span className="text-xs text-gray-400 flex-shrink-0">{formatDayLabel(s.date)}</span>
+        </button>
+        <DeleteBtn s={s} />
+      </div>
     )
   }
 
@@ -208,39 +271,44 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }:
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
           {searchResults ? (
-            /* Search results — flat list */
             <div className="p-2">
               {searchResults.length === 0 ? (
                 <p className="text-gray-400 text-sm text-center py-8">No sessions match "{query}"</p>
               ) : (
                 searchResults.map(s => {
-                  const isActive = s.id === activeEventId
+                  const isActive  = s.id === activeEventId
                   const isSpecial = s.serviceTypeSlug === 'special'
                   return (
-                    <button
+                    <div
                       key={s.id}
                       ref={isActive ? activeRef : undefined}
-                      onClick={() => handleSelect(s.id)}
-                      className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                      className={`group flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all ${
                         isActive ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'
                       }`}
                     >
-                      <span
-                        className="w-2 h-2 rounded-full flex-shrink-0 mt-0.5"
-                        style={{ backgroundColor: s.serviceTypeColor }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{isSpecial ? s.name : s.serviceTypeName}</p>
-                        <p className="text-xs text-gray-400">{formatDayLabel(s.date)}</p>
-                      </div>
-                      {isActive && <span className="text-xs font-semibold text-blue-600">Current</span>}
-                    </button>
+                      <button
+                        onClick={() => handleSelect(s.id)}
+                        className="flex-1 flex items-center gap-3 px-1 text-left min-w-0"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0 mt-0.5"
+                          style={{ backgroundColor: s.serviceTypeColor }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {isSpecial ? s.name : s.serviceTypeName}
+                          </p>
+                          <p className="text-xs text-gray-400">{formatDayLabel(s.date)}</p>
+                        </div>
+                        {isActive && <span className="text-xs font-semibold text-blue-600 flex-shrink-0">Current</span>}
+                      </button>
+                      <DeleteBtn s={s} />
+                    </div>
                   )
                 })
               )}
             </div>
           ) : (
-            /* Grouped view */
             <>
               {upcomingCount > 0 && (
                 <div>
@@ -263,6 +331,13 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose }:
             </>
           )}
         </div>
+
+        {/* Error footer */}
+        {deleteError && (
+          <div className="px-4 py-2 border-t border-red-100 bg-red-50">
+            <p className="text-xs text-red-600">{deleteError}</p>
+          </div>
+        )}
       </div>
     </div>
   )

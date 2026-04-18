@@ -3,7 +3,7 @@ import {
   LayoutDashboard, ClipboardCheck, AlertTriangle,
   BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
   Settings, ChevronLeft, ChevronRight, RotateCcw, TrendingUp,
-  CalendarDays, ChevronDown, Plus, FolderOpen, Trash2, Loader2,
+  CalendarDays, ChevronDown, Plus, FolderOpen,
 } from 'lucide-react'
 import { SessionPicker } from './SessionPicker'
 import { QuickCreateModal } from './QuickCreateModal'
@@ -45,8 +45,6 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
   const [phase, setPhase] = useState<ServicePhase | null>(() => getServicePhase(new Date(), timezone))
   const [showPicker,      setShowPicker]      = useState(false)
   const [showQuickCreate, setShowQuickCreate] = useState(false)
-  const [deletingEvent,   setDeletingEvent]   = useState(false)
-  const [deleteError,     setDeleteError]     = useState('')
 
   useEffect(() => {
     const id = setInterval(() => setPhase(getServicePhase(new Date(), timezone)), 60_000)
@@ -72,41 +70,6 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
   const nextSession = currentIdx >= 0 && currentIdx < allSessions.length - 1
     ? allSessions[currentIdx + 1]
     : null
-
-  async function handleDeleteCurrentEvent() {
-    if (!activeEventId || !sessionToken) {
-      setDeleteError('Admin session is not available. Please sign out and back in.')
-      return
-    }
-
-    const currentSession = allSessions.find(s => s.id === activeEventId)
-    const label = currentSession?.serviceTypeSlug === 'special'
-      ? currentSession.name
-      : displayLabel
-
-    const confirmed = confirm(
-      `Delete ${label}?\n\nThis removes the event from Sunday Ops and deletes event-specific checklist, service data, issue, and production-doc records. This cannot be undone.`
-    )
-    if (!confirmed) return
-
-    setDeletingEvent(true)
-    setDeleteError('')
-    try {
-      await deleteEventAsAdmin(sessionToken, activeEventId)
-      const freshSessions = await loadAllSessions()
-      onSessionsChange(freshSessions)
-
-      const fallbackIdx = currentIdx >= 0 ? Math.min(currentIdx, freshSessions.length - 1) : 0
-      const fallback = freshSessions[fallbackIdx] ?? freshSessions[0]
-      if (fallback) {
-        navigateToEvent(fallback.id)
-      }
-    } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : 'Failed to delete event')
-    } finally {
-      setDeletingEvent(false)
-    }
-  }
 
   return (
     <aside className="hidden md:flex flex-col flex-shrink-0 border-r border-white/[0.06] overflow-y-auto"
@@ -219,20 +182,6 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
             </button>
           )}
         </div>
-        {isAdmin && (
-          <button
-            onClick={handleDeleteCurrentEvent}
-            disabled={deletingEvent || !activeEventId || allSessions.length <= 1}
-            className="mt-2 flex items-center gap-1.5 text-[10px] font-semibold text-red-500 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            title={allSessions.length <= 1 ? 'At least one session must remain open' : 'Delete current event'}
-          >
-            {deletingEvent ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-            {deletingEvent ? 'Deleting…' : 'Delete Current Event'}
-          </button>
-        )}
-        {deleteError && (
-          <p className="mt-1.5 text-[10px] leading-snug text-red-400">{deleteError}</p>
-        )}
       </div>
 
       <nav className="flex-1 px-3 py-3 space-y-0.5 flex flex-col">
@@ -296,6 +245,15 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
           activeEventId={activeEventId}
           onSelect={navigateToEvent}
           onClose={() => setShowPicker(false)}
+          isAdmin={isAdmin}
+          onDelete={sessionToken ? async (id) => {
+            const idx = allSessions.findIndex(s => s.id === id)
+            await deleteEventAsAdmin(sessionToken, id)
+            const fresh = await loadAllSessions()
+            onSessionsChange(fresh)
+            const fallback = fresh[Math.max(0, Math.min(idx, fresh.length - 1))] ?? fresh[0]
+            if (fallback) navigateToEvent(fallback.id)
+          } : undefined}
         />
       )}
 
