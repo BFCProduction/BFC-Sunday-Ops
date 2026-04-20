@@ -518,6 +518,45 @@ async function run() {
   if (saErr) console.warn('stream_analytics upsert warning:', saErr.message)
   else       console.log('stream_analytics rollup updated.')
 
+  // Write church_online columns into service_records so Analytics / Data Explorer
+  // can display them. Regular Sunday services only — extra services (e.g. Easter
+  // third stream) have no regular service_type and are skipped here.
+  const SERVICE_TYPE_MAP = { 'Traditional': 'regular_9am', 'Contemporary': 'regular_11am' }
+  for (const ev of eventStats) {
+    const serviceType = SERVICE_TYPE_MAP[ev.name]
+    if (!serviceType) {
+      console.log(`service_records: no mapping for "${ev.name}" — skipping.`)
+      continue
+    }
+    const { data: existingRow } = await supabase
+      .from('service_records')
+      .select('id')
+      .eq('service_date', targetSunday)
+      .eq('service_type', serviceType)
+      .maybeSingle()
+    const churchOnlineFields = {
+      church_online_views:               ev.totalViews,
+      church_online_unique_viewers:      ev.uniqueViewers,
+      church_online_avg_watch_time_secs: ev.avgWatchSeconds,
+    }
+    let srErr
+    if (existingRow) {
+      ;({ error: srErr } = await supabase
+        .from('service_records').update(churchOnlineFields).eq('id', existingRow.id))
+    } else {
+      ;({ error: srErr } = await supabase
+        .from('service_records').insert({
+          service_date: targetSunday,
+          service_type: serviceType,
+          sunday_id:    sunday.id,
+          ...churchOnlineFields,
+        }))
+    }
+    if (srErr) throw new Error(`service_records church_online (${ev.name}): ${srErr.message}`)
+    console.log(`service_records ${serviceType} church_online updated.`)
+  }
+  console.log('service_records church_online columns written.')
+
   // ── Google Sheets ───────────────────────────────────────────────────────────
   await writeToSheet(targetSunday, eventStats)
 
