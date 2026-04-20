@@ -1,5 +1,57 @@
 # Changelog
 
+## 2026-04-19 (Session 13)
+
+### Summary
+
+Two fixes this session. First, rebuilt `scripts/fetch-youtube.js` from scratch as a proper live relay that runs during the Sunday service window — the previous version used the `liveBroadcasts` API which only sees BFC-owned broadcasts, not the RESI-created streams. The new script uses `search.list` with `eventType=live` to find active RESI streams, polls concurrent viewers every 60 seconds, and writes to `service_records` when each stream ends. Second, found and fixed the root cause of missing service time, message time, and flip time data in the Analytics Data Explorer: all three `runtime_fields` rows had `analytics_key = null`, so the sync code in the Runtimes save path was silently skipping every field. Setting those keys in the database unblocks the sync going forward.
+
+### Completed
+
+#### YouTube live relay (`scripts/fetch-youtube.js`)
+
+- **Full rewrite** — replaced the `liveBroadcasts.list`-based script (which only found 3 BFC-owned broadcasts) with a relay-style polling loop designed to run during the Sunday service window.
+- **Stream detection**: polls `search.list` with `channelId + eventType=live` every 60 seconds. RESI-created streams are visible here while live even though they don't appear in `liveBroadcasts`.
+- **Viewer tracking**: once a stream is found, fetches `videos.list?part=liveStreamingDetails` each cycle and tracks peak `concurrentViewers`.
+- **Service type mapping** by actual start time (America/Chicago):
+  - 7:45–8:45 AM → `special_8am` (Easter-style early service)
+  - 8:45–10:15 AM → `regular_9am`
+  - 10:15–12:30 PM → `regular_11am`
+- **Write on end**: when `liveBroadcastContent` becomes `'none'`, writes `youtube_unique_viewers` to `service_records` (upsert — creates row if none exists).
+- **Graceful flush**: `SIGINT`/`SIGTERM` handler writes peak viewers for any still-active streams before exit.
+- **Service window guard**: exits cleanly with guidance if run outside the 7:30 AM–1:30 PM CT window (allows starting up to 30 minutes early).
+- **Past-date fallback**: `--date` for a past Sunday prints a message explaining the limitation and points to `import-youtube-history.js`.
+- **OAuth token caching**: access token is refreshed once per run and cached with expiry; automatically re-fetched if near-expiry during a long relay session.
+- Supports `--dry-run` (polls and logs, no DB writes) and `--date YYYY-MM-DD`.
+
+Usage:
+```bash
+node --env-file=.env.local scripts/fetch-youtube.js             # run on Sunday
+node --env-file=.env.local scripts/fetch-youtube.js --dry-run   # test without writing
+```
+
+#### Runtime analytics sync fix (database)
+
+- **Root cause**: `runtime_fields` rows for Service Runtime (id=3), Message Runtime (id=4), and Flip Time (id=8) all had `analytics_key = null`.
+- The `save()` function in `Runtimes.tsx` checks `if (!f.analytics_key) continue` before building the `service_records` sync payload — so no timing data was ever reaching the Analytics Data Explorer.
+- **Fix**: set `analytics_key` directly in the database:
+  - id=3 → `service_run_time`
+  - id=4 → `message_run_time`
+  - id=8 → `stage_flip_time`
+- Going forward, clicking Save in the Runtimes screen will correctly sync all three fields to `service_records`.
+
+#### Identified follow-up data entry needed
+
+- March 29: Message Runtime value in `runtime_values` is `-00:00:58` (typo — negative sign included). Needs correction in the Runtimes screen.
+- April 5 and April 12: no runtime data in `runtime_values` at all — those saves did not complete. Values need to be entered.
+
+### Verification
+
+- Confirmed `runtime_fields.analytics_key` set correctly via SQL query.
+- `fetch-youtube.js` not yet tested live (requires active Sunday streams). Dry-run flag available for testing the polling loop.
+
+---
+
 ## 2026-04-18 (Session 12)
 
 ### Summary

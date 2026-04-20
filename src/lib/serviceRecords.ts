@@ -61,7 +61,7 @@ export async function syncToServiceRecords({
     await supabase.from('service_records').insert({
       service_date: sessionDate,
       service_type: serviceType,
-      sunday_id:    isSpecial ? null : sundayId,
+      sunday_id:    isSpecial ? null : (sundayId || null),
       service_label: isSpecial ? eventName : null,
       ...fields,
     })

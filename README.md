@@ -82,6 +82,8 @@ Live now:
 
 - RESI analytics importer (`scripts/fetch-resi.js`) — logs in via Playwright, downloads the session CSV for the target Sunday, computes per-service stats, and writes to Supabase. Supports `--now`, `--date`, and `--dry-run` flags.
 
+- **YouTube live relay** (`scripts/fetch-youtube.js`) — runs during the Sunday service window (7:30 AM–1:30 PM CT). Polls BFC's YouTube channel for active live streams created by RESI via `search.list?eventType=live`, tracks `concurrentViewers` every 60 seconds, and writes `youtube_unique_viewers` to `service_records` when each stream ends. Streams are mapped to service types by actual start time. For historical data use `scripts/import-youtube-history.js` instead.
+
 - **Dashboard layout** — compact progress strip (dial + overall bar + role bars) spans the full width at the top; Today's Schedule (25%) and Run of Show (75%) sit side by side below it; Quick Actions below that. Stacks vertically on mobile.
 
 - **PCO Run of Show** (`supabase/functions/pco-plan-items/`):
@@ -135,7 +137,7 @@ Live now:
 - **Historical Gameday Checklist PDF extraction** (`scripts/extract-checklist-runtimes.js`) — one-shot script that scans 242 PDFs from the local Google Drive archive (Jun 2021–Mar 2026), extracts service runtime, message runtime, and stage flip time from each, and upserts into `service_records`. 465 rows backfilled.
 
 Still pending:
-- Real YouTube analytics importer (`scripts/fetch-youtube.js` is a stub)
+- **YouTube live relay first live test** — `scripts/fetch-youtube.js` is built but not yet verified against a live Sunday stream
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
 - Any downstream reporting beyond the Sunday summary email
 
@@ -375,6 +377,50 @@ To copy weather from the `weather` table into `service_records` for records that
 ```bash
 node scripts/sync-weather-to-service-records.js
 ```
+
+## YouTube Live Relay
+
+Run on Sunday morning before the first service. The script polls until all expected streams have ended or the service window closes (1:30 PM CT).
+
+```bash
+node --env-file=.env.local scripts/fetch-youtube.js
+```
+
+Useful flags:
+
+```bash
+node --env-file=.env.local scripts/fetch-youtube.js --dry-run          # poll and log, no DB writes
+node --env-file=.env.local scripts/fetch-youtube.js --date 2026-04-27  # target a specific Sunday
+```
+
+Notes:
+- Must be run during the service window (7:30 AM–1:30 PM CT); will exit with a message if run outside that window (allows starting up to 30 minutes early).
+- RESI-created live streams are visible via `search.list?eventType=live` while active but are not accessible after they end. For historical data use `scripts/import-youtube-history.js`.
+- Streams are matched to `service_records` by actual start time: 8:45–10:15 CT → `regular_9am`, 10:15–12:30 CT → `regular_11am`, 7:45–8:45 CT → special 8am service.
+- Peak `concurrentViewers` is written to `service_records.youtube_unique_viewers` when each stream ends.
+- Ctrl-C flushes any in-progress streams before exiting.
+
+Required env:
+```
+YOUTUBE_CLIENT_ID
+YOUTUBE_CLIENT_SECRET
+YOUTUBE_REFRESH_TOKEN
+SUPABASE_URL
+SUPABASE_SERVICE_KEY
+```
+
+To set up OAuth credentials for the first time, run `scripts/youtube-auth.js` once and follow the prompts.
+
+### Historical YouTube import
+
+For past Sundays, use the spreadsheet importer:
+
+```bash
+node --env-file=.env.local scripts/import-youtube-history.js --file ~/Downloads/"Stream Analytics Master - 9am Service.csv" --service 9am
+node --env-file=.env.local scripts/import-youtube-history.js --file ~/Downloads/"Stream Analytics Master - 11am Service.csv" --service 11am
+```
+
+Reads `Col 0` (date, M/D/YYYY) and `Col 19` (YouTube unique viewers) from the BFC stream analytics spreadsheet exports.
 
 ## Supabase Storage
 

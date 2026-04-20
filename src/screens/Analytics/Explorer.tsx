@@ -367,8 +367,8 @@ export function Explorer() {
               <tr>
                 <TH sticky>Date</TH>
                 <TH>Service</TH>
-                <TH right>In-Person</TH>
                 <TH right>Combined</TH>
+                <TH right>In-Person</TH>
                 <TH right>CO Views</TH>
                 <TH right>CO Unique</TH>
                 <TH right>CO Avg Watch</TH>
@@ -399,8 +399,8 @@ export function Explorer() {
                   <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                     <TD sticky className="font-medium text-gray-900">{fmtDate(r.service_date)}</TD>
                     <TD><ServiceBadge type={r.service_type} /></TD>
-                    <TD right mono>{fmtNum(r.in_person_attendance)}</TD>
                     <TD right mono>{combinedAttStr(r)}</TD>
+                    <TD right mono>{fmtNum(r.in_person_attendance)}</TD>
                     <TD right mono>{fmtNum(r.church_online_views)}</TD>
                     <TD right mono>{fmtNum(r.church_online_unique_viewers)}</TD>
                     <TD right mono>{fmtSecs(r.church_online_avg_watch_time_secs)}</TD>
