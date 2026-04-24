@@ -174,6 +174,70 @@ async function getOrCreateSunday(dateString) {
   return data
 }
 
+function serviceRecordTypeForEvent(ev) {
+  if (ev.time?.startsWith('9')) return 'regular_9am'
+  if (ev.time?.startsWith('11')) return 'regular_11am'
+  if (ev.name === 'Traditional') return 'regular_9am'
+  if (ev.name === 'Contemporary') return 'regular_11am'
+  return null
+}
+
+async function upsertServiceRecord(dateString, serviceType, sundayId, fields) {
+  const { data: existing, error: findError } = await supabase
+    .from('service_records')
+    .select('id')
+    .eq('service_date', dateString)
+    .eq('service_type', serviceType)
+    .maybeSingle()
+
+  if (findError) throw findError
+
+  if (existing) {
+    const { error } = await supabase
+      .from('service_records')
+      .update(fields)
+      .eq('id', existing.id)
+    if (error) throw error
+    return 'updated'
+  }
+
+  const { error } = await supabase.from('service_records').insert({
+    service_date: dateString,
+    service_type: serviceType,
+    sunday_id: sundayId,
+    service_label: null,
+    ...fields,
+  })
+  if (error) throw error
+  return 'inserted'
+}
+
+async function syncResiToServiceRecords(targetSunday, sunday, eventStats) {
+  let updated = 0
+  let inserted = 0
+  let skipped = 0
+
+  for (const ev of eventStats) {
+    const serviceType = serviceRecordTypeForEvent(ev)
+    if (!serviceType) {
+      console.warn(`service_records: could not map ${ev.name} (${ev.time || 'no time'}) — skipping.`)
+      skipped++
+      continue
+    }
+
+    const result = await upsertServiceRecord(targetSunday, serviceType, sunday.id, {
+      church_online_views: ev.totalViews,
+      church_online_unique_viewers: ev.uniqueViewers,
+      church_online_avg_watch_time_secs: ev.avgWatchSeconds,
+    })
+
+    if (result === 'updated') updated++
+    if (result === 'inserted') inserted++
+  }
+
+  console.log(`service_records analytics updated. Updated: ${updated}  Inserted: ${inserted}  Skipped: ${skipped}`)
+}
+
 // ─── Google Sheets write-back ─────────────────────────────────────────────────
 
 async function getGoogleToken() {
@@ -507,6 +571,10 @@ async function run() {
     if (error) throw new Error(`resi_events upsert (${ev.name}): ${error.message}`)
   }
   console.log('resi_events written.')
+
+  // service_records feeds analytics_records, the Analytics screens, and the
+  // recent-history tables. Keep it in sync during the regular RESI import.
+  await syncResiToServiceRecords(targetSunday, sunday, eventStats)
 
   // Update stream_analytics rollup (only resi columns — leaves youtube untouched)
   const { error: saErr } = await supabase.from('stream_analytics').upsert({

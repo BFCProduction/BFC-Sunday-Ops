@@ -132,6 +132,7 @@ export function LoudnessLog() {
   const [saving,   setSaving]   = useState(false)
   const [saved,    setSaved]    = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [notice, setNotice] = useState('')
 
   const [history, setHistory] = useState<HistoryRow[]>([])
 
@@ -203,59 +204,69 @@ export function LoudnessLog() {
   // ── Save ──────────────────────────────────────────────────────────────────
   const submit = async () => {
     setSaving(true)
+    setNotice('')
 
-    const { data: existing } = await supabase
-      .from('loudness')
-      .select('id')
-      .eq('event_id', activeEventId)
-      .maybeSingle()
+    try {
+      if (!activeEventId) throw new Error('No active event is selected.')
 
-    const payload = {
-      event_id:           activeEventId,
-      service_1_max_db:   maxA ? parseFloat(maxA) : null,
-      service_1_laeq:     laeq ? parseFloat(laeq) : null,
-      service_1_max_db_c: maxC ? parseFloat(maxC) : null,
-      service_1_lceq:     lceq ? parseFloat(lceq) : null,
-      logged_at:          new Date().toISOString(),
+      const { data: existing, error: existingError } = await supabase
+        .from('loudness')
+        .select('id')
+        .eq('event_id', activeEventId)
+        .maybeSingle()
+      if (existingError) throw existingError
+
+      const payload = {
+        event_id:           activeEventId,
+        service_1_max_db:   maxA ? parseFloat(maxA) : null,
+        service_1_laeq:     laeq ? parseFloat(laeq) : null,
+        service_1_max_db_c: maxC ? parseFloat(maxC) : null,
+        service_1_lceq:     lceq ? parseFloat(lceq) : null,
+        logged_at:          new Date().toISOString(),
+      }
+
+      const saveResult = existing
+        ? await supabase.from('loudness').update(payload).eq('id', existing.id)
+        : await supabase.from('loudness').insert(payload)
+      if (saveResult.error) throw saveResult.error
+
+      // Sync to service_records for analytics
+      await syncToServiceRecords({
+        eventId: activeEventId,
+        serviceTypeSlug,
+        sundayId: sundayId ?? null,
+        sessionDate,
+        eventName: eventName ?? null,
+        fields: {
+          max_db_a_slow: maxA ? parseFloat(maxA) : null,
+          la_eq_15:      laeq ? parseFloat(laeq) : null,
+          max_db_c_slow: maxC ? parseFloat(maxC) : null,
+          lc_eq_15:      lceq ? parseFloat(lceq) : null,
+        },
+      })
+
+      // Refresh history
+      const { data, error } = await supabase
+        .from('loudness')
+        .select(`
+          event_id, sunday_id,
+          service_1_max_db, service_1_laeq, service_1_max_db_c, service_1_lceq,
+          service_2_max_db, service_2_laeq, service_2_max_db_c, service_2_lceq,
+          sundays ( date ),
+          events ( event_date, service_types ( slug, name, color ) )
+        `)
+        .order('logged_at', { ascending: false })
+        .limit(20)
+      if (error) throw error
+      if (data) setHistory(flattenHistory(data as unknown as LoudnessDBRow[]).slice(0, 16))
+
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Loudness readings could not be saved.')
+    } finally {
+      setSaving(false)
     }
-
-    if (existing) {
-      await supabase.from('loudness').update(payload).eq('id', existing.id)
-    } else {
-      await supabase.from('loudness').insert(payload)
-    }
-
-    // Sync to service_records for analytics
-    await syncToServiceRecords({
-      serviceTypeSlug,
-      sundayId: sundayId ?? null,
-      sessionDate,
-      eventName: eventName ?? null,
-      fields: {
-        max_db_a_slow: maxA ? parseFloat(maxA) : null,
-        la_eq_15:      laeq ? parseFloat(laeq) : null,
-        max_db_c_slow: maxC ? parseFloat(maxC) : null,
-        lc_eq_15:      lceq ? parseFloat(lceq) : null,
-      },
-    })
-
-    // Refresh history
-    const { data } = await supabase
-      .from('loudness')
-      .select(`
-        event_id, sunday_id,
-        service_1_max_db, service_1_laeq, service_1_max_db_c, service_1_lceq,
-        service_2_max_db, service_2_laeq, service_2_max_db_c, service_2_lceq,
-        sundays ( date ),
-        events ( event_date, service_types ( slug, name, color ) )
-      `)
-      .order('logged_at', { ascending: false })
-      .limit(20)
-    if (data) setHistory(flattenHistory(data as unknown as LoudnessDBRow[]).slice(0, 16))
-
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
   }
 
   // ── PDF export ────────────────────────────────────────────────────────────
@@ -363,6 +374,7 @@ export function LoudnessLog() {
           >
             {saving ? 'Saving...' : saved ? 'Saved ✓' : `Log ${serviceTypeName} Readings`}
           </button>
+          {notice && <p className="text-red-600 text-xs font-medium">{notice}</p>}
         </Card>
 
         {/* ── History table ─────────────────────────────────────────────────── */}

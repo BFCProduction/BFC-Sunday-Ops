@@ -28,6 +28,15 @@ function configKey(serviceTypeSlug: string) {
     : 'default'
 }
 
+function hasWeatherValues(weather: WeatherRecord | null): weather is WeatherRecord {
+  return !!weather && (
+    weather.temp_f != null ||
+    !!weather.condition ||
+    weather.wind_mph != null ||
+    weather.humidity != null
+  )
+}
+
 export function Weather() {
   const { isAdmin } = useAdmin()
   const { activeEventId, sundayId, serviceTypeSlug, serviceTypeName, serviceTypeColor, sessionDate } = useSunday()
@@ -40,6 +49,7 @@ export function Weather() {
   const [pullDay, setPullDay] = useState(0)
   const [pullTime, setPullTime] = useState('07:00')
   const [loading, setLoading] = useState(true)
+  const [weatherError, setWeatherError] = useState('')
   const [savingConfig, setSavingConfig] = useState(false)
   const [configNotice, setConfigNotice] = useState('')
   const {
@@ -52,21 +62,29 @@ export function Weather() {
     let cancelled = false
 
     async function load() {
-      // Weather reading: event-native first, then legacy Sunday fallback
-      const weatherQ = supabase.from('weather').select('*')
-      const weatherFiltered = eventId
-        ? weatherQ.eq('event_id', eventId)
-        : sundayId
-          ? weatherQ.eq('sunday_id', sundayId)
-          : weatherQ.eq('sunday_id', '')   // no-op
+      setLoading(true)
+      setWeatherError('')
+      setWeather(null)
 
       // Config: service-specific key first, then fall back to 'default'
-      let configRes = await supabase.from('weather_config').select('*').eq('key', cfgKey).maybeSingle()
-      if (!configRes.data && cfgKey !== 'default') {
-        configRes = await supabase.from('weather_config').select('*').eq('key', 'default').maybeSingle()
+      async function loadConfig() {
+        let res = await supabase.from('weather_config').select('*').eq('key', cfgKey).maybeSingle()
+        if (!res.data && !res.error && cfgKey !== 'default') {
+          res = await supabase.from('weather_config').select('*').eq('key', 'default').maybeSingle()
+        }
+        return res
       }
 
-      const [weatherRes] = await Promise.all([weatherFiltered.maybeSingle()])
+      async function loadWeather() {
+        if (!eventId && !sundayId) return { data: null, error: null }
+
+        const weatherQ = supabase.from('weather').select('*')
+        return eventId
+          ? weatherQ.eq('event_id', eventId).maybeSingle()
+          : weatherQ.eq('sunday_id', sundayId).maybeSingle()
+      }
+
+      const [configRes, weatherRes] = await Promise.all([loadConfig(), loadWeather()])
 
       if (cancelled) return   // service switched while loading — discard stale result
 
@@ -77,6 +95,7 @@ export function Weather() {
       setPullDay(nextConfig?.pull_day ?? 0)
       setPullTime(nextConfig?.pull_time || '07:00')
       setWeather((weatherRes.data || null) as WeatherRecord | null)
+      setWeatherError(configRes.error?.message || weatherRes.error?.message || '')
       setLoading(false)
     }
 
@@ -121,12 +140,25 @@ export function Weather() {
   }
 
   const locationText = config?.location_label || (config?.zip_code ? `ZIP ${config.zip_code}` : 'Weather location not configured')
+  const hasUsableWeather = hasWeatherValues(weather)
+  const emptyTitle = weatherError
+    ? 'Weather could not be loaded.'
+    : !config
+      ? 'Weather import is not configured for this service.'
+      : weather
+        ? 'Weather import ran, but no usable values were saved.'
+        : 'Weather has not been imported for this event yet.'
+  const emptyDetail = weatherError
+    ? weatherError
+    : config
+      ? `Configured for ${locationText}; scheduled ${DAYS[pullDay]} at ${pullTime}.`
+      : 'An admin can save a location and pull schedule below.'
 
   return (
     <div className="space-y-4 fade-in max-w-3xl">
       <Card className="p-6 text-center">
         <p className="text-gray-400 text-xs mb-1">{locationText}</p>
-        {weather ? (
+        {hasUsableWeather ? (
           <>
             <Cloud className="w-12 h-12 text-gray-300 mx-auto my-4" />
             <p className="text-gray-900 text-4xl font-bold">
@@ -157,7 +189,8 @@ export function Weather() {
         ) : (
           <div className="py-6">
             <Cloud className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-            <p className="text-gray-700 text-sm font-medium">No weather data has been imported yet.</p>
+            <p className="text-gray-700 text-sm font-medium">{emptyTitle}</p>
+            <p className="text-gray-400 text-xs mt-1">{emptyDetail}</p>
           </div>
         )}
       </Card>
@@ -246,7 +279,7 @@ export function Weather() {
           </div>
         ) : (
           <p className="text-gray-400 text-[10px] mt-3">
-            Weather values appear here when the `weather` table is populated. An admin can manage the location and pull schedule here.
+            Weather values appear here after a scheduled import succeeds. An admin can manage the location and pull schedule here.
           </p>
         )}
       </Card>

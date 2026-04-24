@@ -179,7 +179,7 @@ function RunOfShow({ items, totalLabel, timezone }: { items: PcoPlanItemResult[]
 export function Dashboard({ setScreen }: DashboardProps) {
   const {
     activeEventId, sundayId, serviceTypeSlug, serviceTypeName,
-    eventName, sessionDate, timezone,
+    eventId, eventName, sessionDate, timezone,
   } = useSunday()
   const { sessionToken } = useAuth()
 
@@ -196,16 +196,41 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
     async function load() {
       try {
+        const issueScopes = [
+          ...(activeEventId ? [{ column: 'event_id', value: activeEventId }] : []),
+          ...(eventId && eventId !== activeEventId ? [{ column: 'event_id', value: eventId }] : []),
+          ...(sundayId ? [{ column: 'sunday_id', value: sundayId }] : []),
+        ]
+
+        const issuePromise = Promise.all(issueScopes.map(scope =>
+          supabase
+            .from('issues')
+            .select('*')
+            .eq(scope.column, scope.value)
+            .order('created_at', { ascending: false })
+        )).then(results => {
+          results.forEach(result => {
+            if (result.error) throw result.error
+          })
+          const seen = new Set<string>()
+          return results
+            .flatMap(result => result.data || [])
+            .filter(row => {
+              if (seen.has(row.id)) return false
+              seen.add(row.id)
+              return true
+            })
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        })
+
         // Run all three queries in parallel
-        const [itemData, eventCompletionsRes, legacyCompletionsRes, issueRes] = await Promise.all([
+        const [itemData, eventCompletionsRes, legacyCompletionsRes, issueRows] = await Promise.all([
           loadOrSeedChecklistItems(serviceTypeSlug),
           supabase.from('checklist_completions').select('item_id').eq('event_id', activeEventId),
           sundayId
             ? supabase.from('checklist_completions').select('item_id').eq('sunday_id', sundayId)
             : Promise.resolve({ data: [] }),
-          sundayId
-            ? supabase.from('issues').select('*').eq('sunday_id', sundayId).order('created_at', { ascending: false })
-            : Promise.resolve({ data: [] }),
+          issuePromise,
         ])
 
         if (cancelled) return
@@ -218,7 +243,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
         setItems(itemData)
         setCompletedIds([...new Set(completionData.map((r: { item_id: number }) => r.item_id))])
-        setIssues((issueRes.data || []) as Issue[])
+        setIssues(issueRows as Issue[])
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -226,7 +251,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
     load()
     return () => { cancelled = true }
-  }, [activeEventId, sundayId, serviceTypeSlug])
+  }, [activeEventId, eventId, sundayId, serviceTypeSlug])
 
   useEffect(() => {
     let cancelled = false

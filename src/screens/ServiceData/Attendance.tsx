@@ -20,6 +20,7 @@ export function Attendance() {
   const [notes,   setNotes]   = useState('')
   const [saved,   setSaved]   = useState(false)
   const [saving,  setSaving]  = useState(false)
+  const [notice,  setNotice]  = useState('')
   const {
     rows: historyRows,
     loading: historyLoading,
@@ -76,49 +77,60 @@ export function Attendance() {
   // ── Save ──────────────────────────────────────────────────────────────────
   const submit = async () => {
     setSaving(true)
+    setNotice('')
 
-    const { data: existing } = await supabase
-      .from('attendance')
-      .select('id')
-      .eq('event_id', activeEventId)
-      .maybeSingle()
+    try {
+      if (!activeEventId) throw new Error('No active event is selected.')
 
-    const payload = {
-      event_id:        activeEventId,
-      service_1_count: count ? parseInt(count) : null,
-      notes:           notes || null,
-      submitted_at:    new Date().toISOString(),
+      const attendanceCount = count ? parseInt(count, 10) : null
+      const { data: existing, error: existingError } = await supabase
+        .from('attendance')
+        .select('id')
+        .eq('event_id', activeEventId)
+        .maybeSingle()
+      if (existingError) throw existingError
+
+      const payload = {
+        event_id:        activeEventId,
+        service_1_count: attendanceCount,
+        notes:           notes || null,
+        submitted_at:    new Date().toISOString(),
+      }
+
+      const saveResult = existing
+        ? await supabase.from('attendance').update(payload).eq('id', existing.id)
+        : await supabase.from('attendance').insert(payload)
+      if (saveResult.error) throw saveResult.error
+
+      // Reload from DB so the displayed value always reflects what was saved
+      const { data: reloaded, error: reloadError } = await supabase
+        .from('attendance')
+        .select('service_1_count, notes')
+        .eq('event_id', activeEventId)
+        .maybeSingle()
+      if (reloadError) throw reloadError
+      if (reloaded) {
+        setCount(reloaded.service_1_count?.toString() ?? '')
+        setNotes(reloaded.notes ?? '')
+      }
+
+      // Sync to service_records for analytics
+      await syncToServiceRecords({
+        eventId: activeEventId,
+        serviceTypeSlug,
+        sundayId: sundayId ?? null,
+        sessionDate,
+        eventName: eventName ?? null,
+        fields: { in_person_attendance: attendanceCount },
+      })
+
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Attendance could not be saved.')
+    } finally {
+      setSaving(false)
     }
-
-    if (existing) {
-      await supabase.from('attendance').update(payload).eq('id', existing.id)
-    } else {
-      await supabase.from('attendance').insert(payload)
-    }
-
-    // Reload from DB so the displayed value always reflects what was saved
-    const { data: reloaded } = await supabase
-      .from('attendance')
-      .select('service_1_count, notes')
-      .eq('event_id', activeEventId)
-      .maybeSingle()
-    if (reloaded) {
-      setCount(reloaded.service_1_count?.toString() ?? '')
-      setNotes(reloaded.notes ?? '')
-    }
-
-    // Sync to service_records for analytics
-    await syncToServiceRecords({
-      serviceTypeSlug,
-      sundayId: sundayId ?? null,
-      sessionDate,
-      eventName: eventName ?? null,
-      fields: { in_person_attendance: count ? parseInt(count) : null },
-    })
-
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
   }
 
   return (
@@ -161,6 +173,7 @@ export function Attendance() {
       >
         {saving ? 'Saving...' : saved ? 'Saved' : 'Submit Attendance'}
       </button>
+      {notice && <p className="text-red-600 text-xs font-medium">{notice}</p>}
 
       <ServiceHistoryTable
         title="Past 10 Sundays"

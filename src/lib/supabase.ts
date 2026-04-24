@@ -216,6 +216,19 @@ export async function getSundayByDate(date: string): Promise<{ id: string; date:
   return data
 }
 
+async function ensureSundayId(date: string): Promise<string> {
+  const existing = await getSundayByDate(date)
+  if (existing) return existing.id
+
+  const { data, error } = await supabase
+    .from('sundays')
+    .insert({ date })
+    .select('id')
+    .single()
+  if (error) throw error
+  return data.id
+}
+
 /**
  * Create any type of event (9am, 11am, or special) — the unified replacement
  * for createSpecialEvent().
@@ -245,8 +258,10 @@ export async function createEvent(opts: {
   if (stErr || !st) throw new Error(`Service type not found: ${opts.serviceTypeSlug}`)
 
   const isSpecial = opts.serviceTypeSlug === 'special'
+  const isSundayService = opts.serviceTypeSlug === 'sunday-9am' || opts.serviceTypeSlug === 'sunday-11am'
 
   let legacySpecialId: string | null = null
+  let legacySundayId: string | null = null
 
   if (isSpecial) {
     // Create legacy special_events row (required for EventChecklist compatibility)
@@ -272,6 +287,10 @@ export async function createEvent(opts: {
     }
   }
 
+  if (isSundayService) {
+    legacySundayId = await ensureSundayId(opts.event_date)
+  }
+
   // Create the unified events row
   const { data: ev, error: evErr } = await supabase
     .from('events')
@@ -282,6 +301,7 @@ export async function createEvent(opts: {
       event_time:              opts.event_time,
       notes:                   opts.notes ?? null,
       pco_plan_id:             opts.pco_plan_id ?? null,
+      legacy_sunday_id:        legacySundayId,
       legacy_special_event_id: legacySpecialId,
     })
     .select('id')

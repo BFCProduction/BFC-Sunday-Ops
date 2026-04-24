@@ -107,7 +107,7 @@ export function formatHistoryDuration(seconds: number | null | undefined) {
 }
 
 export function formatHistoryTemp(value: number | null | undefined) {
-  return value == null ? '-' : `${Math.round(value)} F`
+  return value == null ? '-' : `${Math.round(value)}°F`
 }
 
 export function combinedAttendance(row: ServiceHistoryRecord) {

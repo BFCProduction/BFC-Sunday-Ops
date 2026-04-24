@@ -185,6 +185,7 @@ export function Runtimes() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editField, setEditField] = useState<RuntimeField | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<RuntimeField | null>(null)
@@ -252,54 +253,70 @@ export function Runtimes() {
 
   const save = async () => {
     setSaving(true)
-    const fields = allFields.filter(f => values[f.id] !== undefined)
-    if (fields.length > 0) {
-      if (eventId) {
-        // For events, use manual upsert to work around partial unique index
-        for (const f of fields) {
-          const { data: existing } = await supabase.from('runtime_values').select('id').eq('event_id', eventId).eq('field_id', f.id).maybeSingle()
-          const payload = { event_id: eventId, field_id: f.id, value: values[f.id] || null, captured_at: new Date().toISOString() }
-          if (existing) {
-            await supabase.from('runtime_values').update(payload).eq('id', existing.id)
-          } else {
-            await supabase.from('runtime_values').insert(payload)
-          }
-        }
-      } else {
-        const upserts = fields.map(f => ({
-          sunday_id: sundayId,
-          field_id: f.id,
-          value: values[f.id] || null,
-          captured_at: new Date().toISOString(),
-        }))
-        await supabase.from('runtime_values').upsert(upserts, { onConflict: 'sunday_id,field_id' })
-      }
-    }
-    // Sync tagged fields to service_records
-    const colMap: Record<string, string> = {
-      service_run_time: 'service_run_time_secs',
-      message_run_time: 'message_run_time_secs',
-      stage_flip_time:  'stage_flip_time_secs',
-    }
-    const analyticsFields: Record<string, number | null> = {}
-    for (const f of allFields) {
-      if (!f.analytics_key || values[f.id] === undefined) continue
-      const col = colMap[f.analytics_key]
-      if (col) analyticsFields[col] = parseTimeSecs(values[f.id] || '')
-    }
-    if (Object.keys(analyticsFields).length > 0) {
-      await syncToServiceRecords({
-        serviceTypeSlug,
-        sundayId: sundayId ?? null,
-        sessionDate,
-        eventName: eventName ?? null,
-        fields: analyticsFields,
-      })
-    }
+    setNotice('')
 
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    try {
+      const fields = allFields.filter(f => values[f.id] !== undefined)
+      if (fields.length > 0) {
+        if (eventId) {
+          // For events, use manual upsert to work around partial unique index
+          for (const f of fields) {
+            const { data: existing, error: findError } = await supabase
+              .from('runtime_values')
+              .select('id')
+              .eq('event_id', eventId)
+              .eq('field_id', f.id)
+              .maybeSingle()
+            if (findError) throw findError
+
+            const payload = { event_id: eventId, field_id: f.id, value: values[f.id] || null, captured_at: new Date().toISOString() }
+            const result = existing
+              ? await supabase.from('runtime_values').update(payload).eq('id', existing.id)
+              : await supabase.from('runtime_values').insert(payload)
+            if (result.error) throw result.error
+          }
+        } else {
+          const upserts = fields.map(f => ({
+            sunday_id: sundayId,
+            field_id: f.id,
+            value: values[f.id] || null,
+            captured_at: new Date().toISOString(),
+          }))
+          const { error } = await supabase.from('runtime_values').upsert(upserts, { onConflict: 'sunday_id,field_id' })
+          if (error) throw error
+        }
+      }
+
+      // Sync tagged fields to service_records
+      const colMap: Record<string, string> = {
+        service_run_time: 'service_run_time_secs',
+        message_run_time: 'message_run_time_secs',
+        stage_flip_time:  'stage_flip_time_secs',
+      }
+      const analyticsFields: Record<string, number | null> = {}
+      for (const f of allFields) {
+        if (!f.analytics_key || values[f.id] === undefined) continue
+        const col = colMap[f.analytics_key]
+        if (col) analyticsFields[col] = parseTimeSecs(values[f.id] || '')
+      }
+      if (Object.keys(analyticsFields).length > 0) {
+        await syncToServiceRecords({
+          eventId,
+          serviceTypeSlug,
+          sundayId: sundayId ?? null,
+          sessionDate,
+          eventName: eventName ?? null,
+          fields: analyticsFields,
+        })
+      }
+
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Runtimes could not be saved.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const deleteField = async (field: RuntimeField) => {
@@ -423,6 +440,7 @@ export function Runtimes() {
           {saving ? 'Saving...' : saved ? 'Saved' : 'Save Runtimes'}
         </button>
       )}
+      {notice && <p className="text-red-600 text-xs font-medium">{notice}</p>}
 
       {/* Relay script note */}
       {!isAdmin && allFields.length > 0 && (

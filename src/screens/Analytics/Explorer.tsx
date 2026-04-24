@@ -55,6 +55,26 @@ function fmtWeather(r: ServiceRecord): string {
   return [temp, cond].filter(Boolean).join(' ') || '—'
 }
 
+function parseTimeFromLabel(label: string | null | undefined): number | null {
+  if (!label) return null
+  const match = label.match(/\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i)
+  if (!match) return null
+
+  const hour = parseInt(match[1], 10)
+  const minute = match[2] ? parseInt(match[2], 10) : 0
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null
+
+  const isPm = match[3].toLowerCase().startsWith('p')
+  const normalizedHour = (hour % 12) + (isPm ? 12 : 0)
+  return normalizedHour * 60 + minute
+}
+
+function serviceSortValue(r: ServiceRecord): number {
+  if (r.service_type === 'sunday-9am') return 9 * 60
+  if (r.service_type === 'sunday-11am') return 11 * 60
+  return parseTimeFromLabel(r.service_label) ?? 12 * 60
+}
+
 function combinedAttStr(r: ServiceRecord): string {
   if (
     r.in_person_attendance == null &&
@@ -209,7 +229,13 @@ function compareRecords(a: ServiceRecord, b: ServiceRecord, key: SortKey, asc: b
   if (key === 'date') {
     const va = a.service_date
     const vb = b.service_date
-    return asc ? va.localeCompare(vb) : vb.localeCompare(va)
+    const dateDelta = asc ? va.localeCompare(vb) : vb.localeCompare(va)
+    if (dateDelta !== 0) return dateDelta
+
+    const serviceDelta = serviceSortValue(a) - serviceSortValue(b)
+    if (serviceDelta !== 0) return asc ? serviceDelta : -serviceDelta
+
+    return (a.service_label ?? '').localeCompare(b.service_label ?? '')
   }
   const va = (a[key as keyof ServiceRecord] as number | null)
   const vb = (b[key as keyof ServiceRecord] as number | null)
@@ -276,9 +302,6 @@ export function Explorer() {
     return [...rows].sort((a, b) => compareRecords(a, b, sortKey, sortAsc))
   }, [allRecords, serviceFilter, yearFilter, sortKey, sortAsc])
 
-  // Reset page on filter/sort change
-  useEffect(() => { setPage(0) }, [serviceFilter, yearFilter, sortKey, sortAsc])
-
   const total = filteredSorted.length
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const pageRows = filteredSorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -308,7 +331,10 @@ export function Explorer() {
         {/* Service filter */}
         <select
           value={serviceFilter}
-          onChange={e => setServiceFilter(e.target.value as ServiceFilter)}
+          onChange={e => {
+            setServiceFilter(e.target.value as ServiceFilter)
+            setPage(0)
+          }}
           className={ctrlClass}
         >
           <option value="all">All Services</option>
@@ -320,7 +346,10 @@ export function Explorer() {
         {/* Year filter */}
         <select
           value={yearFilter}
-          onChange={e => setYearFilter(e.target.value)}
+          onChange={e => {
+            setYearFilter(e.target.value)
+            setPage(0)
+          }}
           className={ctrlClass}
         >
           <option value="all">All Years</option>
@@ -332,7 +361,10 @@ export function Explorer() {
         {/* Sort key */}
         <select
           value={sortKey}
-          onChange={e => setSortKey(e.target.value as SortKey)}
+          onChange={e => {
+            setSortKey(e.target.value as SortKey)
+            setPage(0)
+          }}
           className={ctrlClass}
         >
           {SORT_OPTIONS.map(o => (
@@ -342,7 +374,10 @@ export function Explorer() {
 
         {/* Sort direction */}
         <button
-          onClick={() => setSortAsc(a => !a)}
+          onClick={() => {
+            setSortAsc(a => !a)
+            setPage(0)
+          }}
           className={`${ctrlClass} flex items-center gap-1.5 cursor-pointer`}
         >
           <ArrowUpDown className="w-3 h-3" />

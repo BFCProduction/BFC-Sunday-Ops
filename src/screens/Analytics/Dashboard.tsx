@@ -369,7 +369,7 @@ export function Dashboard() {
           .order('service_date'),
         supabase
           .from('evaluations')
-          .select('service_feel,broken_moment,sundays(date)')
+          .select('service_feel,broken_moment,sundays(date),events(event_date)')
           .not('service_feel', 'is', null),
       ])
       setAllRecords(recResult.data ?? [])
@@ -377,7 +377,9 @@ export function Dashboard() {
       setEvals((evalResult.data ?? []).map((e: any) => ({
         service_feel: e.service_feel as EvalRow['service_feel'],
         broken_moment: e.broken_moment as boolean | null,
-        date: (Array.isArray(e.sundays) ? e.sundays[0]?.date : e.sundays?.date) ?? '',
+        date: (Array.isArray(e.events) ? e.events[0]?.event_date : e.events?.event_date)
+          ?? (Array.isArray(e.sundays) ? e.sundays[0]?.date : e.sundays?.date)
+          ?? '',
       })))
       setLoading(false)
     }

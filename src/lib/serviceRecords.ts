@@ -23,12 +23,14 @@ type Fields = Partial<{
  * special event is missing its label.
  */
 export async function syncToServiceRecords({
+  eventId,
   serviceTypeSlug,
   sundayId,
   sessionDate,
   eventName,
   fields,
 }: {
+  eventId?: string | null
   serviceTypeSlug: string
   sundayId: string | null
   sessionDate: string
@@ -48,22 +50,31 @@ export async function syncToServiceRecords({
   // Find existing row
   let q = supabase
     .from('service_records')
-    .select('id')
+    .select('id, event_id')
     .eq('service_date', sessionDate)
     .eq('service_type', serviceType)
   if (isSpecial) q = q.eq('service_label', eventName!)
 
-  const { data: existing } = await q.maybeSingle()
+  const { data: existing, error: findError } = await q.maybeSingle()
+  if (findError) throw findError
+
+  const linkFields = eventId ? { event_id: eventId } : {}
 
   if (existing) {
-    await supabase.from('service_records').update(fields).eq('id', existing.id)
+    const { error } = await supabase
+      .from('service_records')
+      .update({ ...fields, ...linkFields })
+      .eq('id', existing.id)
+    if (error) throw error
   } else {
-    await supabase.from('service_records').insert({
+    const { error } = await supabase.from('service_records').insert({
       service_date: sessionDate,
       service_type: serviceType,
       sunday_id:    isSpecial ? null : (sundayId || null),
       service_label: isSpecial ? eventName : null,
+      ...linkFields,
       ...fields,
     })
+    if (error) throw error
   }
 }
