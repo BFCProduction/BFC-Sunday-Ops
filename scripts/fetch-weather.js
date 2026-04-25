@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { existsSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { createImportRun, finishImportRun } from './lib/resi-import.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -125,26 +126,6 @@ function weatherCodeToCondition(code) {
   return map.get(code) || `Weather Code ${code}`
 }
 
-async function getOrCreateSunday(dateString) {
-  const { data: existing, error: existingError } = await supabase
-    .from('sundays')
-    .select('id, date')
-    .eq('date', dateString)
-    .maybeSingle()
-
-  if (existingError) throw existingError
-  if (existing) return existing
-
-  const { data: created, error: createError } = await supabase
-    .from('sundays')
-    .insert({ date: dateString })
-    .select('id, date')
-    .single()
-
-  if (createError) throw createError
-  return created
-}
-
 async function geocodeZip(zipCode) {
   const params = new URLSearchParams({
     name: zipCode,
@@ -188,93 +169,248 @@ async function fetchWeather(latitude, longitude) {
   return payload?.current
 }
 
+function serviceTypeForSlug(slug) {
+  if (slug === 'sunday-9am') return 'regular_9am'
+  if (slug === 'sunday-11am') return 'regular_11am'
+  if (slug === 'special') return 'special'
+  return null
+}
+
+function serviceTypeSlugForEvent(event) {
+  return Array.isArray(event.service_types)
+    ? event.service_types[0]?.slug
+    : event.service_types?.slug
+}
+
+async function writeEventWeather(event, payload) {
+  const eventPayload = {
+    ...payload,
+    event_id: event.id,
+    sunday_id: null,
+  }
+
+  const { data: existing, error: findError } = await supabase
+    .from('weather')
+    .select('id')
+    .eq('event_id', event.id)
+    .maybeSingle()
+
+  if (findError) throw findError
+
+  if (existing) {
+    const { error } = await supabase.from('weather').update(eventPayload).eq('id', existing.id)
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('weather').insert(eventPayload)
+    if (error) throw error
+  }
+}
+
+async function syncWeatherToServiceRecord(event, payload) {
+  const serviceType = serviceTypeForSlug(serviceTypeSlugForEvent(event))
+  if (!serviceType) return false
+
+  const fields = {
+    weather_temp_f: payload.temp_f,
+    weather_condition: payload.condition,
+  }
+
+  const { data: existingByEvent, error: eventFindError } = await supabase
+    .from('service_records')
+    .select('id')
+    .eq('event_id', event.id)
+    .maybeSingle()
+
+  if (eventFindError) throw eventFindError
+
+  if (existingByEvent) {
+    const { error } = await supabase
+      .from('service_records')
+      .update({
+        service_date: event.event_date,
+        service_type: serviceType,
+        sunday_id: event.legacy_sunday_id ?? null,
+        service_label: serviceType === 'special' ? event.name : null,
+        ...fields,
+      })
+      .eq('id', existingByEvent.id)
+    if (error) throw error
+    return true
+  }
+
+  const { data: legacyMatches, error: legacyFindError } = await supabase
+    .from('service_records')
+    .select('id')
+    .eq('service_date', event.event_date)
+    .eq('service_type', serviceType)
+    .is('event_id', null)
+    .limit(1)
+
+  if (legacyFindError) throw legacyFindError
+
+  const legacyRow = legacyMatches?.[0] ?? null
+  if (legacyRow) {
+    const { error } = await supabase
+      .from('service_records')
+      .update({
+        event_id: event.id,
+        sunday_id: event.legacy_sunday_id ?? null,
+        service_label: serviceType === 'special' ? event.name : null,
+        ...fields,
+      })
+      .eq('id', legacyRow.id)
+    if (error) throw error
+    return true
+  }
+
+  const { error } = await supabase.from('service_records').insert({
+    event_id: event.id,
+    service_date: event.event_date,
+    service_type: serviceType,
+    sunday_id: event.legacy_sunday_id ?? null,
+    service_label: serviceType === 'special' ? event.name : null,
+    ...fields,
+  })
+
+  if (error) throw error
+  return true
+}
+
+function isConfigDue(config, now, currentMinutes) {
+  if (pullNow) return true
+  if (now.weekdayIndex !== config.pull_day) return false
+  return currentMinutes >= parseTimeToMinutes(config.pull_time)
+}
+
+function configLabel(config) {
+  return config.location_label || `ZIP ${config.zip_code}`
+}
+
 async function run() {
   console.log('BFC Sunday Ops — Weather Import')
   console.log('================================')
 
-  const { data: config, error: configError } = await supabase
-    .from('weather_config')
-    .select('*')
-    .eq('key', 'default')
-    .maybeSingle()
-
-  if (configError) {
-    console.log('Unable to read weather config:', configError.message, '— skipping.')
-    process.exit(0)
-  }
-
-  if (!config) {
-    console.log('No weather config found. Save weather settings in the admin UI first.')
-    process.exit(0)
-  }
-
   const now = getChurchDateParts()
   const currentMinutes = (now.hour * 60) + now.minute
-  const scheduledMinutes = parseTimeToMinutes(config.pull_time)
-
-  if (!pullNow) {
-    if (now.weekdayIndex !== config.pull_day) {
-      console.log(`Today is ${DAY_NAMES[now.weekdayIndex]}. Configured pull day is ${DAY_NAMES[config.pull_day]}.`)
-      process.exit(0)
-    }
-
-    if (currentMinutes < scheduledMinutes) {
-      console.log(`Current church time is before configured pull time ${config.pull_time}.`)
-      process.exit(0)
-    }
-  }
-
   const targetSundayDate = getTargetSundayDate(now)
   console.log(`Target Sunday: ${targetSundayDate}`)
+  const importRunId = await createImportRun(supabase, 'weather', targetSundayDate)
+  let rowsWritten = 0
 
-  const sunday = await getOrCreateSunday(targetSundayDate)
+  try {
+    const { data: events, error: eventsError } = await supabase
+      .from('events')
+      .select('id, name, event_date, event_time, legacy_sunday_id, service_types(slug)')
+      .eq('event_date', targetSundayDate)
+      .order('event_time', { ascending: true })
 
-  const { data: existingWeather, error: existingWeatherError } = await supabase
-    .from('weather')
-    .select('fetched_at')
-    .eq('sunday_id', sunday.id)
-    .maybeSingle()
+    if (eventsError) throw eventsError
 
-  if (existingWeatherError) throw existingWeatherError
+    if (!events?.length) {
+      console.log(`No events found for ${targetSundayDate}.`)
+      await finishImportRun(supabase, importRunId, 'skipped', {
+        rowsWritten,
+        error: `No events found for ${targetSundayDate}.`,
+      })
+      return
+    }
 
-  if (!pullNow && existingWeather?.fetched_at) {
-    console.log(`Weather already imported for ${targetSundayDate} at ${existingWeather.fetched_at}.`)
-    process.exit(0)
+    const eventIds = events.map(event => event.id)
+
+    const [{ data: configs, error: configsError }, { data: existingWeather, error: existingWeatherError }] = await Promise.all([
+      supabase
+        .from('weather_config')
+        .select('*')
+        .in('event_id', eventIds),
+      supabase
+        .from('weather')
+        .select('event_id, fetched_at')
+        .in('event_id', eventIds),
+    ])
+
+    if (configsError) throw configsError
+    if (existingWeatherError) throw existingWeatherError
+
+    const configByEvent = new Map((configs ?? []).map(config => [config.event_id, config]))
+    const weatherByEvent = new Map((existingWeather ?? []).map(row => [row.event_id, row]))
+    const dueEvents = []
+
+    for (const event of events) {
+      const config = configByEvent.get(event.id)
+      if (!config) {
+        console.log(`${event.name}: no event-level weather config saved; skipping.`)
+        continue
+      }
+
+      if (!isConfigDue(config, now, currentMinutes)) {
+        console.log(`${event.name}: not due yet. Configured ${DAY_NAMES[config.pull_day]} at ${config.pull_time}.`)
+        continue
+      }
+
+      const existing = weatherByEvent.get(event.id)
+      if (!pullNow && existing?.fetched_at) {
+        console.log(`${event.name}: already imported at ${existing.fetched_at}; skipping.`)
+        continue
+      }
+
+      dueEvents.push({ event, config })
+    }
+
+    if (dueEvents.length === 0) {
+      console.log('No event weather imports are due.')
+      await finishImportRun(supabase, importRunId, 'skipped', {
+        rowsWritten,
+        error: 'No event weather imports are due.',
+      })
+      return
+    }
+
+    const locationCache = new Map()
+    const weatherCache = new Map()
+
+    for (const { event, config } of dueEvents) {
+      console.log(`${event.name}: importing weather for ${configLabel(config)}.`)
+
+      let location = locationCache.get(config.zip_code)
+      if (!location) {
+        console.log(`Resolving ZIP code ${config.zip_code}...`)
+        location = await geocodeZip(config.zip_code)
+        locationCache.set(config.zip_code, location)
+        console.log(`Resolved to ${location.name}, ${location.admin1 ?? ''}`.trim())
+      }
+
+      let current = weatherCache.get(config.zip_code)
+      if (!current) {
+        current = await fetchWeather(location.latitude, location.longitude)
+        weatherCache.set(config.zip_code, current)
+      }
+
+      if (!current) {
+        throw new Error(`Weather API did not return current conditions for ${event.name}`)
+      }
+
+      const payload = {
+        temp_f: current.temperature_2m ?? null,
+        condition: current.weather_code != null ? weatherCodeToCondition(current.weather_code) : null,
+        wind_mph: current.wind_speed_10m ?? null,
+        humidity: current.relative_humidity_2m ?? null,
+        fetched_at: new Date().toISOString(),
+      }
+
+      await writeEventWeather(event, payload)
+      rowsWritten++
+      if (await syncWeatherToServiceRecord(event, payload)) rowsWritten++
+    }
+
+    await finishImportRun(supabase, importRunId, 'succeeded', { rowsWritten })
+    console.log(`Saved event-level weather for ${targetSundayDate}. Event rows updated: ${dueEvents.length}.`)
+  } catch (error) {
+    await finishImportRun(supabase, importRunId, 'failed', {
+      rowsWritten,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   }
-
-  console.log(`Resolving ZIP code ${config.zip_code}...`)
-  const location = await geocodeZip(config.zip_code)
-  console.log(`Resolved to ${location.name}, ${location.admin1 ?? ''}`.trim())
-
-  const current = await fetchWeather(location.latitude, location.longitude)
-  if (!current) {
-    throw new Error('Weather API did not return current conditions')
-  }
-
-  const payload = {
-    sunday_id: sunday.id,
-    temp_f: current.temperature_2m ?? null,
-    condition: current.weather_code != null ? weatherCodeToCondition(current.weather_code) : null,
-    wind_mph: current.wind_speed_10m ?? null,
-    humidity: current.relative_humidity_2m ?? null,
-    fetched_at: new Date().toISOString(),
-  }
-
-  // Use update-or-insert instead of upsert: the sunday_id unique constraint
-  // was replaced by a partial index in migration 016, which PostgREST's
-  // onConflict cannot use.
-  let upsertError
-  if (existingWeather) {
-    const { error } = await supabase.from('weather').update(payload).eq('sunday_id', sunday.id)
-    upsertError = error
-  } else {
-    const { error } = await supabase.from('weather').insert(payload)
-    upsertError = error
-  }
-
-  if (upsertError) throw upsertError
-
-  console.log(`Saved weather for ${targetSundayDate}.`)
 }
 
 run().catch(error => {

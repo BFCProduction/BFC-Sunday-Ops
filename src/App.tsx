@@ -100,33 +100,14 @@ function AppMain() {
       return
     }
 
-    const scopes = [
-      { column: 'event_id', value: s.id },
-    ]
+    const { count } = await supabase
+      .from('issues')
+      .select('id', { count: 'exact', head: true })
+      .in('severity', ['High', 'Critical'])
+      .is('resolved_at', null)
+      .eq('event_id', s.id)
 
-    // Legacy rows were scoped to sundays.id for regular services and, for a
-    // short transition window, special_events.id for special services.
-    if (s.legacySundayId) {
-      scopes.push({ column: 'sunday_id', value: s.legacySundayId })
-    }
-    if (s.legacySpecialEventId) {
-      scopes.push({ column: 'event_id', value: s.legacySpecialEventId })
-    }
-
-    const results = await Promise.all(scopes.map(scope =>
-      supabase
-        .from('issues')
-        .select('id', { count: 'exact' })
-        .in('severity', ['High', 'Critical'])
-        .is('resolved_at', null)
-        .eq(scope.column, scope.value)
-    ))
-
-    const issueIds = new Set<string>()
-    results.forEach(result => {
-      ;(result.data || []).forEach(row => issueIds.add(row.id))
-    })
-    setIssueCount(issueIds.size)
+    setIssueCount(count ?? 0)
   }
 
   // ── Initial load ────────────────────────────────────────────────────────────

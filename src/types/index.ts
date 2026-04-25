@@ -80,6 +80,7 @@ export interface StreamAnalytics {
 
 export interface WeatherConfig {
   key: string
+  event_id: string | null
   location_label: string | null
   zip_code: string
   pull_day: number

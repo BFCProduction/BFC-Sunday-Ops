@@ -14,10 +14,10 @@ type Fields = Partial<{
 /**
  * Upsert a partial service_records row.
  *
- * Handles regular Sunday services (sunday-9am / sunday-11am) and special
- * events (serviceTypeSlug === 'special') in one place.  Special rows are
- * matched by (service_date, service_label) per the unique index in migration
- * 012; regular rows are matched by (service_date, service_type).
+ * Handles regular Sunday services (sunday-9am / sunday-11am) and special events
+ * (serviceTypeSlug === 'special') in one place. Event identity is authoritative:
+ * if an event_id is available we update that row first. Date/type matching is
+ * kept only to attach pre-migration service_records rows during the transition.
  *
  * Silently returns without writing if the slug is unrecognised or if a
  * special event is missing its label.
@@ -47,31 +47,57 @@ export async function syncToServiceRecords({
   if (!serviceType) return
   if (isSpecial && !eventName) return  // label is required for specials
 
-  // Find existing row
-  let q = supabase
-    .from('service_records')
-    .select('id, event_id')
-    .eq('service_date', sessionDate)
-    .eq('service_type', serviceType)
-  if (isSpecial) q = q.eq('service_label', eventName!)
-
-  const { data: existing, error: findError } = await q.maybeSingle()
-  if (findError) throw findError
+  const baseRow = {
+    service_date: sessionDate,
+    service_type: serviceType,
+    sunday_id:    isSpecial ? null : (sundayId || null),
+    service_label: isSpecial ? eventName : null,
+  }
 
   const linkFields = eventId ? { event_id: eventId } : {}
+
+  if (eventId) {
+    const { data: existingByEvent, error: eventFindError } = await supabase
+      .from('service_records')
+      .select('id')
+      .eq('event_id', eventId)
+      .maybeSingle()
+    if (eventFindError) throw eventFindError
+
+    if (existingByEvent) {
+      const { error } = await supabase
+        .from('service_records')
+        .update({ ...baseRow, ...fields, ...linkFields })
+        .eq('id', existingByEvent.id)
+      if (error) throw error
+      return
+    }
+  }
+
+  // Temporary legacy attach path: if the old date/type row exists, claim it for
+  // this event instead of inserting a duplicate analytics record.
+  let q = supabase
+    .from('service_records')
+    .select('id')
+    .eq('service_date', sessionDate)
+    .eq('service_type', serviceType)
+    .is('event_id', null)
+  if (isSpecial) q = q.eq('service_label', eventName!)
+
+  const { data: legacyMatches, error: findError } = await q.limit(1)
+  if (findError) throw findError
+
+  const existing = legacyMatches?.[0] ?? null
 
   if (existing) {
     const { error } = await supabase
       .from('service_records')
-      .update({ ...fields, ...linkFields })
+      .update({ ...baseRow, ...fields, ...linkFields })
       .eq('id', existing.id)
     if (error) throw error
   } else {
     const { error } = await supabase.from('service_records').insert({
-      service_date: sessionDate,
-      service_type: serviceType,
-      sunday_id:    isSpecial ? null : (sundayId || null),
-      service_label: isSpecial ? eventName : null,
+      ...baseRow,
       ...linkFields,
       ...fields,
     })

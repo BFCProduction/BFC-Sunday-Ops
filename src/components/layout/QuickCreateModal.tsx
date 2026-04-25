@@ -3,7 +3,8 @@ import {
   CalendarDays, ChevronDown, Link2, Loader2, Search, X,
 } from 'lucide-react'
 import { createEvent, loadAllSessions, supabase } from '../../lib/supabase'
-import { fetchPcoPlans, type PcoPlanResult, type PcoServiceTypePlans } from '../../lib/adminApi'
+import { ApiError, fetchPcoPlans, type PcoPlanResult, type PcoServiceTypePlans } from '../../lib/adminApi'
+import { initiatePCOLogin } from '../../lib/pcoAuth'
 import type { Session } from '../../types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ function PcoPlanPicker({
 }) {
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState('')
+  const [reauthRequired, setReauthRequired] = useState(false)
   const [groups,      setGroups]      = useState<PcoServiceTypePlans[]>([])
   const [activeSlug,  setActiveSlug]  = useState(initialSlug)
   const [query,       setQuery]       = useState('')
@@ -61,7 +63,12 @@ function PcoPlanPicker({
           setActiveSlug(data[0].slug)
         }
       })
-      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load PCO plans'))
+      .catch(e => {
+        if (e instanceof ApiError && e.code === 'reauth_required') {
+          setReauthRequired(true)
+        }
+        setError(e instanceof Error ? e.message : 'Failed to load PCO plans')
+      })
       .finally(() => {
         setLoading(false)
         searchRef.current?.focus()
@@ -137,10 +144,21 @@ function PcoPlanPicker({
             </div>
           )}
           {!loading && error && (
-            <p className="px-5 py-4 text-sm text-red-600">{error}</p>
+            <div className="px-5 py-5 text-center">
+              <p className="text-sm font-medium text-red-600">{error}</p>
+              {reauthRequired && (
+                <button
+                  type="button"
+                  onClick={initiatePCOLogin}
+                  className="mt-3 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                >
+                  Sign in again with Planning Center
+                </button>
+              )}
+            </div>
           )}
           {!loading && !error && visiblePlans.length === 0 && (
-            <p className="px-5 py-6 text-sm text-gray-400 text-center">No plans found</p>
+            <p className="px-5 py-6 text-sm text-gray-400 text-center">No PCO plans found for this service type</p>
           )}
           {!loading && !error && visiblePlans.map(plan => {
             const label = plan.title || plan.series_title

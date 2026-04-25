@@ -4,7 +4,7 @@
 //
 // Usage:
 //   node scripts/import-loudness-history.js          # dry run (prints what would be imported)
-//   node scripts/import-loudness-history.js --write  # actually write to Supabase
+//   node scripts/import-loudness-history.js --write --confirm-historical-import
 
 import { createClient } from '@supabase/supabase-js'
 import { existsSync, readFileSync } from 'fs'
@@ -26,6 +26,13 @@ try {
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 const DRY_RUN = !process.argv.includes('--write')
+const CONFIRMED_HISTORICAL_IMPORT = process.argv.includes('--confirm-historical-import')
+
+if (!DRY_RUN && !CONFIRMED_HISTORICAL_IMPORT) {
+  console.error('Historical loudness import writes require --confirm-historical-import.')
+  console.error('Run without --write first to preview; rewrite to event rows before any future import.')
+  process.exit(1)
+}
 
 const SHEET_CSV_URL =
   'https://docs.google.com/spreadsheets/d/1B9jZmZ8MknPQ8nrvRZRnUM2u8qcOB6TnUsfZlOKc7x8/export?format=csv&gid=0'

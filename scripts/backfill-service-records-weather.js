@@ -100,25 +100,14 @@ async function run() {
   console.log('BFC Sunday Ops — Historical weather backfill for service_records')
   console.log('==================================================================')
 
-  const { data: config, error: configError } = await supabase
-    .from('weather_config')
-    .select('*')
-    .eq('key', 'default')
-    .maybeSingle()
-
-  if (configError || !config) {
-    console.error('No weather config found. Save weather settings in the admin UI first.')
-    process.exit(1)
-  }
-
-  console.log(`Location: ${config.location_label ?? config.zip_code} (${config.zip_code})\n`)
-
-  // All service_records rows missing weather, past only
+  // All event-native service_records rows missing weather, past only.
+  // Legacy rows without event_id are skipped; weather is event-level now.
   const today = new Date().toISOString().slice(0, 10)
   const { data: records, error: recErr } = await supabase
     .from('service_records')
-    .select('id, service_date, service_type, service_label')
+    .select('id, event_id, service_date, service_type, service_label')
     .is('weather_temp_f', null)
+    .not('event_id', 'is', null)
     .lt('service_date', today)
     .order('service_date', { ascending: true })
 
@@ -128,52 +117,79 @@ async function run() {
     return
   }
 
-  // Unique dates to fetch (one API call per date covers all services that day)
-  const uniqueDates = [...new Set(records.map(r => r.service_date))]
+  const { data: configs, error: configError } = await supabase
+    .from('weather_config')
+    .select('*')
+    .in('event_id', records.map(record => record.event_id))
 
-  // Exclude clearly bad dates (e.g. year 200 typo)
-  const validDates = uniqueDates.filter(d => {
-    const year = parseInt(d.slice(0, 4), 10)
-    return year >= 2000 && d <= today
-  })
-  const skippedDates = uniqueDates.filter(d => !validDates.includes(d))
-  if (skippedDates.length) {
-    console.log(`Skipping ${skippedDates.length} invalid date(s): ${skippedDates.join(', ')}\n`)
+  if (configError) throw configError
+
+  const configByEvent = new Map((configs ?? []).map(config => [config.event_id, config]))
+  const configuredRecords = records.filter(record => configByEvent.has(record.event_id))
+  const missingConfig = records.length - configuredRecords.length
+
+  if (configuredRecords.length === 0) {
+    console.log(`${records.length} event-native row(s) need weather, but none have event-level weather config.`)
+    return
   }
 
-  console.log(`${records.length} row(s) across ${validDates.length} date(s) need weather.\n`)
+  if (missingConfig > 0) {
+    console.log(`${missingConfig} row(s) skipped because their events do not have weather config.\n`)
+  }
 
-  console.log('Geocoding ZIP code...')
-  const location = await geocodeZip(config.zip_code)
-  console.log(`Resolved: ${location.name}, ${location.admin1 ?? ''}`.trim())
-  console.log(`Coordinates: ${location.latitude}, ${location.longitude}\n`)
+  // Unique date/ZIP pairs to fetch.
+  const uniqueKeys = [...new Set(configuredRecords.map(record => {
+    const config = configByEvent.get(record.event_id)
+    return `${config.zip_code}:${record.service_date}`
+  }))]
 
-  let datesOk = 0
-  let datesFailed = 0
-  const weatherCache = new Map() // date → { temp_f, condition }
+  // Exclude clearly bad dates (e.g. year 200 typo)
+  const validKeys = uniqueKeys.filter(key => {
+    const [, date] = key.split(':')
+    const year = parseInt(date.slice(0, 4), 10)
+    return year >= 2000 && date <= today
+  })
+  const skippedKeys = uniqueKeys.filter(key => !validKeys.includes(key))
+  if (skippedKeys.length) {
+    console.log(`Skipping ${skippedKeys.length} invalid date/ZIP pair(s): ${skippedKeys.join(', ')}\n`)
+  }
 
-  for (const date of validDates) {
-    process.stdout.write(`  ${date}  `)
+  console.log(`${configuredRecords.length} row(s) across ${validKeys.length} date/ZIP pair(s) need weather.\n`)
+
+  let fetchesOk = 0
+  let fetchesFailed = 0
+  const locationCache = new Map()
+  const weatherCache = new Map() // zip:date → { temp_f, condition }
+
+  for (const key of validKeys) {
+    const [zipCode, date] = key.split(':')
+    process.stdout.write(`  ${date} ${zipCode}  `)
     try {
+      let location = locationCache.get(zipCode)
+      if (!location) {
+        location = await geocodeZip(zipCode)
+        locationCache.set(zipCode, location)
+      }
       const w = await fetchHistoricalWeather(location.latitude, location.longitude, date)
-      weatherCache.set(date, w)
+      weatherCache.set(key, w)
       console.log(`${w.temp_f}°F, ${w.condition}`)
-      datesOk++
+      fetchesOk++
     } catch (err) {
       console.log(`FAILED — ${err instanceof Error ? err.message : err}`)
-      datesFailed++
+      fetchesFailed++
     }
     // Rate-limit: Open-Meteo free tier allows ~10k req/day; 300ms keeps us polite
     await new Promise(r => setTimeout(r, 300))
   }
 
-  console.log(`\nFetched ${datesOk}/${validDates.length} dates. Updating service_records...\n`)
+  console.log(`\nFetched ${fetchesOk}/${validKeys.length} date/ZIP pair(s). Updating service_records...\n`)
 
   let rowsUpdated = 0
   let rowsSkipped = 0
 
-  for (const rec of records) {
-    const w = weatherCache.get(rec.service_date)
+  for (const rec of configuredRecords) {
+    const config = configByEvent.get(rec.event_id)
+    const w = weatherCache.get(`${config.zip_code}:${rec.service_date}`)
     if (!w) { rowsSkipped++; continue }
 
     const { error: upErr } = await supabase

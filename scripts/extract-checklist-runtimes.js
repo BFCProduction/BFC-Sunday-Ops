@@ -8,7 +8,7 @@
  *
  * Usage:
  *   node scripts/extract-checklist-runtimes.js          # dry run (print only)
- *   node scripts/extract-checklist-runtimes.js --write  # commit to Supabase
+ *   node scripts/extract-checklist-runtimes.js --write --confirm-historical-import
  */
 
 import { execSync } from 'child_process'
@@ -24,6 +24,13 @@ const ARCHIVE_DIR =
   'My Drive/00 BFC Production/04 Production Documentation/01 Prod Doc Archive'
 
 const WRITE = process.argv.includes('--write')
+const CONFIRMED_HISTORICAL_IMPORT = process.argv.includes('--confirm-historical-import')
+
+if (WRITE && !CONFIRMED_HISTORICAL_IMPORT) {
+  console.error('Historical checklist runtime writes require --confirm-historical-import.')
+  console.error('This extractor is retained as an archive reference and still uses legacy service matching.')
+  process.exit(1)
+}
 
 const envPath = new URL('../.env.local', import.meta.url).pathname
 const env = Object.fromEntries(

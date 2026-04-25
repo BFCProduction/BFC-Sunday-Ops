@@ -21,13 +21,6 @@ interface WeatherRecord {
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-// Sunday services each get their own config key; everything else uses 'default'
-function configKey(serviceTypeSlug: string) {
-  return serviceTypeSlug === 'sunday-9am' || serviceTypeSlug === 'sunday-11am'
-    ? serviceTypeSlug
-    : 'default'
-}
-
 function hasWeatherValues(weather: WeatherRecord | null): weather is WeatherRecord {
   return !!weather && (
     weather.temp_f != null ||
@@ -41,7 +34,6 @@ export function Weather() {
   const { isAdmin } = useAdmin()
   const { activeEventId, sundayId, serviceTypeSlug, serviceTypeName, serviceTypeColor, sessionDate } = useSunday()
   const eventId = activeEventId
-  const cfgKey  = configKey(serviceTypeSlug)
   const [weather, setWeather] = useState<WeatherRecord | null>(null)
   const [config, setConfig] = useState<WeatherConfig | null>(null)
   const [locationLabel, setLocationLabel] = useState('')
@@ -66,13 +58,9 @@ export function Weather() {
       setWeatherError('')
       setWeather(null)
 
-      // Config: service-specific key first, then fall back to 'default'
       async function loadConfig() {
-        let res = await supabase.from('weather_config').select('*').eq('key', cfgKey).maybeSingle()
-        if (!res.data && !res.error && cfgKey !== 'default') {
-          res = await supabase.from('weather_config').select('*').eq('key', 'default').maybeSingle()
-        }
-        return res
+        if (!eventId) return { data: null, error: null }
+        return supabase.from('weather_config').select('*').eq('event_id', eventId).maybeSingle()
       }
 
       async function loadWeather() {
@@ -101,7 +89,7 @@ export function Weather() {
 
     load()
     return () => { cancelled = true }
-  }, [eventId, sundayId, cfgKey])
+  }, [eventId, sundayId])
 
   const saveConfig = async () => {
     if (!zipCode.trim()) {
@@ -112,8 +100,15 @@ export function Weather() {
     setSavingConfig(true)
     setConfigNotice('')
 
+    if (!eventId) {
+      setSavingConfig(false)
+      setConfigNotice('Select an event before saving weather settings.')
+      return
+    }
+
     const payload = {
-      key: cfgKey,
+      key: `event:${eventId}`,
+      event_id: eventId,
       location_label: locationLabel.trim() || null,
       zip_code: zipCode.trim(),
       pull_day: pullDay,
@@ -121,7 +116,11 @@ export function Weather() {
       updated_at: new Date().toISOString(),
     }
 
-    const { data, error } = await supabase.from('weather_config').upsert(payload).select().single()
+    const { data, error } = await supabase
+      .from('weather_config')
+      .upsert(payload, { onConflict: 'key' })
+      .select()
+      .single()
 
     setSavingConfig(false)
 
@@ -222,8 +221,8 @@ export function Weather() {
         <p className="text-gray-900 text-sm font-semibold">Weather Import Settings</p>
         <p className="text-gray-400 text-xs mt-1">
           {config
-            ? `Configured to pull on ${DAYS[config.pull_day]} at ${config.pull_time}.`
-            : 'No weather import settings have been saved yet.'}
+            ? `This event is configured to pull on ${DAYS[config.pull_day]} at ${config.pull_time}.`
+            : 'No weather import settings have been saved for this event yet.'}
         </p>
 
         {isAdmin ? (
@@ -279,7 +278,7 @@ export function Weather() {
           </div>
         ) : (
           <p className="text-gray-400 text-[10px] mt-3">
-            Weather values appear here after a scheduled import succeeds. An admin can manage the location and pull schedule here.
+            Weather values appear here after this event's scheduled import succeeds. An admin can manage the event location and pull schedule here.
           </p>
         )}
       </Card>

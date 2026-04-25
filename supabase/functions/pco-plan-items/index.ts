@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-import-prefix no-explicit-any
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { getValidPcoToken, pcoReauthBody, type PcoSessionTokens } from '../_shared/pco-token.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pco-plan-items edge function
@@ -17,10 +18,6 @@ const ALLOWED_ORIGINS = [
 ]
 
 const PCO_API_BASE   = 'https://api.planningcenteronline.com/services/v2'
-const PCO_TOKEN_URL  = 'https://api.planningcenteronline.com/oauth/token'
-const TOKEN_REFRESH_BUFFER_MS = 60_000
-
-type SupabaseAdminClient = ReturnType<typeof createClient<any>>
 
 function corsHeaders(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -71,12 +68,6 @@ interface PcoPlanTime {
   }
 }
 
-interface UserSession {
-  pco_access_token:     string | null
-  pco_refresh_token:    string | null
-  pco_token_expires_at: string | null
-}
-
 export interface PcoPlanItemResult {
   id:                  string
   sequence:            number
@@ -87,79 +78,6 @@ export interface PcoPlanItemResult {
   service_position:    string | null
   key_name:            string | null
   computed_starts_at:  string | null  // ISO timestamp, computed from plan_times + cumulative lengths
-}
-
-function shouldRefreshToken(expiresAt: string | null) {
-  if (!expiresAt) return false
-  const expiresMs = Date.parse(expiresAt)
-  return Number.isNaN(expiresMs) || expiresMs <= Date.now() + TOKEN_REFRESH_BUFFER_MS
-}
-
-async function refreshPcoToken(
-  supabase: SupabaseAdminClient,
-  sessionToken: string,
-  refreshToken: string,
-) {
-  const pcoClientId     = Deno.env.get('PCO_CLIENT_ID')
-  const pcoClientSecret = Deno.env.get('PCO_CLIENT_SECRET')
-
-  if (!pcoClientId || !pcoClientSecret) {
-    throw new Error('PCO credentials not configured on server')
-  }
-
-  const tokenRes = await fetch(PCO_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      grant_type:    'refresh_token',
-      refresh_token: refreshToken,
-      client_id:     pcoClientId,
-      client_secret: pcoClientSecret,
-    }),
-  })
-
-  if (!tokenRes.ok) {
-    const errText = await tokenRes.text().catch(() => '')
-    throw new Error(`PCO token refresh failed (${tokenRes.status}): ${errText.slice(0, 200)}`)
-  }
-
-  const tokens = await tokenRes.json() as {
-    access_token:  string
-    refresh_token?: string
-    expires_in?:    number
-  }
-
-  const expiresAt = tokens.expires_in
-    ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-    : null
-
-  const { error } = await supabase
-    .from('user_sessions')
-    .update({
-      pco_access_token:     tokens.access_token,
-      pco_refresh_token:    tokens.refresh_token ?? refreshToken,
-      pco_token_expires_at: expiresAt,
-    })
-    .eq('token', sessionToken)
-
-  if (error) throw new Error(`Failed to save refreshed PCO token: ${error.message}`)
-  return tokens.access_token
-}
-
-async function getPcoToken(
-  supabase: SupabaseAdminClient,
-  sessionToken: string,
-  session: UserSession,
-) {
-  if (!session.pco_access_token) {
-    throw new Error('No PCO access token on this session. Please log out and log in again.')
-  }
-
-  if (session.pco_refresh_token && shouldRefreshToken(session.pco_token_expires_at)) {
-    return await refreshPcoToken(supabase, sessionToken, session.pco_refresh_token)
-  }
-
-  return session.pco_access_token
 }
 
 Deno.serve(async (req) => {
@@ -184,7 +102,7 @@ Deno.serve(async (req) => {
 
   if (!eventId) return json(cors, 400, { error: 'event_id is required' })
 
-  const supabase = createClient<any>(
+  const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
@@ -198,15 +116,15 @@ Deno.serve(async (req) => {
     .gt('expires_at', now)
     .maybeSingle()
 
-  if (!session?.pco_access_token) {
-    return json(cors, 401, { error: 'Invalid or expired session, or no PCO token' })
+  if (!session) {
+    return json(cors, 401, { error: 'Invalid or expired session token' })
   }
 
   let pcoToken: string
   try {
-    pcoToken = await getPcoToken(supabase, sessionToken, session as UserSession)
+    pcoToken = await getValidPcoToken(supabase, sessionToken, session as PcoSessionTokens)
   } catch (err) {
-    return json(cors, 401, { error: err instanceof Error ? err.message : 'Unable to refresh PCO token' })
+    return json(cors, 401, pcoReauthBody(err))
   }
 
   // ── 2. Load the active event and linked PCO identifiers ───────────────────

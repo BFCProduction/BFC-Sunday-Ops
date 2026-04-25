@@ -5,7 +5,8 @@ import { CHECKLIST_ROLE_OPTIONS, ROLE_COLORS } from '../data/checklist'
 import { loadOrSeedChecklistItems } from '../lib/checklist'
 import { useSunday } from '../context/SundayContext'
 import { useAuth } from '../context/authState'
-import { fetchPcoPlanTimes, fetchPcoPlanItems, type PcoPlanTimeResult, type PcoPlanItemResult } from '../lib/adminApi'
+import { ApiError, fetchPcoPlanTimes, fetchPcoPlanItems, type PcoPlanTimeResult, type PcoPlanItemResult } from '../lib/adminApi'
+import { initiatePCOLogin } from '../lib/pcoAuth'
 import { getChurchDateString } from '../lib/churchTime'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
@@ -179,7 +180,7 @@ function RunOfShow({ items, totalLabel, timezone }: { items: PcoPlanItemResult[]
 export function Dashboard({ setScreen }: DashboardProps) {
   const {
     activeEventId, sundayId, serviceTypeSlug, serviceTypeName,
-    eventId, eventName, sessionDate, timezone,
+    eventName, sessionDate, timezone,
   } = useSunday()
   const { sessionToken } = useAuth()
 
@@ -188,6 +189,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
   const [issues, setIssues] = useState<Issue[]>([])
   const [pcoSchedule, setPcoSchedule] = useState<ScheduleItem[]>([])
   const [rosItems, setRosItems] = useState<PcoPlanItemResult[]>([])
+  const [pcoAuthError, setPcoAuthError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -196,32 +198,17 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
     async function load() {
       try {
-        const issueScopes = [
-          ...(activeEventId ? [{ column: 'event_id', value: activeEventId }] : []),
-          ...(eventId && eventId !== activeEventId ? [{ column: 'event_id', value: eventId }] : []),
-          ...(sundayId ? [{ column: 'sunday_id', value: sundayId }] : []),
-        ]
-
-        const issuePromise = Promise.all(issueScopes.map(scope =>
-          supabase
+        const issuePromise = activeEventId
+          ? supabase
             .from('issues')
             .select('*')
-            .eq(scope.column, scope.value)
+            .eq('event_id', activeEventId)
             .order('created_at', { ascending: false })
-        )).then(results => {
-          results.forEach(result => {
-            if (result.error) throw result.error
-          })
-          const seen = new Set<string>()
-          return results
-            .flatMap(result => result.data || [])
-            .filter(row => {
-              if (seen.has(row.id)) return false
-              seen.add(row.id)
-              return true
+            .then(result => {
+              if (result.error) throw result.error
+              return result.data || []
             })
-            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        })
+          : Promise.resolve([])
 
         // Run all three queries in parallel
         const [itemData, eventCompletionsRes, legacyCompletionsRes, issueRows] = await Promise.all([
@@ -251,12 +238,13 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
     load()
     return () => { cancelled = true }
-  }, [activeEventId, eventId, sundayId, serviceTypeSlug])
+  }, [activeEventId, sundayId, serviceTypeSlug])
 
   useEffect(() => {
     let cancelled = false
     setPcoSchedule([])
     setRosItems([])
+    setPcoAuthError(null)
 
     if (!sessionToken || !activeEventId) return
     const token = sessionToken
@@ -269,6 +257,19 @@ export function Dashboard({ setScreen }: DashboardProps) {
       ])
 
       if (cancelled) return
+
+      const reauthError = [planTimesResult, planItemsResult].find(result =>
+        result.status === 'rejected' &&
+        result.reason instanceof ApiError &&
+        result.reason.code === 'reauth_required'
+      )
+
+      if (reauthError?.status === 'rejected') {
+        setPcoAuthError(reauthError.reason instanceof Error
+          ? reauthError.reason.message
+          : 'Planning Center authorization expired. Sign in again with Planning Center.')
+        return
+      }
 
       if (planTimesResult.status === 'fulfilled') {
         setPcoSchedule(planTimesResult.value.map(pt => planTimeToScheduleItem(pt, timezone)))
@@ -305,7 +306,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
   })
 
   const highIssues = issues.filter(i => !i.resolved_at && (i.severity === 'High' || i.severity === 'Critical'))
-  const scheduleItems = pcoSchedule.length > 0 ? pcoSchedule : FALLBACK_SCHEDULE
+  const scheduleItems = pcoAuthError ? [] : pcoSchedule.length > 0 ? pcoSchedule : FALLBACK_SCHEDULE
   const isPcoSchedule = pcoSchedule.length > 0
   const dashboardSubtitle = eventName ?? serviceTypeName
 
@@ -386,7 +387,19 @@ export function Dashboard({ setScreen }: DashboardProps) {
                 <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full font-bold">PCO</span>
               )}
             </div>
-            {scheduleItems.map((item, i) => {
+            {pcoAuthError ? (
+              <div className="px-4 py-5">
+                <p className="text-sm font-semibold text-gray-800">Planning Center unavailable</p>
+                <p className="text-xs text-gray-500 mt-1 leading-relaxed">{pcoAuthError}</p>
+                <button
+                  type="button"
+                  onClick={initiatePCOLogin}
+                  className="mt-3 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                >
+                  Sign in again with Planning Center
+                </button>
+              </div>
+            ) : scheduleItems.map((item, i) => {
               const st = getScheduleStatus(item.minuteOfDay, sessionDate, timezone)
               return (
                 <div key={item.id} className={`flex items-center gap-3 px-4 py-2 ${i < scheduleItems.length - 1 ? 'border-b border-gray-50' : ''}`}>

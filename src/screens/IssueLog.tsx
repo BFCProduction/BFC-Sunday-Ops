@@ -150,6 +150,7 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
+  const [unassignedHistoricalCount, setUnassignedHistoricalCount] = useState(0)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   // ── Load issues ──────────────────────────────────────────────────────────
@@ -157,28 +158,36 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
     let cancelled = false
 
     async function load() {
-      const queries = []
-      if (eventId) {
-        queries.push(supabase.from('issues').select('*').eq('event_id', eventId))
-      }
-      if (sundayId) {
-        queries.push(supabase.from('issues').select('*').eq('sunday_id', sundayId))
-      }
+      const issueQuery = eventId
+        ? supabase.from('issues').select('*').eq('event_id', eventId).order('created_at', { ascending: false })
+        : sundayId
+          ? supabase.from('issues').select('*').eq('sunday_id', sundayId).order('created_at', { ascending: false })
+          : Promise.resolve({ data: [], error: null })
 
-      const results = await Promise.all(queries)
+      const unassignedQuery = eventId && sundayId
+        ? supabase
+          .from('issues')
+          .select('id', { count: 'exact', head: true })
+          .eq('sunday_id', sundayId)
+          .is('event_id', null)
+        : Promise.resolve({ count: 0, error: null })
+
+      const [issueResult, unassignedResult] = await Promise.all([issueQuery, unassignedQuery])
       if (cancelled) return
 
-      const seen = new Set<string>()
-      const rows = results
-        .flatMap(result => result.data || [])
-        .filter(row => {
-          if (seen.has(row.id)) return false
-          seen.add(row.id)
-          return true
-        })
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      if (issueResult.error) {
+        setNotice(issueResult.error.message)
+        setIssues([])
+      } else {
+        setIssues((issueResult.data || []) as Issue[])
+      }
 
-      setIssues(rows as Issue[])
+      if (unassignedResult.error) {
+        console.warn('Historical issue count failed:', unassignedResult.error.message)
+        setUnassignedHistoricalCount(0)
+      } else {
+        setUnassignedHistoricalCount(unassignedResult.count ?? 0)
+      }
       setLoading(false)
     }
 
@@ -418,6 +427,14 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
         {notice && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
             <p className="text-amber-700 text-xs font-medium">{notice}</p>
+          </div>
+        )}
+
+        {unassignedHistoricalCount > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <p className="text-amber-800 text-xs font-semibold">
+              {unassignedHistoricalCount} historical Sunday-level issue{unassignedHistoricalCount === 1 ? '' : 's'} are hidden from this event until reviewed and assigned.
+            </p>
           </div>
         )}
 

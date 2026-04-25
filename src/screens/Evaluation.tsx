@@ -78,27 +78,42 @@ export function Evaluation() {
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [analytics,   setAnalytics]   = useState<StreamAnalytics | null>(null)
   const [loading,     setLoading]     = useState(true)
+  const [unassignedHistoricalCount, setUnassignedHistoricalCount] = useState(0)
 
   const loadData = async () => {
     // Evaluations: always event-native going forward; fallback to sunday_id for history
-    const evalQ = supabase.from('evaluations').select('*')
-    const evalFiltered = eventId
-      ? evalQ.eq('event_id', eventId)
+    const evalPromise = eventId
+      ? supabase.from('evaluations').select('*').eq('event_id', eventId).order('submitted_at', { ascending: false })
       : sundayId
-        ? evalQ.eq('sunday_id', sundayId)
-        : evalQ.eq('event_id', '')   // no-op
+        ? supabase.from('evaluations').select('*').eq('sunday_id', sundayId).order('submitted_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null })
 
     // Stream analytics: still sunday-level data
     const analyticsQ = sundayId
       ? supabase.from('stream_analytics').select('*').eq('sunday_id', sundayId).single()
       : Promise.resolve({ data: null, error: null })
 
-    const [subsRes, analyticsRes] = await Promise.all([
-      evalFiltered.order('submitted_at', { ascending: false }),
+    const unassignedQ = eventId && sundayId
+      ? supabase
+        .from('evaluations')
+        .select('id', { count: 'exact', head: true })
+        .eq('sunday_id', sundayId)
+        .is('event_id', null)
+      : Promise.resolve({ count: 0, error: null })
+
+    const [subsRes, analyticsRes, unassignedRes] = await Promise.all([
+      evalPromise,
       analyticsQ,
+      unassignedQ,
     ])
     if (subsRes.data)      setSubmissions(subsRes.data as Submission[])
     if (analyticsRes.data) setAnalytics(analyticsRes.data as StreamAnalytics)
+    if (unassignedRes.error) {
+      console.warn('Historical evaluation count failed:', unassignedRes.error.message)
+      setUnassignedHistoricalCount(0)
+    } else {
+      setUnassignedHistoricalCount(unassignedRes.count ?? 0)
+    }
     setLoading(false)
   }
 
@@ -119,6 +134,10 @@ export function Evaluation() {
   // ── Actions ───────────────────────────────────────────────────────────────────
   const submit = async () => {
     if (!canSubmit) return
+    if (!eventId) {
+      alert('Select an event before submitting an evaluation.')
+      return
+    }
     setSaving(true)
     const { error } = await supabase.from('evaluations').insert({
       event_id: eventId,
@@ -166,6 +185,13 @@ export function Evaluation() {
       </div>
 
       <div className="p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
+        {unassignedHistoricalCount > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <p className="text-amber-800 text-xs font-semibold">
+              {unassignedHistoricalCount} historical Sunday-level evaluation response{unassignedHistoricalCount === 1 ? '' : 's'} are hidden from this event until reviewed and assigned.
+            </p>
+          </div>
+        )}
 
         {/* ── Confirmation ─────────────────────────────────────────────────────── */}
         {submitted ? (

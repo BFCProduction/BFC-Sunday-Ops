@@ -12,9 +12,10 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - Issue log with severity tracking, photo attachments, resolution, and Monday.com follow-up sync
 - Attendance, runtime, loudness, weather, and evaluation tabs
 - Anonymous multi-submission post-service evaluation with outcome-based questions and aggregate response view
-- Admin Settings page: event-based report export, configurable church timezone, summary email management, checklist template manager, and People & Access admin management
+- Admin Settings page: event-based report export, configurable church timezone, checklist template manager, and People & Access admin management
 - Admin mode for checklist items, runtime definitions, issue cleanup, and weather settings
 - Event/service report export with logo, KPIs, issues, and evaluation responses
+- Event-native service data and analytics path: attendance, runtimes, loudness, weather, stream analytics, and imports sync through event-linked `service_records`
 - ProPresenter relay script for runtime capture
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
 - **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
@@ -48,18 +49,17 @@ Live now:
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
 - Runtime captured-at timestamps display in the configured church timezone, not the device timezone.
 - Runtime field admin controls are inline on the actual runtime list: admins drag the real row to reorder, use the row pencil to edit, and use **Add Runtime** to create a new row in place.
-- Weather location and pull schedule can be configured in the admin UI.
-- Weather is imported automatically on Sundays only via the weather workflow.
+- Weather location and pull schedule are configured per event in the admin UI.
+- Weather is imported automatically through event-level weather config via the weather workflow.
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
 - Monday.com push can be enabled with the edge function and related secrets.
 - Admins can delete issue log entries directly in the app (photos are cleaned up from Storage).
 - Admins can delete events from the desktop session picker; deletion is verified server-side by the `event-admin` Edge Function and direct public deletes on `events` are blocked.
-- Admin Settings page (gear icon in sidebar) provides event-based report export, church timezone selection, and summary email management.
+- Admin Settings page (gear icon in sidebar) provides event-based report export and church timezone selection.
 - Church timezone is configurable in Settings and stored in `app_config`; falls back to `America/Chicago`.
 - Report export can generate a PDF-style print report for any unified event/service.
 - Dynamic service phase indicator in the sidebar and header (Pre-Service, Service 1, Between Services, Service 2, Post-Service) updates every 60 seconds.
-- Sunday summary email settings and recipients are managed in Settings → Reporting.
-- Sunday summary email can be sent automatically through Google Workspace Gmail API once the related secrets are configured.
+- Summary email has been retired from the product surface. Use Settings → Reporting to export reports manually.
 - Post-service evaluation redesigned: anonymous multi-submission, outcome-based questions, conditional broken-moment detail, collapsible aggregate response view.
 - BFC Production branding applied: logo in header, icon as favicon, iOS home screen icon. App name is "Sunday Ops" throughout.
 - Header logo is always visible including on mobile viewports.
@@ -67,7 +67,7 @@ Live now:
 - Desktop checklist uses a CSS two-column layout (`xl:columns-2`) that keeps sections from breaking across columns.
 - Checklist subsection deduplication enforced — new items land in the existing subsection rather than creating a duplicate.
 - Empty subsections are auto-deleted when the last item referencing them is removed.
-- Loudness Log has separate 9 AM and 11 AM submission buttons, stored as a single row per Sunday (one row, two service readings).
+- Loudness Log saves event-scoped readings and syncs them to the matching event-linked analytics row.
 - Event/service report export intentionally excludes issue photo thumbnails.
 - Historical loudness data imported from the BFC Audio Loudness Log Google Sheet — 144 Sundays (March 2023 – March 2026) via `scripts/import-loudness-history.js`.
 - Loudness Log includes a "Full History PDF" button that generates a styled multi-year report matching the Sunday report aesthetic, grouped by year with per-year averages and goal exceedance flags.
@@ -76,13 +76,17 @@ Live now:
 - On weekdays the app automatically focuses on the most relevant session using midpoint logic: if the current time is past the halfway point between the last event's end (6 PM approximation) and the next event's start time, focus shifts to the next event. This works for all session types — Sundays, special events, mid-week services — with no configuration required.
 - Service phase indicator time boundaries corrected: Pre-Service 7–9am, Service 1 9–10am, Between Services 10–11am, Service 2 11am–noon, Post-Service noon–6pm.
 - Post-service evaluations now surface Supabase errors on submit instead of silently showing a false success screen.
-- Settings page sections: **App Settings** (Timezone), **Reporting** (event report export, summary email), **Checklist Templates**, and **People & Access** (admin user management).
+- Settings page sections: **App Settings** (Timezone), **Reporting** (event report export), **Checklist Templates**, and **People & Access** (admin user management).
+- Planning Center auth failures surface as reauth-required states in the plan picker and Dashboard instead of looking like empty schedule data.
 - ProPresenter relay supports a `countdown_target` on any runtime field. When set, the relay reads ProPresenter's timer `state` (`overran` / `complete` / `stopped`) and computes the true elapsed time rather than storing the raw overrun value. Useful for message timers configured as countdown-with-overrun. Set once in the runtime field admin UI.
 - New `--dump-timers` flag on the relay prints the full raw JSON for every timer on every connected ProPresenter host (useful for debugging and field setup).
 
-- RESI analytics importer (`scripts/fetch-resi.js`) — logs in via Playwright, downloads the session CSV for the target Sunday, computes per-service stats, and writes to Supabase. Supports `--now`, `--date`, and `--dry-run` flags.
+- RESI analytics importer (`scripts/fetch-resi.js`) — logs in via Playwright, downloads the session CSV for the target Sunday, saves the CSV/debug screenshot as workflow artifacts, records an `import_runs` status row, computes per-service stats, and writes to `service_records` / `analytics_records` through Supabase. Supports `--now`, `--date`, and `--dry-run` flags. Manual CSV fallback: `node scripts/import-resi-csv.js --date YYYY-MM-DD --file path/to.csv`.
+- Operational scripts are inventoried by trust status in `docs/operational-script-inventory.md`.
 
-- **YouTube live relay** (`scripts/fetch-youtube.js`) — runs during the Sunday service window (7:30 AM–1:30 PM CT). Polls BFC's YouTube channel for active live streams created by RESI via `search.list?eventType=live`, tracks `concurrentViewers` every 60 seconds, and writes `youtube_unique_viewers` to `service_records` when each stream ends. Streams are mapped to service types by actual start time. For historical data use `scripts/import-youtube-history.js` instead.
+- **YouTube live relay** (`scripts/fetch-youtube.js`) — runs during the Sunday service window (7:30 AM–1:30 PM CT). Polls BFC's YouTube channel for active live streams created by RESI via `search.list?eventType=live`, tracks `concurrentViewers` every 60 seconds, resolves the matching Sunday Ops event, and writes `youtube_unique_viewers` to the event-linked `service_records` row when each stream ends. If no matching event exists, it logs the mismatch and does not write a date-only row. For historical data use `scripts/import-youtube-history.js` in preview mode first.
+
+- **Historical issue/evaluation review** (`scripts/review-session-assignments.js`) — exports ambiguous Sunday-level issues and evaluations with candidate events, high-confidence suggestions, and blank `assigned_event_id` cells for manual review. Apply mode updates `event_id` only from a reviewed CSV.
 
 - **Dashboard layout** — compact progress strip (dial + overall bar + role bars) spans the full width at the top; Today's Schedule (25%) and Run of Show (75%) sit side by side below it; Quick Actions below that. Stacks vertically on mobile.
 
@@ -107,7 +111,7 @@ Live now:
   - **Dashboard**: 6 KPI cards (Avg Attendance, Avg Service Runtime, Avg Message Runtime, Avg Loudness, Avg Stream Views, Total Sundays), each with 9am/11am breakdown and period-over-period delta arrows. Date-range filter. All time values rounded to whole seconds.
   - **Data Explorer**: filterable table view with column-level sorting.
   - **Ask a Question**: placeholder for a future AI natural-language query interface.
-  - Both tabs query the `analytics_records` view, which remaps legacy `service_type` enum values to the new slug format (`sunday-9am`, `sunday-11am`).
+  - Both tabs query the `analytics_records` view, which remaps legacy `service_type` enum values to service slugs and exposes event id, event name, event time, and labels for event-native analytics.
 
 - **Manual event creation** (`src/components/layout/QuickCreateModal.tsx`):
   - All services created in Sunday Ops via the "New Event" modal: service type, name, date, time, optional PCO plan link, optional checklist template, notes.
@@ -132,14 +136,16 @@ Live now:
   - Called automatically after login and manually via Settings → Sync Now (admin only).
   - `pco-sync`, `pco-plans`, `pco-plan-times`, and `pco-plan-items` refresh expired Planning Center access tokens using the stored refresh token.
 
-- **`service_records` table** (`supabase/migrations/012_create_service_records.sql`) — unified analytics table with one row per service per Sunday, storing attendance, runtimes, loudness, weather, and stream analytics in one place.
+- **`service_records` table** (`supabase/migrations/012_create_service_records.sql`, event-native updates in `039`) — unified analytics table with one row per service event when `event_id` is available, storing attendance, runtimes, loudness, weather, and stream analytics in one place.
 
 - **Historical Gameday Checklist PDF extraction** (`scripts/extract-checklist-runtimes.js`) — one-shot script that scans 242 PDFs from the local Google Drive archive (Jun 2021–Mar 2026), extracts service runtime, message runtime, and stage flip time from each, and upserts into `service_records`. 465 rows backfilled.
 
 Still pending:
-- **YouTube live relay first live test** — `scripts/fetch-youtube.js` is built but not yet verified against a live Sunday stream
+- **YouTube live relay first live test** — `scripts/fetch-youtube.js` is event-native but not yet verified against a live Sunday stream
+- Apply reviewed issue/evaluation assignments after Alan reviews the generated CSV/JSON artifact.
+- Historical script burn-down follow-up — see `docs/operational-script-inventory.md` for guarded scripts and remaining archive cleanup.
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
-- Any downstream reporting beyond the Sunday summary email
+- Any downstream reporting beyond manual report export
 
 Completed (previously listed as pending):
 - Attendance, runtimes, and loudness all sync to `service_records` via the shared `syncToServiceRecords` utility.
@@ -159,7 +165,7 @@ Completed (previously listed as pending):
 
 ## Supabase Tables
 
-- `sundays` — legacy Sunday records (still used as source of truth for operational data)
+- `sundays` — legacy Sunday records retained for historical bridges and older rows
 - `service_types` — service type definitions (`sunday-9am`, `sunday-11am`, `special`)
 - `events` — unified event instances (replaces the split between `sundays` and `special_events` in the navigation layer)
 - `user_sessions` — PCO OAuth session tokens
@@ -174,11 +180,10 @@ Completed (previously listed as pending):
 - `weather`
 - `evaluations`
 - `stream_analytics`
-- `report_email_settings`
-- `report_email_recipients`
-- `report_email_runs`
+- `import_runs`
+- `report_email_settings` / `report_email_recipients` / `report_email_runs` — retired summary-email tables retained for historical/audit compatibility
 - `app_config`
-- `service_records` — unified analytics table (one row per service per Sunday); queried via the `analytics_records` view
+- `service_records` — unified analytics table, now event-linked by `event_id` when available; queried via the `analytics_records` view
 - `event_templates` — reusable checklist blueprints for special events
 - `event_template_items` — checklist items belonging to a template
 - `special_events` — non-Sunday services (Good Friday, Christmas Eve, etc.)
@@ -186,7 +191,7 @@ Completed (previously listed as pending):
 - `event_checklist_completions` — completions for event checklist items
 
 Views:
-- `analytics_records` — thin view over `service_records` that remaps legacy `service_type` enum values to the new slug format (`sunday-9am`, `sunday-11am`)
+- `analytics_records` — view over `service_records` that remaps legacy service-type values, exposes event identity/time/labels, and powers Analytics screens
 
 Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/001_initial_schema.sql`
@@ -227,6 +232,9 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/036_rename_ptz_op_role_to_ptz.sql`
 - `supabase/migrations/037_admin_only_event_deletes.sql`
 - `supabase/migrations/038_event_scoped_summary_email_runs.sql`
+- `supabase/migrations/039_event_native_service_records.sql`
+- `supabase/migrations/040_import_runs.sql`
+- `supabase/migrations/041_event_native_weather_config.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -357,9 +365,10 @@ node scripts/fetch-weather.js --now
 ```
 
 Notes:
-- The importer reads the ZIP code, pull day, and pull time from `weather_config`.
-- It uses [Open-Meteo](https://open-meteo.com/en/docs) for geocoding and weather data.
-- It writes the imported weather into the `weather` table for the current or upcoming Sunday.
+- Weather settings are event-level. Each event owns its own `weather_config` row through `weather_config.event_id`.
+- Legacy `weather_config` rows such as `default`, `sunday-9am`, and `sunday-11am` are templates for seeding new events, not the runtime source of truth.
+- The importer uses [Open-Meteo](https://open-meteo.com/en/docs) for geocoding and weather data.
+- It writes imported weather into an event-scoped `weather` row and syncs temperature/condition into the matching event-linked `service_records` row.
 - Weather import and ProPresenter runtime import were both verified live on March 19, 2026.
 
 ### Historical weather backfill
@@ -370,9 +379,9 @@ The Data Explorer and Service Data history tabs read weather from `service_recor
 node scripts/backfill-service-records-weather.js
 ```
 
-This fetches historical 9am weather from the Open-Meteo archive API for every past `service_records` row that is missing weather and writes it directly into `service_records.weather_temp_f` / `weather_condition`. Safe to re-run — only updates null rows.
+This fetches historical weather from the Open-Meteo archive API for every past event-linked `service_records` row that is missing weather and has event-level weather config. Safe to re-run — only updates null rows.
 
-To copy weather from the `weather` table into `service_records` for records that do have a `weather` entry:
+To copy event weather from the `weather` table into matching event-linked `service_records` rows:
 
 ```bash
 node scripts/sync-weather-to-service-records.js
@@ -396,8 +405,9 @@ node --env-file=.env.local scripts/fetch-youtube.js --date 2026-04-27  # target 
 Notes:
 - Must be run during the service window (7:30 AM–1:30 PM CT); will exit with a message if run outside that window (allows starting up to 30 minutes early).
 - RESI-created live streams are visible via `search.list?eventType=live` while active but are not accessible after they end. For historical data use `scripts/import-youtube-history.js`.
-- Streams are matched to `service_records` by actual start time: 8:45–10:15 CT → `regular_9am`, 10:15–12:30 CT → `regular_11am`, 7:45–8:45 CT → special 8am service.
-- Peak `concurrentViewers` is written to `service_records.youtube_unique_viewers` when each stream ends.
+- Streams are matched to events by actual start time: 8:45–10:15 CT → Sunday 9am event, 10:15–12:30 CT → Sunday 11am event, 7:45–8:45 CT → special 8am event when one exists.
+- Peak `concurrentViewers` is written to `service_records.youtube_unique_viewers` by `event_id` when each stream ends.
+- If no matching event exists, the relay logs the missing event and skips the write.
 - Ctrl-C flushes any in-progress streams before exiting.
 
 Required env:
@@ -418,9 +428,23 @@ For past Sundays, use the spreadsheet importer:
 ```bash
 node --env-file=.env.local scripts/import-youtube-history.js --file ~/Downloads/"Stream Analytics Master - 9am Service.csv" --service 9am
 node --env-file=.env.local scripts/import-youtube-history.js --file ~/Downloads/"Stream Analytics Master - 11am Service.csv" --service 11am
+node --env-file=.env.local scripts/import-youtube-history.js --file ~/Downloads/"Stream Analytics Master - 9am Service.csv" --service 9am --write --confirm-historical-import
 ```
 
-Reads `Col 0` (date, M/D/YYYY) and `Col 19` (YouTube unique viewers) from the BFC stream analytics spreadsheet exports.
+Reads `Col 0` (date, M/D/YYYY) and `Col 19` (YouTube unique viewers) from the BFC stream analytics spreadsheet exports. Default mode is a preview that shows the resolved `event_id`; writes require `--write --confirm-historical-import` and skip dates without a matching event.
+
+### Historical issue/evaluation review
+
+Older issue and evaluation rows can be Sunday-level instead of event-level. Export a review artifact before assigning them:
+
+```bash
+node --env-file=.env.local scripts/review-session-assignments.js
+node --env-file=.env.local scripts/review-session-assignments.js --reviewed artifacts/reviews/session-assignment-review.csv --dry-run
+node --env-file=.env.local scripts/review-session-assignments.js --reviewed artifacts/reviews/session-assignment-review.csv --apply
+node --env-file=.env.local scripts/review-session-assignments.js --reviewed artifacts/reviews/session-assignment-review.csv --delete-unassigned --dry-run
+```
+
+The export includes row date, title/detail, severity or service feel, created/submitted time, candidate events for that date, and high-confidence suggestions when available. Apply mode only writes `event_id` values that were filled into `assigned_event_id`. Delete mode removes reviewed rows that still have a blank `assigned_event_id`.
 
 ## Supabase Storage
 
@@ -469,7 +493,7 @@ create policy "allow public deletes" on storage.objects
 
 #### Drive sync setup
 
-The `docs-sync.yml` workflow uses a Google service account to read the `01 Sunday Mornings` subfolder inside the BFC production docs parent folder. Required secrets (same Google service account used for the summary email):
+The `docs-sync.yml` workflow uses a Google service account to read the `01 Sunday Mornings` subfolder inside the BFC production docs parent folder. Required secrets:
 
 - `GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL`
 - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
@@ -488,8 +512,8 @@ Doc type is inferred from the description: "Stage Plot", "Input List" / "IO", "R
 ## GitHub Workflows
 
 - `deploy.yml`: builds and deploys to GitHub Pages on push to `main`
-- `summary-email.yml`: checks every 15 minutes on Sunday and sends the summary email once the configured local send time has passed
-- `sunday-analytics.yml`: manual-only placeholder workflow until real analytics importers are added
+- `summary-email.yml`: retired placeholder; does not send email
+- `sunday-analytics.yml`: runs the RESI Playwright importer and uploads downloaded CSV / debug screenshot artifacts when present
 - `weather-import.yml`: runs every 5 minutes **on Sundays only** and imports weather once the configured day/time has passed
 - `docs-sync.yml`: runs every hour and syncs production docs from the Google Drive `01 Sunday Mornings` folder into Supabase Storage; exits cleanly if there is nothing new
 
@@ -516,51 +540,14 @@ Example function deploy command:
 supabase functions deploy push-monday-issue
 ```
 
-## Sunday Summary Email
-
-Summary email settings live in `Settings -> Reporting` and include:
-
-- enabled / paused state
-- send day and time
-- reply-to address
-- recipient list
-
-The sender sends **one report per event/service**, not one combined Sunday report. On a normal Sunday that means separate 9am and 11am reports if both services have operational activity. On Sundays with one combined service or extra services, each active event gets its own report and blank auto-created service shells are skipped.
-
-The sender currently assumes Google Workspace Gmail API delivery using:
-
-- delegated mailbox: `jerry@bethanynaz.org`
-- display name: `BFC Sunday Ops`
-- reply-to: `production@bethanynaz.org`
-
-Supporting pieces:
-
-- `scripts/send-sunday-summary.js`
-- `supabase/functions/summary-email-admin`
-- `.github/workflows/summary-email.yml`
-
-Deploy the new edge functions after adding secrets:
-
-```bash
-supabase functions deploy summary-email-admin
-```
-
-Useful validation flags:
-
-```bash
-node scripts/send-sunday-summary.js --dry-run --now --date 2026-04-12
-node scripts/send-sunday-summary.js --now --event-id <events-id> --to you@example.com
-node scripts/send-sunday-summary.js --now --force --event-id <events-id>
-```
-
 ## Report Export
 
 Manual report export lives in `Settings -> Reporting` as a single **Export a Report** control.
 
 - The dropdown selects from unified `events`, so reports can target any Sunday service, combined service, extra service, or special event.
-- Reports are generated for one selected event/service at a time, matching the summary email methodology.
+- Reports are generated for one selected event/service at a time.
 - Event-native data is used first for checklist completions, attendance, runtimes, weather, issues, and evaluations.
-- Older records still work through legacy Sunday fallback where applicable.
+- Older service-data records still work through scoped legacy fallback where applicable. Sunday-level issue/evaluation history needs review assignment before it appears in an event report.
 - The export opens a self-contained printable report in a new tab and triggers the browser print dialog.
 
 ## Admin Event Deletion
@@ -591,7 +578,7 @@ supabase functions deploy user-admin
 ## Notes
 
 - Admin mode is a shared-password convenience layer in the frontend.
-- Summary email recipients are stored in private tables and managed through edge functions rather than direct public table access.
+- Retired summary-email tables remain private and are not exposed in the app surface.
 - The repo now matches the current checklist/runtime data model better than the original generated README did.
 - Scheduled analytics should stay disabled until their backing code exists.
 - `supabase/.temp/` is local Supabase CLI state and is intentionally ignored.

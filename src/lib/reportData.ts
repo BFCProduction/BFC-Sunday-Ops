@@ -178,17 +178,6 @@ function normalizeAttendance(row: AttendanceRow | null, source: ScopedSource, ev
   }
 }
 
-function dedupeById<T extends { id: string }>(rows: T[]): T[] {
-  const seen = new Set<string>()
-  const output: T[] = []
-  rows.forEach(row => {
-    if (seen.has(row.id)) return
-    seen.add(row.id)
-    output.push(row)
-  })
-  return output
-}
-
 function sortIssues(issues: IssueRow[]): IssueRow[] {
   return [...issues].sort((a, b) => {
     const severityDelta = (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99)
@@ -309,53 +298,20 @@ async function loadChecklistData(event: ReportEvent): Promise<{ items: Checklist
 }
 
 async function loadIssues(event: ReportEvent): Promise<IssueRow[]> {
-  const scopes = [
-    { column: 'event_id', value: event.id },
-  ]
-  if (event.legacySpecialEventId) scopes.push({ column: 'event_id', value: event.legacySpecialEventId })
-  if (event.legacySundayId) scopes.push({ column: 'sunday_id', value: event.legacySundayId })
+  const { data, error } = await supabase
+    .from('issues')
+    .select('id, title, description, severity, created_at, resolved_at')
+    .eq('event_id', event.id)
 
-  const results = await Promise.all(scopes.map(scope =>
-    supabase
-      .from('issues')
-      .select('id, title, description, severity, created_at, resolved_at')
-      .eq(scope.column, scope.value)
-  ))
-
-  results.forEach(result => {
-    if (result.error) throw result.error
-  })
-
-  return sortIssues(dedupeById(results.flatMap(result => (result.data || []) as IssueRow[])))
+  if (error) throw error
+  return sortIssues((data || []) as IssueRow[])
 }
 
 async function loadEvaluations(event: ReportEvent): Promise<EvaluationRow[]> {
-  const { data: eventRows, error: eventError } = await supabase
-    .from('evaluations')
-    .select('*')
-    .eq('event_id', event.id)
-    .order('submitted_at', { ascending: true })
-
-  if (eventError) throw eventError
-  if (eventRows && eventRows.length > 0) return eventRows as EvaluationRow[]
-
-  if (event.legacySpecialEventId) {
-    const { data, error } = await supabase
-      .from('evaluations')
-      .select('*')
-      .eq('event_id', event.legacySpecialEventId)
-      .order('submitted_at', { ascending: true })
-
-    if (error) throw error
-    if (data && data.length > 0) return data as EvaluationRow[]
-  }
-
-  if (!event.legacySundayId) return []
-
   const { data, error } = await supabase
     .from('evaluations')
     .select('*')
-    .eq('sunday_id', event.legacySundayId)
+    .eq('event_id', event.id)
     .order('submitted_at', { ascending: true })
 
   if (error) throw error

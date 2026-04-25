@@ -11,7 +11,7 @@
  *
  * Usage:
  *   node scripts/migrate-existing-ops-data.js          # dry run (default)
- *   node scripts/migrate-existing-ops-data.js --write  # write to Supabase
+ *   node scripts/migrate-existing-ops-data.js --write --confirm-historical-import
  *
  * Safe to run multiple times — uses upsert throughout.
  */
@@ -24,6 +24,13 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const WRITE = process.argv.includes('--write')
+const CONFIRMED_HISTORICAL_IMPORT = process.argv.includes('--confirm-historical-import')
+
+if (WRITE && !CONFIRMED_HISTORICAL_IMPORT) {
+  console.error('Historical service_records migration writes require --confirm-historical-import.')
+  console.error('This script is retained as an archive reference; prefer event-native importers for new data.')
+  process.exit(1)
+}
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 

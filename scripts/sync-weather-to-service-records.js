@@ -34,11 +34,13 @@ async function run() {
   console.log('BFC Sunday Ops — Sync weather → service_records')
   console.log('=================================================')
 
-  // Find service_records rows with no weather
+  // Find event-native service_records rows with no weather. Weather is now
+  // event-level, so legacy date-only rows are not inferred from sibling events.
   const { data: records, error: recErr } = await supabase
     .from('service_records')
-    .select('id, service_date, service_type, service_label, sunday_id')
+    .select('id, event_id, service_date, service_type, service_label, sunday_id')
     .is('weather_temp_f', null)
+    .not('event_id', 'is', null)
     .order('service_date', { ascending: true })
 
   if (recErr) throw recErr
@@ -49,19 +51,18 @@ async function run() {
 
   console.log(`Found ${records.length} service_records row(s) missing weather.\n`)
 
-  // Load all weather rows (with event and sunday join for date lookup)
+  // Load event-level weather rows.
   const { data: weatherRows, error: wErr } = await supabase
     .from('weather')
-    .select('temp_f, condition, wind_mph, humidity, sunday_id, event_id, events(event_date), sundays(date)')
+    .select('temp_f, condition, event_id')
+    .not('event_id', 'is', null)
 
   if (wErr) throw wErr
 
-  // Build a map: date string → weather
-  const weatherByDate = new Map()
+  const weatherByEvent = new Map()
   for (const w of weatherRows ?? []) {
-    const date = w.events?.event_date ?? w.sundays?.date
-    if (date && !weatherByDate.has(date)) {
-      weatherByDate.set(date, { temp_f: w.temp_f, condition: w.condition })
+    if (w.event_id && !weatherByEvent.has(w.event_id)) {
+      weatherByEvent.set(w.event_id, { temp_f: w.temp_f, condition: w.condition })
     }
   }
 
@@ -69,9 +70,9 @@ async function run() {
   let skipped = 0
 
   for (const rec of records) {
-    const weather = weatherByDate.get(rec.service_date)
+    const weather = weatherByEvent.get(rec.event_id)
     if (!weather) {
-      console.log(`  ${rec.service_date} ${rec.service_type} — no weather record found, skipping`)
+      console.log(`  ${rec.service_date} ${rec.service_type} — no event weather record found, skipping`)
       skipped++
       continue
     }

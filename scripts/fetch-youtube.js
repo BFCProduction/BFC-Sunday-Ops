@@ -22,10 +22,10 @@
  * Service window: 7:30 AM – 1:30 PM America/Chicago
  * Poll interval: 60 seconds
  *
- * Stream → service_type mapping (by stream start time, CT):
- *   7:45–8:45 AM  → special (8am service, Easter etc.) — skipped for regular Sundays
- *   8:45–10:15 AM → regular_9am
- *   10:15–12:30 PM → regular_11am
+ * Stream → event mapping (by stream start time, CT):
+ *   7:45–8:45 AM  → special 8am event, only when a matching event exists
+ *   8:45–10:15 AM → Sunday 9am event
+ *   10:15–12:30 PM → Sunday 11am event
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -60,6 +60,27 @@ const WINDOW_END_HOUR   = 13  // 1:30 PM
 const WINDOW_END_MIN    = 30
 
 const POLL_INTERVAL_MS  = 60_000  // 60 seconds
+
+const SERVICE_SLOTS = {
+  special_8am: {
+    key: 'special_8am',
+    label: 'special 8am service',
+    serviceType: 'special',
+    serviceSlug: 'special',
+  },
+  regular_9am: {
+    key: 'regular_9am',
+    label: 'Sunday 9am service',
+    serviceType: 'regular_9am',
+    serviceSlug: 'sunday-9am',
+  },
+  regular_11am: {
+    key: 'regular_11am',
+    label: 'Sunday 11am service',
+    serviceType: 'regular_11am',
+    serviceSlug: 'sunday-11am',
+  },
+}
 
 for (const [name, val] of [
   ['YOUTUBE_CLIENT_ID', CLIENT_ID],
@@ -130,20 +151,26 @@ function isInServiceWindow() {
 }
 
 /**
- * Maps a stream's actual start time (UTC Date) to a service_type.
+ * Maps a stream's actual start time (UTC Date) to an expected Sunday Ops slot.
  * Returns null for streams that don't match a known slot.
  *
- *   7:45–8:45 CT  → 'special_8am'   (non-standard; caller handles)
- *   8:45–10:15 CT → 'regular_9am'
- *   10:15–12:30 CT → 'regular_11am'
+ *   7:45–8:45 CT  → special 8am event
+ *   8:45–10:15 CT → Sunday 9am event
+ *   10:15–12:30 CT → Sunday 11am event
  */
-function serviceTypeForStartTime(startDate) {
+function serviceSlotForStartTime(startDate) {
   const { hour, min } = ctHourMin(startDate)
   const mins = hour * 60 + min
-  if (mins >= 7 * 60 + 45 && mins < 8 * 60 + 45)   return 'special_8am'
-  if (mins >= 8 * 60 + 45 && mins < 10 * 60 + 15)  return 'regular_9am'
-  if (mins >= 10 * 60 + 15 && mins < 12 * 60 + 30) return 'regular_11am'
+  if (mins >= 7 * 60 + 45 && mins < 8 * 60 + 45)   return SERVICE_SLOTS.special_8am
+  if (mins >= 8 * 60 + 45 && mins < 10 * 60 + 15)  return SERVICE_SLOTS.regular_9am
+  if (mins >= 10 * 60 + 15 && mins < 12 * 60 + 30) return SERVICE_SLOTS.regular_11am
   return null
+}
+
+function minutesFromEventTime(eventTime) {
+  const match = String(eventTime || '').match(/^(\d{1,2}):(\d{2})/)
+  if (!match) return null
+  return Number(match[1]) * 60 + Number(match[2])
 }
 
 // ─── YouTube OAuth ─────────────────────────────────────────────────────────────
@@ -224,20 +251,100 @@ async function getLiveDetails(videoIds) {
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
 
-async function writeViewers(dateStr, serviceType, viewers) {
-  if (dryRun) {
-    console.log(`  [dry-run] would write service_records ${serviceType} youtube_unique_viewers = ${viewers}`)
+let serviceTypesBySlug = null
+
+async function loadServiceTypesBySlug() {
+  if (serviceTypesBySlug) return serviceTypesBySlug
+
+  const { data, error } = await supabase
+    .from('service_types')
+    .select('id, slug, name')
+
+  if (error) throw new Error(`service_types lookup: ${error.message}`)
+  serviceTypesBySlug = Object.fromEntries((data ?? []).map(row => [row.slug, row]))
+  return serviceTypesBySlug
+}
+
+async function resolveEventForSlot(dateStr, slot, streamStartDate) {
+  const serviceTypes = await loadServiceTypesBySlug()
+  const serviceType = serviceTypes[slot.serviceSlug]
+
+  if (!serviceType) {
+    return {
+      event: null,
+      reason: `service type "${slot.serviceSlug}" does not exist`,
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('events')
+    .select('id, name, event_date, event_time, legacy_sunday_id')
+    .eq('event_date', dateStr)
+    .eq('service_type_id', serviceType.id)
+    .order('event_time', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+
+  if (error) throw new Error(`events lookup (${slot.serviceSlug} ${dateStr}): ${error.message}`)
+
+  const events = data ?? []
+  if (events.length === 0) {
+    return {
+      event: null,
+      reason: `no ${slot.serviceSlug} event exists on ${dateStr}`,
+    }
+  }
+
+  if (events.length === 1) {
+    return { event: events[0], reason: 'single matching event' }
+  }
+
+  const { hour, min } = ctHourMin(streamStartDate)
+  const streamStartMinutes = hour * 60 + min
+  const scored = events
+    .map(event => ({
+      event,
+      diff: Math.abs((minutesFromEventTime(event.event_time) ?? 9999) - streamStartMinutes),
+    }))
+    .sort((a, b) => a.diff - b.diff)
+
+  if (scored[0]?.diff <= 75 && scored[0].diff < scored[1]?.diff) {
+    return {
+      event: scored[0].event,
+      reason: `closest event time to stream start (${scored[0].diff} minutes)`,
+    }
+  }
+
+  return {
+    event: null,
+    reason: `multiple ${slot.serviceSlug} events exist on ${dateStr}: ${events
+      .map(event => `${event.event_time?.slice(0, 5) ?? 'time unknown'} ${event.name} (${event.id})`)
+      .join('; ')}`,
+  }
+}
+
+async function writeViewers(dateStr, slot, viewers, streamStartDate) {
+  const { event, reason } = await resolveEventForSlot(dateStr, slot, streamStartDate)
+
+  if (!event) {
+    console.warn(
+      `  service_records: ${reason}; not writing ${slot.label} youtube_unique_viewers = ${viewers}.`
+    )
     return
   }
 
-  const { data: sunday } = await supabase
-    .from('sundays').select('id').eq('date', dateStr).maybeSingle()
+  if (dryRun) {
+    console.log(
+      `  [dry-run] would write service_records event_id=${event.id}` +
+      ` (${event.event_time?.slice(0, 5) ?? 'time unknown'} ${event.name})` +
+      ` youtube_unique_viewers = ${viewers}`
+    )
+    return
+  }
 
   const { data: existing } = await supabase
     .from('service_records')
     .select('id')
-    .eq('service_date', dateStr)
-    .eq('service_type', serviceType)
+    .eq('event_id', event.id)
     .maybeSingle()
 
   const fields = { youtube_unique_viewers: viewers }
@@ -245,17 +352,26 @@ async function writeViewers(dateStr, serviceType, viewers) {
   let err
   if (existing) {
     ;({ error: err } = await supabase
-      .from('service_records').update(fields).eq('id', existing.id))
+      .from('service_records').update({
+        service_date: dateStr,
+        service_type: slot.serviceType,
+        sunday_id:    event.legacy_sunday_id ?? null,
+        event_id:     event.id,
+        service_label: null,
+        ...fields,
+      }).eq('id', existing.id))
   } else {
     ;({ error: err } = await supabase
       .from('service_records').insert({
         service_date: dateStr,
-        service_type: serviceType,
-        sunday_id:    sunday?.id ?? null,
+        service_type: slot.serviceType,
+        sunday_id:    event.legacy_sunday_id ?? null,
+        event_id:     event.id,
+        service_label: null,
         ...fields,
       }))
   }
-  if (err) throw new Error(`service_records write (${serviceType}): ${err.message}`)
+  if (err) throw new Error(`service_records write (${slot.label}, event ${event.id}): ${err.message}`)
 }
 
 // ─── Main relay loop ──────────────────────────────────────────────────────────
@@ -270,7 +386,7 @@ async function run() {
   console.log(`Poll interval: ${POLL_INTERVAL_MS / 1000}s`)
   console.log(`Service window: ${WINDOW_START_HOUR}:${String(WINDOW_START_MIN).padStart(2,'0')}–${WINDOW_END_HOUR}:${String(WINDOW_END_MIN).padStart(2,'0')} CT\n`)
 
-  // Tracks active streams: videoId → { title, serviceType, peakViewers, startTime }
+  // Tracks active streams: videoId -> { title, slot, peakViewers, startTime }
   const active    = new Map()
   const completed = new Set()  // videoIds already written to DB
 
@@ -300,11 +416,11 @@ async function run() {
   async function flushAndExit(sig) {
     console.log(`\n${sig} received — flushing active streams...`)
     for (const [videoId, info] of active.entries()) {
-      if (completed.has(videoId) || !info.serviceType) continue
-      console.log(`  ${info.serviceType}: peak viewers = ${info.peakViewers} (stream may still be live)`)
+      if (completed.has(videoId) || !info.slot) continue
+      console.log(`  ${info.slot.label}: peak viewers = ${info.peakViewers} (stream may still be live)`)
       try {
-        await writeViewers(targetSunday, info.serviceType, info.peakViewers)
-        console.log(`  ✓ wrote ${info.serviceType} youtube_unique_viewers = ${info.peakViewers}`)
+        await writeViewers(targetSunday, info.slot, info.peakViewers, info.startTime)
+        console.log(`  ✓ handled ${info.slot.label} youtube_unique_viewers = ${info.peakViewers}`)
       } catch (e) {
         console.error(`  ERROR: ${e.message}`)
       }
@@ -326,7 +442,7 @@ async function run() {
       for (const { videoId, title } of liveStreams) {
         if (!active.has(videoId) && !completed.has(videoId)) {
           console.log(`  Found live stream: "${title}" (${videoId})`)
-          active.set(videoId, { title, serviceType: null, peakViewers: 0, startTime: null })
+          active.set(videoId, { title, slot: null, peakViewers: 0, startTime: null })
         }
       }
 
@@ -339,29 +455,29 @@ async function run() {
           if (!d) {
             // Video disappeared from API unexpectedly; treat as ended
             console.log(`  Stream ${videoId} no longer accessible — treating as ended.`)
-            if (info.serviceType && !completed.has(videoId) && info.peakViewers > 0) {
+            if (info.slot && !completed.has(videoId) && info.peakViewers > 0) {
               try {
-                await writeViewers(targetSunday, info.serviceType, info.peakViewers)
-                console.log(`  ✓ wrote ${info.serviceType} youtube_unique_viewers = ${info.peakViewers}`)
+                await writeViewers(targetSunday, info.slot, info.peakViewers, info.startTime)
+                console.log(`  ✓ handled ${info.slot.label} youtube_unique_viewers = ${info.peakViewers}`)
                 completed.add(videoId)
               } catch (e) {
-                console.error(`  ERROR writing ${info.serviceType}: ${e.message}`)
+                console.error(`  ERROR writing ${info.slot.label}: ${e.message}`)
               }
             }
             active.delete(videoId)
             continue
           }
 
-          // Resolve serviceType once we have an actualStartTime
-          if (!info.serviceType && d.actualStartTime) {
+          // Resolve the Sunday Ops slot once we have an actualStartTime.
+          if (!info.slot && d.actualStartTime) {
             info.startTime   = d.actualStartTime
-            info.serviceType = serviceTypeForStartTime(d.actualStartTime)
+            info.slot = serviceSlotForStartTime(d.actualStartTime)
             const { hour: sh, min: sm } = ctHourMin(d.actualStartTime)
             const timeStr = `${sh}:${String(sm).padStart(2,'0')} CT`
-            if (info.serviceType) {
-              console.log(`  Mapped "${d.title}" (started ${timeStr}) → ${info.serviceType}`)
+            if (info.slot) {
+              console.log(`  Mapped "${d.title}" (started ${timeStr}) → ${info.slot.label}`)
             } else {
-              console.log(`  WARNING: "${d.title}" started at ${timeStr} — no service type mapping, will be skipped`)
+              console.log(`  WARNING: "${d.title}" started at ${timeStr} — no Sunday Ops slot mapping, will be skipped`)
             }
           }
 
@@ -369,21 +485,21 @@ async function run() {
           if (d.concurrentViewers > info.peakViewers) {
             info.peakViewers = d.concurrentViewers
           }
-          console.log(`  ${info.serviceType ?? videoId}: ${d.concurrentViewers} concurrent (peak: ${info.peakViewers}), status: ${d.liveBroadcastContent}`)
+          console.log(`  ${info.slot?.label ?? videoId}: ${d.concurrentViewers} concurrent (peak: ${info.peakViewers}), status: ${d.liveBroadcastContent}`)
 
           // Stream ended — write and remove
           if (d.liveBroadcastContent === 'none' || d.liveBroadcastContent === 'completed') {
             console.log(`  Stream ended: "${d.title}"`)
-            if (info.serviceType && !completed.has(videoId)) {
+            if (info.slot && !completed.has(videoId)) {
               try {
-                await writeViewers(targetSunday, info.serviceType, info.peakViewers)
-                console.log(`  ✓ wrote ${info.serviceType} youtube_unique_viewers = ${info.peakViewers}`)
+                await writeViewers(targetSunday, info.slot, info.peakViewers, info.startTime)
+                console.log(`  ✓ handled ${info.slot.label} youtube_unique_viewers = ${info.peakViewers}`)
                 completed.add(videoId)
               } catch (e) {
-                console.error(`  ERROR writing ${info.serviceType}: ${e.message}`)
+                console.error(`  ERROR writing ${info.slot.label}: ${e.message}`)
               }
-            } else if (!info.serviceType) {
-              console.log(`  Skipping write — no service type mapped.`)
+            } else if (!info.slot) {
+              console.log(`  Skipping write — no Sunday Ops slot mapped.`)
             }
             active.delete(videoId)
           }
@@ -420,6 +536,7 @@ async function pastDateLookup(dateStr) {
   console.log()
   console.log('  node scripts/import-youtube-history.js --file <path> --service 9am')
   console.log('  node scripts/import-youtube-history.js --file <path> --service 11am')
+  console.log('  node scripts/import-youtube-history.js --file <path> --service 9am --write --confirm-historical-import')
   console.log()
   console.log('Or enter the values manually in the Analytics screen.')
 }

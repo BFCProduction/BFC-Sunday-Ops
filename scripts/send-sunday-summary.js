@@ -62,6 +62,12 @@ function parseArgs(argv) {
 loadLocalEnv()
 
 const { flags, values } = parseArgs(process.argv.slice(2))
+if (!flags.has('allow-retired-summary-email')) {
+  console.error('Sunday summary email is retired from Sunday Ops.')
+  console.error('This script is retained only for historical reference. To run it anyway, pass --allow-retired-summary-email.')
+  process.exit(1)
+}
+
 const runNow = flags.has('now')
 const forceSend = flags.has('force')
 const dryRun = flags.has('dry-run')

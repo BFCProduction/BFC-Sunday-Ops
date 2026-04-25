@@ -10,7 +10,11 @@
  * Usage:
  *   node scripts/backfill-resi-to-service-records.js --date 2026-03-29
  *   node scripts/backfill-resi-to-service-records.js --date 2026-03-29 --date 2026-04-05 --date 2026-04-12
- *   node scripts/backfill-resi-to-service-records.js --dry-run --date 2026-03-29
+ *   node scripts/backfill-resi-to-service-records.js --write --confirm-historical-import --date 2026-03-29
+ *
+ * Historical guard: default mode is preview-only. This script still uses the
+ * old resi_events Sunday/service-name shape; prefer fetch-resi.js or
+ * import-resi-csv.js for supported event-native imports.
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -47,7 +51,15 @@ const SERVICE_TYPE_MAP = {
 }
 
 const args   = process.argv.slice(2)
-const dryRun = args.includes('--dry-run')
+const write = args.includes('--write')
+const dryRun = !write || args.includes('--dry-run')
+const confirmedHistoricalImport = args.includes('--confirm-historical-import')
+
+if (write && !confirmedHistoricalImport) {
+  console.error('Historical RESI backfill writes require --confirm-historical-import.')
+  console.error('Prefer scripts/fetch-resi.js or scripts/import-resi-csv.js for event-native imports.')
+  process.exit(1)
+}
 
 // Collect all --date values
 const dates = []

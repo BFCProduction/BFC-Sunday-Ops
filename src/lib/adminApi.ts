@@ -10,6 +10,25 @@ function getFunctionUrl(name: string) {
   return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`
 }
 
+export class ApiError extends Error {
+  code: string | null
+  status: number
+
+  constructor(message: string, options: { code?: string | null; status: number }) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = options.code ?? null
+    this.status = options.status
+  }
+}
+
+function errorFromResponse(payload: unknown, fallback: string, status: number) {
+  const body = payload as { error?: unknown; code?: unknown }
+  const message = typeof body?.error === 'string' ? body.error : fallback
+  const code = typeof body?.code === 'string' ? body.code : null
+  return new ApiError(message, { code, status })
+}
+
 // ── PCO Sync ──────────────────────────────────────────────────────────────────
 
 export interface PcoSyncResult {
@@ -36,9 +55,7 @@ export async function triggerPcoSync(sessionToken: string): Promise<PcoSyncResul
 
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(
-      typeof payload?.error === 'string' ? payload.error : `Sync failed with ${response.status}`
-    )
+    throw errorFromResponse(payload, `Sync failed with ${response.status}`, response.status)
   }
 
   return payload as PcoSyncResult
@@ -74,9 +91,7 @@ export async function fetchPcoPlans(
 
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(
-      typeof payload?.error === 'string' ? payload.error : `Plans fetch failed with ${response.status}`
-    )
+    throw errorFromResponse(payload, `Plans fetch failed with ${response.status}`, response.status)
   }
 
   return (payload as { service_types: PcoServiceTypePlans[] }).service_types ?? []
@@ -108,9 +123,7 @@ export async function fetchPcoPlanTimes(
 
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(
-      typeof payload?.error === 'string' ? payload.error : `Plan times fetch failed with ${response.status}`
-    )
+    throw errorFromResponse(payload, `Plan times fetch failed with ${response.status}`, response.status)
   }
 
   return (payload as { schedule: PcoPlanTimeResult[] }).schedule ?? []
@@ -146,9 +159,7 @@ export async function fetchPcoPlanItems(
 
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(
-      typeof payload?.error === 'string' ? payload.error : `Plan items fetch failed with ${response.status}`
-    )
+    throw errorFromResponse(payload, `Plan items fetch failed with ${response.status}`, response.status)
   }
 
   return (payload as { items: PcoPlanItemResult[] }).items ?? []

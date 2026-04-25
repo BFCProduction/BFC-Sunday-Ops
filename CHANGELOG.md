@@ -1,5 +1,122 @@
 # Changelog
 
+## 2026-04-25 (Session 15)
+
+### Summary
+
+Trust/reliability follow-up focused on ambiguous Sunday-level history and operational script safety. Sunday Ops now has a review artifact workflow for assigning old issues/evaluations to specific events, YouTube imports resolve `event_id` before writing, and risky historical scripts are guarded so they are harder to mistake for supported daily operations.
+
+### Completed
+
+- Added `scripts/review-session-assignments.js` to export Sunday-level issues/evaluations to CSV/JSON with date, detail, severity/feel, timestamps, candidate events, and high-confidence suggestions. Apply mode updates `event_id` only from a reviewed CSV, and delete mode removes reviewed rows left unassigned.
+- Updated active issue/report paths so event views and event reports use `event_id` for issues/evaluations instead of silently mixing ambiguous Sunday-level rows into both services.
+- Updated `scripts/fetch-youtube.js` to resolve the matching Sunday Ops event and write YouTube viewers by `event_id`; missing or ambiguous event matches now log clearly and skip writes.
+- Updated `scripts/import-youtube-history.js` to preview resolved `event_id` values by default and require `--write --confirm-historical-import` for writes.
+- Added hard guards to historical/retired scripts: `import-service-records.js`, `migrate-existing-ops-data.js`, `import-loudness-history.js`, `extract-checklist-runtimes.js`, `backfill-resi-to-service-records.js`, and `send-sunday-summary.js`.
+- Updated `docs/operational-script-inventory.md` with the new review workflow, YouTube event-native status, historical guards, and remaining burn-down items.
+- Added `artifacts/` to `.gitignore` for local CSV/debug/review outputs.
+
+### Notes
+
+- Historical issue/evaluation rows are still intentionally unassigned until Alan reviews the generated artifact and fills `assigned_event_id`.
+- After Alan reviewed the first artifact, 23 reviewed Sunday-level issue rows were deleted through the cleanup script and the final Sunday-level evaluation row was deleted directly in Supabase. A final export confirmed 0 Sunday-level issue/evaluation rows remain.
+- Supabase migration dry-run could not be confirmed in this local session because the CLI did not have `SUPABASE_ACCESS_TOKEN`; no new migrations were added.
+
+### Verification
+
+- `npm run build` passed. Vite still reports the existing large chunk warning.
+- Scoped ESLint passed with one existing warning in `src/App.tsx` about the initial-load `sessionToken` hook dependency.
+- `node --check` passed for changed Node scripts.
+- `deno check` passed for changed PCO edge functions.
+- `git diff --check` passed.
+
+---
+
+## 2026-04-24 (Session 14)
+
+### Summary
+
+Trust and reliability session focused on making Sunday Ops tell the truth more explicitly. We moved the highest-value service data paths closer to an event-native model, retired the broken summary email surface, made PCO auth failures visible instead of empty, added importer observability for RESI and weather, inventoried operational scripts by trust status, and converted weather configuration to event-level ownership. Migrations `039`, `040`, and `041` were applied to the linked remote Supabase project.
+
+### Completed
+
+#### Event-native service data and analytics
+
+- Added `supabase/migrations/039_event_native_service_records.sql`.
+- Split legacy Sunday-shaped attendance, loudness, weather, runtime, and checklist data into event-scoped rows where the matching Sunday 9am/11am event exists.
+- Backfilled `service_records.event_id` for unambiguous regular and special service rows.
+- Replaced date/type uniqueness on `service_records` with event-level uniqueness where `event_id` is present, while keeping legacy-only uniqueness for unmigrated rows.
+- Updated `analytics_records` to expose `event_id`, event name, event time, service type label, and original service record type.
+- Updated `syncToServiceRecords` so writes target `event_id` first and use date/type only as a marked legacy fallback.
+- Updated Analytics Explorer ordering to use actual event time for same-date rows.
+
+#### Import observability and fallback paths
+
+- Added `supabase/migrations/040_import_runs.sql`.
+- Added `import_runs` tracking for RESI and weather imports with source, target date, status, parsed/written row counts, artifact path, error, and timestamps.
+- Refactored RESI parsing and Supabase sync into `scripts/lib/resi-import.js`.
+- Updated `scripts/fetch-resi.js` to save downloaded CSVs, save failure screenshots, record import status, and use the shared event-aware sync path.
+- Updated `.github/workflows/sunday-analytics.yml` to upload RESI CSV/debug artifacts when present.
+- Added manual RESI fallback script: `scripts/import-resi-csv.js --date YYYY-MM-DD --file path/to.csv`.
+
+#### Summary email retired
+
+- Removed summary email UI from Settings and Service Data reporting.
+- Simplified reporting to manual event report export.
+- Disabled `.github/workflows/summary-email.yml`; the workflow now only records that summary email is retired.
+- Removed summary email deployment/mockup docs.
+- Updated README language so report download/export is the supported workflow.
+
+#### PCO auth/session trust
+
+- Added shared PCO token refresh helper at `supabase/functions/_shared/pco-token.ts`.
+- Updated `pco-plans`, `pco-plan-times`, `pco-plan-items`, and `pco-sync` to use shared refresh handling.
+- Edge functions now return structured `code: "reauth_required"` errors when refresh fails or no refresh token exists.
+- Frontend API helpers preserve structured error codes.
+- Quick Create plan picker and Dashboard PCO schedule/run-of-show now show honest reauth states with a Planning Center sign-in action instead of looking like no data exists.
+
+#### Event-level weather
+
+- Added `supabase/migrations/041_event_native_weather_config.sql`.
+- Added `weather_config.event_id`, event-level uniqueness, and a trigger that seeds new event weather config from legacy template config rows.
+- Seeded existing events so every current event has its own weather config row.
+- Updated Weather UI to read and save config by `event_id`.
+- Updated `scripts/fetch-weather.js` to process due event configs, write event-scoped weather rows, sync to event-linked `service_records`, and record `import_runs`.
+- Updated weather recovery scripts so they operate on event weather/event-linked service records instead of inferring by Sunday date.
+
+#### Script inventory
+
+- Added `docs/operational-script-inventory.md`.
+- Classified scripts into production automation, manual fallback/recovery, historical one-shot imports, and retired code.
+- Identified next burn-down order:
+  - live-verify `scripts/fetch-youtube.js`
+  - move retired/historical scripts out of the active path or add hard guards
+  - rewrite any still-needed historical importers to resolve and preview `event_id`
+  - revisit legacy issue/evaluation fallbacks after operator review
+
+### Data Applied
+
+- Applied remote migrations `039`, `040`, and `041`.
+- Final `supabase db push --dry-run --yes` reported the remote database is up to date.
+- Event weather config sanity check after `041`: 48 events, 48 event-owned weather config rows, 2 legacy template config rows, and 19 event weather rows.
+
+### Verification
+
+- `npm run build` passed. Vite still reports the existing large chunk warning.
+- Scoped ESLint passed for changed frontend and edge-function files.
+- `node --check` passed for changed RESI and weather scripts.
+- `deno check` passed for changed PCO edge functions.
+- `git diff --check` passed.
+- Supabase migration dry-runs before and after pushes showed the expected pending migrations, then remote up to date.
+
+### Notes
+
+- Browser smoke tests were not run in this session.
+- Older issue/evaluation rows remain intentionally unresolved because assigning Sunday-level history to 9am or 11am needs operator judgment.
+- The existing untracked `.claude/` directory was left untouched.
+
+---
+
 ## 2026-04-19 (Session 13)
 
 ### Summary

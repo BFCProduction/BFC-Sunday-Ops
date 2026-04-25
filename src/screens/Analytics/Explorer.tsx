@@ -7,6 +7,10 @@ const GOAL_LAeq: Record<string, number> = { 'sunday-9am': 88, 'sunday-11am': 94 
 
 interface ServiceRecord {
   id: string
+  event_id: string | null
+  event_name: string | null
+  event_time: string | null
+  service_type_label: string | null
   service_date: string
   service_type: 'sunday-9am' | 'sunday-11am' | 'special'
   service_label: string | null
@@ -70,6 +74,12 @@ function parseTimeFromLabel(label: string | null | undefined): number | null {
 }
 
 function serviceSortValue(r: ServiceRecord): number {
+  if (r.event_time) {
+    const [hourStr, minuteStr] = r.event_time.split(':')
+    const hour = parseInt(hourStr, 10)
+    const minute = parseInt(minuteStr || '0', 10)
+    if (!Number.isNaN(hour) && !Number.isNaN(minute)) return hour * 60 + minute
+  }
   if (r.service_type === 'sunday-9am') return 9 * 60
   if (r.service_type === 'sunday-11am') return 11 * 60
   return parseTimeFromLabel(r.service_label) ?? 12 * 60

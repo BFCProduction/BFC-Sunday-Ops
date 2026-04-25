@@ -29,15 +29,16 @@ jobs:
         env:
           RESI_EMAIL:    ${{ secrets.RESI_EMAIL }}
           RESI_PASSWORD: ${{ secrets.RESI_PASSWORD }}
+          RESI_ARTIFACT_DIR: artifacts/resi
           SUPABASE_URL:  ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL }}
           GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:  ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
 
-      - name: Upload debug screenshot on failure
-        if: failure()
+      - name: Upload RESI import artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: resi-debug-screenshot
-          path: /tmp/resi-debug.png
+          name: resi-import-artifacts
+          path: artifacts/resi/*
           if-no-files-found: ignore

@@ -95,20 +95,6 @@ async function run() {
   console.log('BFC Sunday Ops — Weather Backfill')
   console.log('===================================')
 
-  // Load weather config for ZIP code / location
-  const { data: config, error: configError } = await supabase
-    .from('weather_config')
-    .select('*')
-    .eq('key', 'default')
-    .maybeSingle()
-
-  if (configError || !config) {
-    console.error('No weather config found. Save weather settings in the admin UI first.')
-    process.exit(1)
-  }
-
-  console.log(`Location: ${config.location_label ?? config.zip_code} (${config.zip_code})`)
-
   // Find all events that have no matching weather record
   const today = new Date().toISOString().slice(0, 10)
 
@@ -120,58 +106,72 @@ async function run() {
 
   if (eventsError) throw eventsError
 
-  // Fetch existing weather rows (by event_id and by sunday_id)
+  // Fetch existing weather rows by event_id. Weather is event-level; legacy
+  // sunday_id-only weather rows are left untouched.
   const { data: existingByEvent } = await supabase
     .from('weather')
     .select('event_id')
     .not('event_id', 'is', null)
 
-  const { data: existingBySunday } = await supabase
-    .from('weather')
-    .select('sunday_id')
-    .not('sunday_id', 'is', null)
-
   const coveredEventIds  = new Set((existingByEvent  ?? []).map(r => r.event_id))
-  const coveredSundayIds = new Set((existingBySunday ?? []).map(r => r.sunday_id))
+  const missing = (events ?? []).filter(ev => !coveredEventIds.has(ev.id))
 
-  const missing = (events ?? []).filter(ev => {
-    if (coveredEventIds.has(ev.id)) return false
-    if (ev.legacy_sunday_id && coveredSundayIds.has(ev.legacy_sunday_id)) return false
-    return true
-  })
-
-  // Deduplicate by date — one weather fetch per calendar date is enough
-  const datesSeen = new Set()
-  const toFetch = missing.filter(ev => {
-    if (datesSeen.has(ev.event_date)) return false
-    datesSeen.add(ev.event_date)
-    return true
-  })
-
-  if (toFetch.length === 0) {
+  if (missing.length === 0) {
     console.log('No missing weather records found — nothing to do.')
     return
   }
 
-  console.log(`\nFound ${missing.length} event(s) across ${toFetch.length} date(s) missing weather:\n`)
-  toFetch.forEach(ev => console.log(`  ${ev.event_date}  ${ev.name}`))
+  const { data: configs, error: configError } = await supabase
+    .from('weather_config')
+    .select('*')
+    .in('event_id', missing.map(ev => ev.id))
 
-  console.log('\nGeocoding ZIP code...')
-  const location = await geocodeZip(config.zip_code)
-  console.log(`Resolved to ${location.name}, ${location.admin1 ?? ''}`.trim())
+  if (configError) throw configError
+
+  const configByEvent = new Map((configs ?? []).map(config => [config.event_id, config]))
+  const toFetch = missing.filter(ev => configByEvent.has(ev.id))
+  const skippedForConfig = missing.length - toFetch.length
+
+  if (toFetch.length === 0) {
+    console.log(`${missing.length} event(s) are missing weather, but none have event-level weather config.`)
+    return
+  }
+
+  console.log(`\nFound ${toFetch.length} configured event(s) missing weather.`)
+  if (skippedForConfig > 0) {
+    console.log(`${skippedForConfig} event(s) skipped because no event-level weather config exists.`)
+  }
+  console.log('')
+  toFetch.forEach(ev => {
+    const config = configByEvent.get(ev.id)
+    console.log(`  ${ev.event_date}  ${ev.name}  ${config.location_label ?? config.zip_code}`)
+  })
 
   let inserted = 0
   let failed   = 0
+  const locationCache = new Map()
+  const weatherCache = new Map()
 
   for (const ev of toFetch) {
-    process.stdout.write(`\nFetching ${ev.event_date}... `)
+    const config = configByEvent.get(ev.id)
+    process.stdout.write(`\nFetching ${ev.event_date} ${ev.name}... `)
     try {
-      const weather = await fetchHistoricalWeather(location.latitude, location.longitude, ev.event_date)
+      let location = locationCache.get(config.zip_code)
+      if (!location) {
+        location = await geocodeZip(config.zip_code)
+        locationCache.set(config.zip_code, location)
+      }
 
-      // Insert one weather row linked to the event_id (preferred) or sunday_id (legacy fallback)
+      const cacheKey = `${config.zip_code}:${ev.event_date}`
+      let weather = weatherCache.get(cacheKey)
+      if (!weather) {
+        weather = await fetchHistoricalWeather(location.latitude, location.longitude, ev.event_date)
+        weatherCache.set(cacheKey, weather)
+      }
+
       const row = {
         event_id:   ev.id,
-        sunday_id:  ev.legacy_sunday_id ?? null,
+        sunday_id:  null,
         temp_f:     weather.temp_f,
         condition:  weather.condition,
         wind_mph:   weather.wind_mph,
@@ -181,18 +181,6 @@ async function run() {
 
       const { error: insertError } = await supabase.from('weather').insert(row)
       if (insertError) throw insertError
-
-      // Also update any other events on the same date that had no weather
-      const siblings = missing.filter(
-        m => m.event_date === ev.event_date && m.id !== ev.id
-      )
-      for (const sibling of siblings) {
-        await supabase.from('weather').insert({
-          ...row,
-          event_id:  sibling.id,
-          sunday_id: sibling.legacy_sunday_id ?? null,
-        })
-      }
 
       console.log(`${weather.temp_f}°F, ${weather.condition}, wind ${weather.wind_mph} mph, humidity ${weather.humidity}%`)
       inserted++

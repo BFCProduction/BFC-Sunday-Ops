@@ -12,7 +12,7 @@
  *
  * Usage:
  *   node scripts/import-service-records.js          # dry run (default)
- *   node scripts/import-service-records.js --write  # write to Supabase
+ *   node scripts/import-service-records.js --write --confirm-historical-import
  *
  * Requires in .env.local:
  *   VITE_SUPABASE_URL
@@ -37,6 +37,13 @@ const TABS = {
 }
 
 const WRITE = process.argv.includes('--write')
+const CONFIRMED_HISTORICAL_IMPORT = process.argv.includes('--confirm-historical-import')
+
+if (WRITE && !CONFIRMED_HISTORICAL_IMPORT) {
+  console.error('Historical service_records import writes require --confirm-historical-import.')
+  console.error('Run without --write first to preview, and prefer event-native importers for new data.')
+  process.exit(1)
+}
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 
