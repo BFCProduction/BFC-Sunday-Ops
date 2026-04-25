@@ -4,7 +4,7 @@
 
 ### Summary
 
-Trust/reliability follow-up focused on ambiguous Sunday-level history and operational script safety. Sunday Ops now has a review artifact workflow for assigning old issues/evaluations to specific events, YouTube imports resolve `event_id` before writing, and risky historical scripts are guarded so they are harder to mistake for supported daily operations.
+Trust/reliability follow-up focused on ambiguous Sunday-level history and operational script safety. Sunday Ops now has a review artifact workflow for assigning or deleting old issues/evaluations, the known Sunday-level issue/evaluation rows were cleaned up, YouTube imports resolve `event_id` before writing, and risky historical scripts are guarded so they are harder to mistake for supported daily operations.
 
 ### Completed
 
@@ -15,10 +15,10 @@ Trust/reliability follow-up focused on ambiguous Sunday-level history and operat
 - Added hard guards to historical/retired scripts: `import-service-records.js`, `migrate-existing-ops-data.js`, `import-loudness-history.js`, `extract-checklist-runtimes.js`, `backfill-resi-to-service-records.js`, and `send-sunday-summary.js`.
 - Updated `docs/operational-script-inventory.md` with the new review workflow, YouTube event-native status, historical guards, and remaining burn-down items.
 - Added `artifacts/` to `.gitignore` for local CSV/debug/review outputs.
+- Cleaned the reviewed Sunday-level issue/evaluation history from Supabase; final export confirmed 0 ambiguous rows remain.
 
 ### Notes
 
-- Historical issue/evaluation rows are still intentionally unassigned until Alan reviews the generated artifact and fills `assigned_event_id`.
 - After Alan reviewed the first artifact, 23 reviewed Sunday-level issue rows were deleted through the cleanup script and the final Sunday-level evaluation row was deleted directly in Supabase. A final export confirmed 0 Sunday-level issue/evaluation rows remain.
 - Supabase migration dry-run could not be confirmed in this local session because the CLI did not have `SUPABASE_ACCESS_TOKEN`; no new migrations were added.
 

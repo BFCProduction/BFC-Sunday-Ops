@@ -86,7 +86,7 @@ Live now:
 
 - **YouTube live relay** (`scripts/fetch-youtube.js`) — runs during the Sunday service window (7:30 AM–1:30 PM CT). Polls BFC's YouTube channel for active live streams created by RESI via `search.list?eventType=live`, tracks `concurrentViewers` every 60 seconds, resolves the matching Sunday Ops event, and writes `youtube_unique_viewers` to the event-linked `service_records` row when each stream ends. If no matching event exists, it logs the mismatch and does not write a date-only row. For historical data use `scripts/import-youtube-history.js` in preview mode first.
 
-- **Historical issue/evaluation review** (`scripts/review-session-assignments.js`) — exports ambiguous Sunday-level issues and evaluations with candidate events, high-confidence suggestions, and blank `assigned_event_id` cells for manual review. Apply mode updates `event_id` only from a reviewed CSV.
+- **Historical issue/evaluation review** (`scripts/review-session-assignments.js`) — exports ambiguous Sunday-level issues and evaluations with candidate events, high-confidence suggestions, and blank `assigned_event_id` cells for manual review. Apply mode updates `event_id` only from a reviewed CSV; delete mode removes reviewed rows left unassigned. Session 15 cleanup confirmed 0 Sunday-level issue/evaluation rows remain.
 
 - **Dashboard layout** — compact progress strip (dial + overall bar + role bars) spans the full width at the top; Today's Schedule (25%) and Run of Show (75%) sit side by side below it; Quick Actions below that. Stacks vertically on mobile.
 
@@ -142,7 +142,6 @@ Live now:
 
 Still pending:
 - **YouTube live relay first live test** — `scripts/fetch-youtube.js` is event-native but not yet verified against a live Sunday stream
-- Apply reviewed issue/evaluation assignments after Alan reviews the generated CSV/JSON artifact.
 - Historical script burn-down follow-up — see `docs/operational-script-inventory.md` for guarded scripts and remaining archive cleanup.
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
 - Any downstream reporting beyond manual report export
@@ -435,7 +434,7 @@ Reads `Col 0` (date, M/D/YYYY) and `Col 19` (YouTube unique viewers) from the BF
 
 ### Historical issue/evaluation review
 
-Older issue and evaluation rows can be Sunday-level instead of event-level. Export a review artifact before assigning them:
+Older issue and evaluation rows can be Sunday-level instead of event-level. Session 15 cleanup removed the known ambiguous rows and a final export confirmed 0 remain. If new ambiguous rows appear later, export a review artifact before assigning or deleting them:
 
 ```bash
 node --env-file=.env.local scripts/review-session-assignments.js
