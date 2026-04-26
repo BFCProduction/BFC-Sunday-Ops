@@ -12,7 +12,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - Event checklist with initials, timestamps, and expandable item notes
 - Issue log with severity tracking, photo attachments, resolution, and Monday.com follow-up sync
 - Attendance, runtime, loudness, weather, and evaluation tabs
-- Anonymous multi-submission post-service evaluation with outcome-based questions and aggregate response view
+- Anonymous multi-submission post-service evaluation with outcome-based questions and admin-only aggregate response review
 - Admin Settings page: event-based report export, configurable church timezone, checklist template manager, and People & Access admin management
 - Admin mode for checklist items, runtime definitions, issue cleanup, and weather settings
 - Event/service report export with logo, KPIs, issues, and evaluation responses
@@ -64,7 +64,7 @@ Live now:
 - Report export can generate a PDF-style print report for any unified event/service.
 - Dynamic service phase indicator in the sidebar and header (Pre-Service, Service 1, Between Services, Service 2, Post-Service) updates every 60 seconds.
 - Summary email has been retired from the product surface. Use Settings → Reporting to export reports manually.
-- Post-service evaluation redesigned: anonymous multi-submission, outcome-based questions, conditional broken-moment detail, collapsible aggregate response view.
+- Post-service evaluation redesigned: anonymous multi-submission, outcome-based questions, conditional broken-moment detail, and admin-only response review in the app UI. Operators can submit evaluations, but non-admins do not see or fetch the aggregate response panel from the Evaluation screen.
 - BFC Production branding applied: logo in header, icon as favicon, iOS home screen icon. App name is "Sunday Ops" throughout.
 - Header logo is always visible including on mobile viewports.
 - Site header is sticky so it remains visible while scrolling.
@@ -103,6 +103,8 @@ Live now:
 - **Home / Events navigation** (`src/screens/Home.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/layout/MobileTabs.tsx`) makes the app event-first. Home shows the focus event, current/upcoming/recent event lists, readiness/checklist/issue/evaluation signals, and admin-only analytics access. Event workspace screens are preserved as drill-downs from the selected event.
 
 - **Mobile bottom nav** (`src/components/layout/MobileTabs.tsx`) redesigned as a floating dark pill with Home as the primary event-selection entry point.
+
+- **Evaluation response visibility** (`src/screens/Evaluation.tsx`) — all logged-in users can submit event-native evaluations, but only admins see the response summary and submitted notes in the app UI. Event report export includes evaluation responses for admin review.
 
 - **Unified event support** (`src/components/admin/SpecialEventManager.tsx`, `src/components/admin/TemplateManager.tsx`, `src/screens/Checklist.tsx`):
   - Admin-managed event templates (reusable checklist blueprints) and standalone events with name, date, time, and template assignment.
@@ -152,6 +154,7 @@ Still pending:
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
 - Any downstream reporting beyond manual report export
 - Make checklist/data compatibility paths fully event-native so internal naming and storage no longer have to distinguish Sunday-shaped and standalone event-shaped records.
+- Harden evaluation response privacy at the Supabase/RLS or Edge Function layer if response visibility needs to be enforced beyond the current admin-only UI path.
 
 Completed (previously listed as pending):
 - Attendance, runtimes, and loudness all sync to `service_records` via the shared `syncToServiceRecords` utility.
@@ -589,6 +592,7 @@ supabase functions deploy user-admin
 - Scheduled analytics should stay disabled until their backing code exists.
 - `supabase/.temp/` is local Supabase CLI state and is intentionally ignored.
 - A session-level change summary is tracked in `CHANGELOG.md`.
+- Local commit `bde22de` captures the Home / Events navigation work and Evaluation response visibility fix. It has not been pushed or deployed yet.
 - As of the April 17, 2026 cleanup, the unified `events` navigation table is intentionally kept to real Sunday Ops usage: March–April 2026 operational sessions plus future events created manually through **New Event**. Historical analytics before March 2026 remain in `service_records` / `analytics_records` and are separate from the removed navigation events.
 
 ## Credentials and Security

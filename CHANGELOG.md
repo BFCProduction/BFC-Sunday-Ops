@@ -1,12 +1,52 @@
 # Changelog
 
+## 2026-04-26 (Session 17)
+
+### Summary
+
+Evaluation visibility follow-up and local closeout. Confirmed that submitted evaluation rows exist in Supabase, are event-linked, and appear in exported reports. Updated the Evaluation screen so admins can review responses directly in the app while non-admin operators can still submit evaluations without seeing submitted response text. Committed the Home / Events navigation work locally but did not push to GitHub.
+
+### Completed
+
+- Verified production evaluation data with the app's anon Supabase key:
+  - recent evaluation rows exist
+  - rows are linked to unified `events.id`
+  - the exact event-scoped query used by the Evaluation screen returns submitted notes
+- Updated `src/screens/Evaluation.tsx`.
+  - Response summary now appears near the top of the Evaluation screen for admins.
+  - Admins can see submitted notes, response counts, feel badges, and broken-moment detail.
+  - Non-admins can submit evaluations but do not render the response panel.
+  - Non-admin Evaluation screens skip the response-read query entirely.
+  - Evaluation read failures now surface as visible errors instead of silently looking empty.
+- Confirmed event report export includes evaluation responses.
+- Created local commit `bde22de` (`Add home-first events navigation`) and intentionally did not push.
+- Updated `README.md`, `CHANGELOG.md`, and the Obsidian project note for the current state.
+
+### Notes
+
+- The current response privacy change is enforced in the app UI path. If response privacy needs to be enforceable against direct Supabase API access, the next step is to move evaluation response reads behind a protected admin Edge Function or tighten RLS around `evaluations` while preserving public insert.
+- `.claude/` remains untracked local state.
+
+### Verification
+
+- `npx eslint src/screens/Evaluation.tsx` passed.
+- `npm run build` passed. Vite still reports the existing large chunk warning.
+- Alan confirmed the Evaluation UI and report export behavior in the local app.
+
+### Next
+
+- Push/deploy local commit `bde22de` when ready.
+- Decide whether evaluation response privacy needs database-level enforcement, not only UI-level enforcement.
+
+---
+
 ## 2026-04-25 (Session 16)
 
 ### Summary
 
 Navigation/IA session focused on making Sunday Ops feel event-first instead of dropping users directly into one selected event's tabs. Added a first-class Home / Events layer, preserved the existing event workspace screens as drill-down destinations, and cleaned up visible language so the product treats Sunday services and standalone/non-Sunday services as one unified event model.
 
-This work is in the local working tree and is not committed or deployed yet.
+This work is committed locally as `bde22de` and is not pushed or deployed yet.
 
 ### Completed
 
