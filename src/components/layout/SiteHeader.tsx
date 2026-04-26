@@ -24,24 +24,23 @@ export function SiteHeader({ allSessions, onGoToDashboard }: SiteHeaderProps) {
   const [showPicker, setShowPicker] = useState(false)
 
   useEffect(() => {
-    setPhase(getServicePhase(new Date(), timezone))
     const id = setInterval(() => setPhase(getServicePhase(new Date(), timezone)), 60_000)
     return () => clearInterval(id)
   }, [timezone])
 
-  // ── Mobile session navigation ──────────────────────────────────────────────
+  // ── Mobile event navigation ────────────────────────────────────────────────
   const currentIdx = allSessions.findIndex(s => s.id === activeEventId)
   const prevSession = currentIdx > 0 ? allSessions[currentIdx - 1] : null
   const nextSession = currentIdx >= 0 && currentIdx < allSessions.length - 1
     ? allSessions[currentIdx + 1]
     : null
 
-  const isSpecial = serviceTypeSlug === 'special'
+  const isNamedEvent = Boolean(eventName)
   const dateFormatted = sessionDate
     ? new Date(sessionDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : '—'
   const serviceTime = serviceTypeSlug === 'sunday-9am' ? '9am' : serviceTypeSlug === 'sunday-11am' ? '11am' : null
-  const displayLabel = isSpecial && eventName
+  const displayLabel = isNamedEvent && eventName
     ? eventName
     : serviceTime ? `${dateFormatted} · ${serviceTime}` : dateFormatted
 
@@ -52,18 +51,18 @@ export function SiteHeader({ allSessions, onGoToDashboard }: SiteHeaderProps) {
     >
       {/* Main header row */}
       <div className="flex items-center justify-between px-4 md:px-6 h-14">
-        {/* Left: logo + app name — clicking goes to Dashboard */}
+        {/* Left: logo + app name — clicking goes to Home */}
         <button
           onClick={onGoToDashboard}
           className="flex items-center gap-3 rounded-lg px-1 py-0.5 hover:opacity-80 transition-opacity"
-          title="Go to Dashboard"
+          title="Go to Home"
         >
           <img src={bfcLogo} alt="BFC Production" className="h-6 md:h-7 w-auto object-contain" />
           <span className="hidden md:inline text-gray-600 mx-1 text-sm">·</span>
           <span className="hidden md:inline text-gray-400 text-sm">Sunday Ops</span>
         </button>
 
-        {/* Right: service phase + user identity */}
+        {/* Right: event phase + user identity */}
         <div className="flex items-center gap-3 md:gap-5">
           {phase && (
             <div className="flex items-center gap-1.5">
@@ -110,13 +109,13 @@ export function SiteHeader({ allSessions, onGoToDashboard }: SiteHeaderProps) {
         </div>
       </div>
 
-      {/* Mobile session nav strip */}
+      {/* Mobile event nav strip */}
       <div className="md:hidden flex items-center gap-1 px-2 pb-2 border-t border-white/[0.05]">
         <button
           onClick={() => prevSession && navigateToEvent(prevSession.id)}
           disabled={!prevSession}
           className="p-1.5 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-          title={prevSession ? 'Previous session' : 'No earlier session'}
+          title={prevSession ? 'Previous event' : 'No earlier event'}
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -124,9 +123,9 @@ export function SiteHeader({ allSessions, onGoToDashboard }: SiteHeaderProps) {
         <button
           onClick={() => setShowPicker(true)}
           className="flex-1 flex items-center justify-center gap-1.5 py-1 rounded hover:bg-white/[0.06] transition-colors min-w-0"
-          title="Browse all sessions"
+          title="Browse all events"
         >
-          {isSpecial
+          {isNamedEvent
             ? <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" style={{ color: serviceTypeColor }} />
             : <Calendar className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
           }
@@ -137,7 +136,7 @@ export function SiteHeader({ allSessions, onGoToDashboard }: SiteHeaderProps) {
           onClick={() => nextSession && navigateToEvent(nextSession.id)}
           disabled={!nextSession}
           className="p-1.5 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-          title={nextSession ? 'Next session' : 'No later session'}
+          title={nextSession ? 'Next event' : 'No later event'}
         >
           <ChevronRight className="w-4 h-4" />
         </button>

@@ -12,6 +12,7 @@ import { SiteHeader }     from './components/layout/SiteHeader'
 import { Sidebar }        from './components/layout/Sidebar'
 import { MobileTabs }     from './components/layout/MobileTabs'
 import { LoginScreen }    from './components/auth/LoginScreen'
+import { Home }           from './screens/Home'
 import { Dashboard }      from './screens/Dashboard'
 import { Checklist }      from './screens/Checklist'
 import { IssueLog }       from './screens/IssueLog'
@@ -22,7 +23,7 @@ import { Settings }       from './screens/Settings'
 import { ProductionDocs } from './screens/ProductionDocs'
 import type { Session }   from './types'
 
-export type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
+export type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
 
 // ── Root: provides auth context ───────────────────────────────────────────────
 export default function App() {
@@ -80,7 +81,7 @@ function getActiveFocusSession(sessions: Session[], now = new Date()): Session |
 // ── Main app ──────────────────────────────────────────────────────────────────
 function AppMain() {
   const { sessionToken } = useAuth()
-  const [screen,      setScreen]      = useState<Screen>('dashboard')
+  const [screen,      setScreen]      = useState<Screen>('home')
   const [timezone,    setTimezone]    = useState(CHURCH_TIME_ZONE)
 
   // The operational Sunday date — anchor for "today" and isViewingPast
@@ -201,7 +202,7 @@ function AppMain() {
       navigateToEvent, navigateSunday,
     }}>
       <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#111827' }}>
-        <SiteHeader allSessions={allSessions} onGoToDashboard={() => setScreen('dashboard')} />
+        <SiteHeader allSessions={allSessions} onGoToDashboard={() => setScreen('home')} />
         <div className="flex flex-1 min-h-0">
           <Sidebar
             active={screen}
@@ -211,6 +212,7 @@ function AppMain() {
             onSessionsChange={setAllSessions}
           />
           <main className="flex-1 min-w-0 overflow-y-auto bg-white" style={{ paddingBottom: '80px' }}>
+            {screen === 'home'       && <Home allSessions={allSessions} onSessionsChange={setAllSessions} setScreen={setScreen} />}
             {screen === 'dashboard'  && <Dashboard   setScreen={setScreen} />}
             {screen === 'checklist'  && <Checklist />}
             {screen === 'issues'     && <IssueLog    sundayId={sundayId} eventId={activeEventId} />}

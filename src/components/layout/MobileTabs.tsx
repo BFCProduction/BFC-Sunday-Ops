@@ -1,6 +1,6 @@
-import { ClipboardCheck, AlertTriangle, BarChart2, Star, FolderOpen } from 'lucide-react'
+import { Home, ClipboardCheck, AlertTriangle, BarChart2, Star, FolderOpen } from 'lucide-react'
 
-type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
+type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
 
 interface MobileTabsProps {
   active: Screen
@@ -8,12 +8,12 @@ interface MobileTabsProps {
   issueCount: number
 }
 
-// Dashboard is intentionally absent — tap the header logo to go there.
 const tabs = [
+  { id: 'home'       as Screen, label: 'Home',       icon: Home            },
   { id: 'docs'       as Screen, label: 'Docs',       icon: FolderOpen      },
-  { id: 'checklist'  as Screen, label: 'Checklist',  icon: ClipboardCheck  },
+  { id: 'checklist'  as Screen, label: 'Check',      icon: ClipboardCheck  },
   { id: 'issues'     as Screen, label: 'Issues',     icon: AlertTriangle   },
-  { id: 'data'       as Screen, label: 'Service',    icon: BarChart2       },
+  { id: 'data'       as Screen, label: 'Data',       icon: BarChart2       },
   { id: 'evaluation' as Screen, label: 'Eval',       icon: Star            },
 ]
 
@@ -24,7 +24,7 @@ export function MobileTabs({ active, setActive, issueCount }: MobileTabsProps) {
       style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
     >
       <nav
-        className="flex items-center justify-around w-4/5 rounded-full px-3 py-2"
+        className="flex items-center justify-around w-[calc(100%-16px)] max-w-md rounded-full px-2 py-2"
         style={{
           background: '#1c1c1e',
           boxShadow: '0 4px 24px rgba(0,0,0,0.18), 0 1.5px 6px rgba(0,0,0,0.12)',
@@ -37,7 +37,7 @@ export function MobileTabs({ active, setActive, issueCount }: MobileTabsProps) {
             <button
               key={tab.id}
               onClick={() => setActive(tab.id)}
-              className="flex flex-col items-center relative px-3 py-1"
+              className="flex flex-col items-center relative min-w-0 flex-1 px-1 py-1"
             >
               <Icon
                 className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-500'}`}

@@ -40,7 +40,11 @@ export interface StoredSession {
 // For GitHub Pages: https://bfcproduction.github.io/BFC-Sunday-Ops/
 // For local dev:    http://localhost:5173/BFC-Sunday-Ops/
 export function getRedirectUri(): string {
-  const base = `${window.location.origin}${import.meta.env.BASE_URL}`
+  const { protocol, hostname, port } = window.location
+  const origin = (hostname === '127.0.0.1' || hostname === '::1')
+    ? `${protocol}//localhost${port ? `:${port}` : ''}`
+    : window.location.origin
+  const base = `${origin}${import.meta.env.BASE_URL}`
   // Ensure trailing slash (PCO requires an exact match)
   return base.endsWith('/') ? base : base + '/'
 }

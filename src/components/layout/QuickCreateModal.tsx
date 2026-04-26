@@ -22,9 +22,9 @@ interface ServiceTypeOption {
 }
 
 const SERVICE_TYPES: ServiceTypeOption[] = [
-  { slug: 'sunday-9am',  name: 'Sunday 9am',           color: '#3b82f6', defaultTime: '09:00' },
-  { slug: 'sunday-11am', name: 'Sunday 11am',           color: '#8b5cf6', defaultTime: '11:00' },
-  { slug: 'special',     name: 'Special / Other Event', color: '#f59e0b', defaultTime: ''      },
+  { slug: 'sunday-9am',  name: 'Sunday 9am',       color: '#3b82f6', defaultTime: '09:00' },
+  { slug: 'sunday-11am', name: 'Sunday 11am',       color: '#8b5cf6', defaultTime: '11:00' },
+  { slug: 'special',     name: 'Standalone Event',  color: '#f59e0b', defaultTime: ''      },
 ]
 
 interface Props {
@@ -116,7 +116,7 @@ function PcoPlanPicker({
               >
                 {g.slug === 'sunday-9am'  ? '9am'     :
                  g.slug === 'sunday-11am' ? '11am'    :
-                 'Special'}
+                 'Event'}
               </button>
             ))}
           </div>
@@ -158,18 +158,18 @@ function PcoPlanPicker({
             </div>
           )}
           {!loading && !error && visiblePlans.length === 0 && (
-            <p className="px-5 py-6 text-sm text-gray-400 text-center">No PCO plans found for this service type</p>
+            <p className="px-5 py-6 text-sm text-gray-400 text-center">No PCO plans found for this event type</p>
           )}
           {!loading && !error && visiblePlans.map(plan => {
             const label = plan.title || plan.series_title
-            const isSpecialTab = activeSlug === 'special'
+            const isStandaloneEventTab = activeSlug === 'special'
             return (
               <button
                 key={plan.id}
                 onClick={() => onSelect(plan, activeSlug)}
                 className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 transition-colors"
               >
-                {isSpecialTab && label ? (
+                {isStandaloneEventTab && label ? (
                   <>
                     <p className="text-sm font-medium text-gray-900">{label}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{plan.display_date}</p>
@@ -211,7 +211,7 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
       .then(({ data }) => setTemplates((data || []) as TemplateOption[]))
   }, [])
 
-  // Update time default when service type changes
+  // Update time default when event type changes
   function handleServiceTypeChange(slug: string) {
     setServiceTypeSlug(slug)
     const st = SERVICE_TYPES.find(s => s.slug === slug)
@@ -224,7 +224,7 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
     }
   }
 
-  // Update date + regenerate default time when service type changes
+  // Update date + regenerate default time when event type changes
   useEffect(() => {
     if (serviceTypeSlug === 'sunday-9am' || serviceTypeSlug === 'sunday-11am') {
       setDate(nextSundayDate())
@@ -232,14 +232,14 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
   }, [serviceTypeSlug])
 
   const selectedServiceType = SERVICE_TYPES.find(s => s.slug === serviceTypeSlug)!
-  const isSpecial = serviceTypeSlug === 'special'
+  const isStandaloneEvent = serviceTypeSlug === 'special'
 
-  const namePlaceholder = isSpecial
+  const namePlaceholder = isStandaloneEvent
     ? 'Living Last Supper, Good Friday…'
     : selectedServiceType.name
 
   async function handleSave() {
-    const trimmedName = name.trim() || (isSpecial ? '' : selectedServiceType.name)
+    const trimmedName = name.trim() || (isStandaloneEvent ? '' : selectedServiceType.name)
     if (!trimmedName) { setError('Event name is required'); return }
     if (!date)        { setError('Date is required'); return }
     setSaving(true)
@@ -251,7 +251,7 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
         event_date:      date,
         event_time:      time || null,
         notes:           notes.trim() || null,
-        templateId:      isSpecial ? (templateId || null) : null,
+        templateId:      isStandaloneEvent ? (templateId || null) : null,
         pco_plan_id:     pcoPlanId,
       })
       const fresh = await loadAllSessions()
@@ -288,7 +288,7 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
     setPcoPlanLabel('')
   }
 
-  const canSave = !saving && date && (name.trim() || !isSpecial)
+  const canSave = !saving && date && (name.trim() || !isStandaloneEvent)
 
   return (
     <>
@@ -311,10 +311,10 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
           {/* Form */}
           <div className="px-5 py-4 space-y-4">
 
-            {/* Service Type */}
+            {/* Event Type */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Service Type <span className="text-red-500">*</span>
+                Event Type <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <select
@@ -333,10 +333,10 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
             {/* Name */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                {isSpecial ? <>Name <span className="text-red-500">*</span></> : <>Name <span className="text-gray-400 font-normal normal-case">(optional — defaults to service type)</span></>}
+                {isStandaloneEvent ? <>Name <span className="text-red-500">*</span></> : <>Name <span className="text-gray-400 font-normal normal-case">(optional — defaults to event type)</span></>}
               </label>
               <input
-                autoFocus={isSpecial}
+                autoFocus={isStandaloneEvent}
                 value={name}
                 onChange={e => setName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
@@ -399,8 +399,8 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
               )}
             </div>
 
-            {/* Checklist Template (special events only) */}
-            {isSpecial && templates.length > 0 && (
+            {/* Checklist Template */}
+            {isStandaloneEvent && templates.length > 0 && (
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                   Checklist Template <span className="text-gray-400 font-normal normal-case">(optional)</span>

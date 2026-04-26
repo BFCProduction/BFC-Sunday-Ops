@@ -15,8 +15,7 @@ interface Props {
 
 interface DateGroup {
   date: string
-  sundays: Session[]   // sunday-9am, sunday-11am
-  specials: Session[]  // special events
+  events: Session[]
 }
 
 interface MonthGroup {
@@ -28,10 +27,8 @@ interface MonthGroup {
 function groupIntoMonths(sessions: Session[]): MonthGroup[] {
   const byDate = new Map<string, DateGroup>()
   for (const s of sessions) {
-    if (!byDate.has(s.date)) byDate.set(s.date, { date: s.date, sundays: [], specials: [] })
-    const g = byDate.get(s.date)!
-    if (s.serviceTypeSlug === 'special') g.specials.push(s)
-    else g.sundays.push(s)
+    if (!byDate.has(s.date)) byDate.set(s.date, { date: s.date, events: [] })
+    byDate.get(s.date)!.events.push(s)
   }
 
   const byMonth = new Map<string, MonthGroup>()
@@ -65,6 +62,24 @@ function sessionTimeValue(s: Session): string {
 function compareByTime(a: Session, b: Session, descending = false): number {
   const diff = sessionTimeValue(a).localeCompare(sessionTimeValue(b))
   return descending ? -diff : diff
+}
+
+// Compatibility bridge only; the picker still presents a single event list.
+function usesEventScopedChecklist(s: Session) {
+  return s.legacySpecialEventId !== null || s.serviceTypeSlug === 'special'
+}
+
+function eventTypeLabel(s: Session) {
+  return usesEventScopedChecklist(s) ? 'Event' : s.serviceTypeName
+}
+
+function eventTimeLabel(s: Session) {
+  if (!s.eventTime && usesEventScopedChecklist(s)) return 'Time TBD'
+  return sessionTimeValue(s).slice(0, 5)
+}
+
+function eventTitle(s: Session) {
+  return s.name || s.serviceTypeName
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -173,9 +188,10 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, i
 
   // ── Row components ────────────────────────────────────────────────────────────
 
-  function SundayRow({ s }: { s: Session }) {
+  function EventRow({ s }: { s: Session }) {
     const isActive = s.id === activeEventId
-    const label = s.serviceTypeSlug === 'sunday-9am' ? '9:00 AM' : '11:00 AM'
+    const isEventScoped = usesEventScopedChecklist(s)
+    const Icon = isEventScoped ? CalendarDays : Calendar
     return (
       <div
         ref={isActive ? activeRef : undefined}
@@ -187,31 +203,16 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, i
           onClick={() => handleSelect(s.id)}
           className="flex-1 flex items-center gap-2 px-1 py-1 text-sm text-left min-w-0"
         >
-          <Calendar className="w-3.5 h-3.5 flex-shrink-0" style={{ color: s.serviceTypeColor }} />
-          <span className={`flex-1 truncate font-medium ${isActive ? 'text-blue-800' : 'text-gray-700'}`}>{label}</span>
-          <span className="text-xs text-gray-400 flex-shrink-0">{formatDayLabel(s.date)}</span>
-        </button>
-        <DeleteBtn s={s} />
-      </div>
-    )
-  }
-
-  function SpecialRow({ s }: { s: Session }) {
-    const isActive = s.id === activeEventId
-    return (
-      <div
-        ref={isActive ? activeRef : undefined}
-        className={`group flex items-center gap-1 px-2 py-1 rounded-lg transition-all ${
-          isActive ? 'bg-amber-50 ring-1 ring-amber-300' : 'hover:bg-gray-50'
-        }`}
-      >
-        <button
-          onClick={() => handleSelect(s.id)}
-          className="flex-1 flex items-center gap-2 px-1 py-1 text-sm text-left min-w-0"
-        >
-          <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" style={{ color: s.serviceTypeColor }} />
-          <span className={`flex-1 truncate font-medium ${isActive ? 'text-amber-800' : 'text-gray-700'}`}>{s.name}</span>
-          <span className="text-xs text-gray-400 flex-shrink-0">{formatDayLabel(s.date)}</span>
+          <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: s.serviceTypeColor }} />
+          <div className="min-w-0 flex-1">
+            <p className={`truncate font-medium ${isActive ? 'text-blue-800' : 'text-gray-700'}`}>
+              {eventTitle(s)}
+            </p>
+            <p className="truncate text-xs text-gray-400">
+              {formatDayLabel(s.date)} · {eventTimeLabel(s)} · {eventTypeLabel(s)}
+            </p>
+          </div>
+          {isActive && <span className="text-xs font-semibold text-blue-600 flex-shrink-0">Current</span>}
         </button>
         <DeleteBtn s={s} />
       </div>
@@ -221,8 +222,7 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, i
   function DateRow({ dg, descending = false }: { dg: DateGroup; descending?: boolean }) {
     return (
       <div className="py-1.5">
-        {[...dg.sundays].sort((a, b) => compareByTime(a, b, descending)).map(s => <SundayRow key={s.id} s={s} />)}
-        {dg.specials.map(s => <SpecialRow key={s.id} s={s} />)}
+        {[...dg.events].sort((a, b) => compareByTime(a, b, descending)).map(s => <EventRow key={s.id} s={s} />)}
       </div>
     )
   }
@@ -273,39 +273,9 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, i
           {searchResults ? (
             <div className="p-2">
               {searchResults.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-8">No sessions match "{query}"</p>
+                <p className="text-gray-400 text-sm text-center py-8">No events match "{query}"</p>
               ) : (
-                searchResults.map(s => {
-                  const isActive  = s.id === activeEventId
-                  const isSpecial = s.serviceTypeSlug === 'special'
-                  return (
-                    <div
-                      key={s.id}
-                      ref={isActive ? activeRef : undefined}
-                      className={`group flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all ${
-                        isActive ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <button
-                        onClick={() => handleSelect(s.id)}
-                        className="flex-1 flex items-center gap-3 px-1 text-left min-w-0"
-                      >
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0 mt-0.5"
-                          style={{ backgroundColor: s.serviceTypeColor }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {isSpecial ? s.name : s.serviceTypeName}
-                          </p>
-                          <p className="text-xs text-gray-400">{formatDayLabel(s.date)}</p>
-                        </div>
-                        {isActive && <span className="text-xs font-semibold text-blue-600 flex-shrink-0">Current</span>}
-                      </button>
-                      <DeleteBtn s={s} />
-                    </div>
-                  )
-                })
+                searchResults.map(s => <EventRow key={s.id} s={s} />)
               )}
             </div>
           ) : (
@@ -314,7 +284,7 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, i
                 <div>
                   <div className="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 flex items-center justify-between">
                     <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Upcoming</p>
-                    <p className="text-xs text-gray-400">{upcomingCount} session{upcomingCount !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-gray-400">{upcomingCount} event{upcomingCount !== 1 ? 's' : ''}</p>
                   </div>
                   {upcomingMonths.map(mg => <MonthSection key={mg.monthKey} mg={mg} />)}
                 </div>
@@ -323,7 +293,7 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, i
                 <div>
                   <div className="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 flex items-center justify-between">
                     <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Past</p>
-                    <p className="text-xs text-gray-400">{pastCount} session{pastCount !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-gray-400">{pastCount} event{pastCount !== 1 ? 's' : ''}</p>
                   </div>
                   {pastMonths.map(mg => <MonthSection key={mg.monthKey} mg={mg} descending />)}
                 </div>

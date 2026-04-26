@@ -8,7 +8,8 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 
 ## Current Scope
 
-- Gameday checklist with initials, timestamps, and expandable item notes (Sunday and special events in one unified component)
+- Home / Events landing screen with current, upcoming, and recent event status cards
+- Event checklist with initials, timestamps, and expandable item notes
 - Issue log with severity tracking, photo attachments, resolution, and Monday.com follow-up sync
 - Attendance, runtime, loudness, weather, and evaluation tabs
 - Anonymous multi-submission post-service evaluation with outcome-based questions and aggregate response view
@@ -18,8 +19,8 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - Event-native service data and analytics path: attendance, runtimes, loudness, weather, stream analytics, and imports sync through event-linked `service_records`
 - ProPresenter relay script for runtime capture
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
-- **Special Events** — full operational support for non-Sunday services (Good Friday, Christmas Eve, etc.) with reusable templates, template seeding at event creation, per-event checklists, and unified chronological navigation
-- **Manual event creation** — all services (9am, 11am, Special) are created in Sunday Ops via the "New Event" modal; multiple services of the same type can exist on the same date (Easter, extra traditional services, etc.)
+- **Unified events** — Sunday services and standalone events share one chronological event model, with reusable templates, template seeding at event creation, per-event checklists where applicable, and unified navigation
+- **Manual event creation** — all events are created in Sunday Ops via the "New Event" modal; multiple events of the same type can exist on the same date (Easter, extra traditional services, etc.)
 - **Admin-only event deletion** — admins can delete events from the desktop session picker via a hover-reveal trash icon with a two-step confirmation; deletes are routed through the protected `event-admin` Supabase Edge Function and public `events` table deletes are blocked by migration `037`
 - **People & Access** — Settings section lets admins view all users who have logged into Sunday Ops (with last login dates) and toggle admin status, backed by the `user-admin` Edge Function
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
@@ -49,6 +50,9 @@ Live now:
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
 - Runtime captured-at timestamps display in the configured church timezone, not the device timezone.
 - Runtime field admin controls are inline on the actual runtime list: admins drag the real row to reorder, use the row pencil to edit, and use **Add Runtime** to create a new row in place.
+- Home is the default landing experience. Operators choose an event first, then drill into that event's overview, docs, checklist, issue log, data, and evaluation.
+- Desktop navigation separates the global Home / Events layer, the selected event context, event-scoped workspace screens, and admin/global areas.
+- Mobile navigation includes Home as the event-selection entry point, so event switching no longer depends on a modal as the primary path.
 - Weather location and pull schedule are configured per event in the admin UI.
 - Weather is imported automatically through event-level weather config via the weather workflow.
 - Weather tab reads from Supabase if weather data exists and otherwise shows an honest empty state.
@@ -71,9 +75,9 @@ Live now:
 - Event/service report export intentionally excludes issue photo thumbnails.
 - Historical loudness data imported from the BFC Audio Loudness Log Google Sheet — 144 Sundays (March 2023 – March 2026) via `scripts/import-loudness-history.js`.
 - Loudness Log includes a "Full History PDF" button that generates a styled multi-year report matching the Sunday report aesthetic, grouped by year with per-year averages and goal exceedance flags.
-- Service Data tabs show recent historical context for the active service type: Attendance, Runtimes, Loudness, and Weather include roughly the past 10 Sundays.
+- Event Data tabs show recent historical context for the active event type: Attendance, Runtimes, Loudness, and Weather include roughly the past 10 comparable events.
 - Sidebar date block has `‹` / `›` chevron arrows to step backward and forward through past Sundays. All screens reload with the selected Sunday's data. Past Sundays show an amber "Historical View" badge and a "Back to Today" link.
-- On weekdays the app automatically focuses on the most relevant session using midpoint logic: if the current time is past the halfway point between the last event's end (6 PM approximation) and the next event's start time, focus shifts to the next event. This works for all session types — Sundays, special events, mid-week services — with no configuration required.
+- On weekdays the app automatically focuses on the most relevant event using midpoint logic: if the current time is past the halfway point between the last event's end (6 PM approximation) and the next event's start time, focus shifts to the next event. This works for Sunday services, standalone events, and mid-week services with no configuration required.
 - Service phase indicator time boundaries corrected: Pre-Service 7–9am, Service 1 9–10am, Between Services 10–11am, Service 2 11am–noon, Post-Service noon–6pm.
 - Post-service evaluations now surface Supabase errors on submit instead of silently showing a false success screen.
 - Settings page sections: **App Settings** (Timezone), **Reporting** (event report export), **Checklist Templates**, and **People & Access** (admin user management).
@@ -96,14 +100,16 @@ Live now:
   - Returns `title`, `item_type`, `length`, `description`, `service_position`, `key_name`, `computed_starts_at`.
   - Dashboard ROS card shows time, type icon, title, description, song key, and duration per item.
 
-- **Mobile bottom nav** (`src/components/layout/MobileTabs.tsx`) redesigned as a floating dark pill.
+- **Home / Events navigation** (`src/screens/Home.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/layout/MobileTabs.tsx`) makes the app event-first. Home shows the focus event, current/upcoming/recent event lists, readiness/checklist/issue/evaluation signals, and admin-only analytics access. Event workspace screens are preserved as drill-downs from the selected event.
 
-- **Special Events** (`src/components/admin/SpecialEventManager.tsx`, `src/components/admin/TemplateManager.tsx`, `src/screens/Checklist.tsx`):
-  - Admin-managed event templates (reusable checklist blueprints) and special events with name, date, time, and template assignment.
+- **Mobile bottom nav** (`src/components/layout/MobileTabs.tsx`) redesigned as a floating dark pill with Home as the primary event-selection entry point.
+
+- **Unified event support** (`src/components/admin/SpecialEventManager.tsx`, `src/components/admin/TemplateManager.tsx`, `src/screens/Checklist.tsx`):
+  - Admin-managed event templates (reusable checklist blueprints) and standalone events with name, date, time, and template assignment.
   - Template seeding: when a template is selected in the QuickCreate modal, checklist items are snapshotted into the event at creation time — later template changes don't affect existing events.
-  - Events appear chronologically in the sidebar alongside Sundays; prev/next navigation steps through all session types.
+  - Events appear chronologically in Home, the sidebar, and the event picker; prev/next navigation steps through the unified event list.
   - Per-event checklists: items can be added, edited, reordered, and deleted per-event in admin mode.
-  - **Unified checklist component** (`src/screens/Checklist.tsx`) handles both Sunday and event modes — `isEvent` flag drives data source, form type, and subscription table.
+  - **Unified checklist component** (`src/screens/Checklist.tsx`) handles both shared-template and event-scoped checklist storage while presenting a single event workflow.
   - All operational screens (issues, attendance, runtimes, loudness, weather, evaluations) work for events using the same `event_id` column pattern. `event_id` FKs on all operational tables now correctly reference `events(id)`.
   - Template manager in Settings → Checklist Templates (admin only).
 
@@ -114,8 +120,8 @@ Live now:
   - Both tabs query the `analytics_records` view, which remaps legacy `service_type` enum values to service slugs and exposes event id, event name, event time, and labels for event-native analytics.
 
 - **Manual event creation** (`src/components/layout/QuickCreateModal.tsx`):
-  - All services created in Sunday Ops via the "New Event" modal: service type, name, date, time, optional PCO plan link, optional checklist template, notes.
-  - Multiple services of the same type on the same date are fully supported (dropped uniqueness constraint in migration 033).
+  - All events are created in Sunday Ops via the "New Event" modal: event type, name, date, time, optional PCO plan link, optional checklist template, notes.
+  - Multiple events of the same type on the same date are fully supported (dropped uniqueness constraint in migration 033).
   - PCO plan picker (`supabase/functions/pco-plans/`) shows recent and upcoming plans grouped by service type with search, sorted ascending by event date; multiple Sunday Ops events can link to the same PCO plan.
 
 - **Admin-only event deletion** (`src/components/layout/SessionPicker.tsx`, `src/components/layout/Sidebar.tsx`, `supabase/functions/event-admin/`, `supabase/migrations/037_admin_only_event_deletes.sql`):
@@ -138,13 +144,14 @@ Live now:
 
 - **`service_records` table** (`supabase/migrations/012_create_service_records.sql`, event-native updates in `039`) — unified analytics table with one row per service event when `event_id` is available, storing attendance, runtimes, loudness, weather, and stream analytics in one place.
 
-- **Historical Gameday Checklist PDF extraction** (`scripts/extract-checklist-runtimes.js`) — one-shot script that scans 242 PDFs from the local Google Drive archive (Jun 2021–Mar 2026), extracts service runtime, message runtime, and stage flip time from each, and upserts into `service_records`. 465 rows backfilled.
+- **Historical checklist PDF extraction** (`scripts/extract-checklist-runtimes.js`) — one-shot script that scans 242 PDFs from the local Google Drive archive (Jun 2021–Mar 2026), extracts service runtime, message runtime, and stage flip time from each, and upserts into `service_records`. 465 rows backfilled.
 
 Still pending:
 - **YouTube live relay first live test** — `scripts/fetch-youtube.js` is event-native but not yet verified against a live Sunday stream
 - Historical script burn-down follow-up — see `docs/operational-script-inventory.md` for guarded scripts and remaining archive cleanup.
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
 - Any downstream reporting beyond manual report export
+- Make checklist/data compatibility paths fully event-native so internal naming and storage no longer have to distinguish Sunday-shaped and standalone event-shaped records.
 
 Completed (previously listed as pending):
 - Attendance, runtimes, and loudness all sync to `service_records` via the shared `syncToServiceRecords` utility.
@@ -183,9 +190,9 @@ Completed (previously listed as pending):
 - `report_email_settings` / `report_email_recipients` / `report_email_runs` — retired summary-email tables retained for historical/audit compatibility
 - `app_config`
 - `service_records` — unified analytics table, now event-linked by `event_id` when available; queried via the `analytics_records` view
-- `event_templates` — reusable checklist blueprints for special events
+- `event_templates` — reusable checklist blueprints for standalone/event-scoped checklists
 - `event_template_items` — checklist items belonging to a template
-- `special_events` — non-Sunday services (Good Friday, Christmas Eve, etc.)
+- `special_events` — legacy bridge table for standalone/non-Sunday events until all compatibility paths are fully event-native
 - `event_checklist_items` — per-event checklist items (snapshotted from template at creation)
 - `event_checklist_completions` — completions for event checklist items
 
@@ -349,7 +356,7 @@ Runtime field notes:
 
 ## Weather Import
 
-Weather settings are managed in the app under `Service Data -> Weather` while in admin mode.
+Weather settings are managed in the app under `Event Data -> Weather` while in admin mode.
 
 Automatic import is handled by:
 
@@ -372,7 +379,7 @@ Notes:
 
 ### Historical weather backfill
 
-The Data Explorer and Service Data history tabs read weather from `service_records`, not the `weather` table. If `weather_temp_f` is null for older records, use the backfill script:
+The Data Explorer and Event Data history tabs read weather from `service_records`, not the `weather` table. If `weather_temp_f` is null for older records, use the backfill script:
 
 ```bash
 node scripts/backfill-service-records-weather.js

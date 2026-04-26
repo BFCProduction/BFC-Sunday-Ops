@@ -324,7 +324,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
   return (
     <div className="fade-in">
       <div className="px-6 pt-5 pb-5 border-b border-gray-100">
-        <h1 className="text-gray-900 text-xl font-bold">Gameday Overview</h1>
+        <h1 className="text-gray-900 text-xl font-bold">Event Overview</h1>
         <p className="text-gray-500 text-sm mt-0.5">{dashboardSubtitle}</p>
       </div>
 
@@ -382,7 +382,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className={`overflow-hidden ${rosItems.length > 0 ? 'md:col-span-1' : 'md:col-span-4'}`}>
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
-              <p className="text-gray-900 text-sm font-semibold">Today's Schedule</p>
+              <p className="text-gray-900 text-sm font-semibold">Event Schedule</p>
               {isPcoSchedule && (
                 <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full font-bold">PCO</span>
               )}
@@ -439,10 +439,10 @@ export function Dashboard({ setScreen }: DashboardProps) {
           <SectionLabel>Quick Actions</SectionLabel>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { label: 'Gameday Checklist', sub: 'Check off items', icon: ClipboardCheck, screen: 'checklist' as Screen },
+              { label: 'Event Checklist',   sub: 'Check off items', icon: ClipboardCheck, screen: 'checklist' as Screen },
               { label: 'Log Issue',          sub: 'Capture a problem', icon: AlertTriangle,  screen: 'issues'    as Screen },
-              { label: 'Service Data',       sub: 'Attendance & runtimes', icon: BarChart2,  screen: 'data'      as Screen },
-              { label: 'Evaluation',         sub: 'Rate today\'s service', icon: Star,       screen: 'evaluation' as Screen },
+              { label: 'Event Data',         sub: 'Attendance & runtimes', icon: BarChart2,  screen: 'data'      as Screen },
+              { label: 'Evaluation',         sub: 'Capture follow-up', icon: Star,       screen: 'evaluation' as Screen },
             ].map(a => {
               const Icon = a.icon
               return (

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle2, ChevronDown, Users } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronDown, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useSunday } from '../context/SundayContext'
+import { useAdmin } from '../context/adminState'
 import { Card } from '../components/ui/Card'
 import type { StreamAnalytics } from '../types'
 
@@ -59,7 +60,8 @@ const FEEL_OPTIONS: {
 const feelMeta = Object.fromEntries(FEEL_OPTIONS.map(o => [o.value, o])) as Record<ServiceFeel, typeof FEEL_OPTIONS[number]>
 
 export function Evaluation() {
-  const { activeEventId, sundayId } = useSunday()
+  const { activeEventId, sundayId, serviceTypeName, sessionDate, eventName } = useSunday()
+  const { isAdmin } = useAdmin()
   const eventId = activeEventId
   // ── Form state ──────────────────────────────────────────────────────────────
   const [feel,             setFeel]             = useState<ServiceFeel | null>(null)
@@ -78,13 +80,17 @@ export function Evaluation() {
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [analytics,   setAnalytics]   = useState<StreamAnalytics | null>(null)
   const [loading,     setLoading]     = useState(true)
+  const [loadError,   setLoadError]   = useState<string | null>(null)
   const [unassignedHistoricalCount, setUnassignedHistoricalCount] = useState(0)
 
-  const loadData = async () => {
-    // Evaluations: always event-native going forward; fallback to sunday_id for history
-    const evalPromise = eventId
+  const loadData = async (options?: { showSpinner?: boolean }) => {
+    if (options?.showSpinner) setLoading(true)
+    setLoadError(null)
+
+    // Evaluations are submit-able by everyone, but response text is admin-only.
+    const evalPromise = isAdmin && eventId
       ? supabase.from('evaluations').select('*').eq('event_id', eventId).order('submitted_at', { ascending: false })
-      : sundayId
+      : isAdmin && sundayId
         ? supabase.from('evaluations').select('*').eq('sunday_id', sundayId).order('submitted_at', { ascending: false })
         : Promise.resolve({ data: [], error: null })
 
@@ -93,7 +99,7 @@ export function Evaluation() {
       ? supabase.from('stream_analytics').select('*').eq('sunday_id', sundayId).single()
       : Promise.resolve({ data: null, error: null })
 
-    const unassignedQ = eventId && sundayId
+    const unassignedQ = isAdmin && eventId && sundayId
       ? supabase
         .from('evaluations')
         .select('id', { count: 'exact', head: true })
@@ -106,8 +112,26 @@ export function Evaluation() {
       analyticsQ,
       unassignedQ,
     ])
-    if (subsRes.data)      setSubmissions(subsRes.data as Submission[])
-    if (analyticsRes.data) setAnalytics(analyticsRes.data as StreamAnalytics)
+
+    let loadedSubmissions: Submission[] = []
+    if (subsRes.error) {
+      console.warn('Evaluation responses failed to load:', subsRes.error.message)
+      setLoadError(`Evaluation responses could not be loaded: ${subsRes.error.message}`)
+      setSubmissions([])
+      setShowResponses(false)
+    } else {
+      loadedSubmissions = (subsRes.data || []) as Submission[]
+      setSubmissions(loadedSubmissions)
+      setShowResponses(isAdmin && loadedSubmissions.length > 0)
+    }
+
+    if (analyticsRes.error && analyticsRes.error.code !== 'PGRST116') {
+      console.warn('Stream analytics failed to load:', analyticsRes.error.message)
+      setAnalytics(null)
+    } else {
+      setAnalytics((analyticsRes.data as StreamAnalytics | null) ?? null)
+    }
+
     if (unassignedRes.error) {
       console.warn('Historical evaluation count failed:', unassignedRes.error.message)
       setUnassignedHistoricalCount(0)
@@ -115,10 +139,11 @@ export function Evaluation() {
       setUnassignedHistoricalCount(unassignedRes.count ?? 0)
     }
     setLoading(false)
+    return loadedSubmissions
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadData() }, [activeEventId, sundayId])
+  useEffect(() => { void loadData({ showSpinner: true }) }, [activeEventId, sundayId, isAdmin])
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const canSubmit =
@@ -154,6 +179,7 @@ export function Evaluation() {
       return
     }
     await loadData()
+    if (isAdmin) setShowResponses(true)
     setSaving(false)
     setSubmitted(true)
   }
@@ -168,6 +194,15 @@ export function Evaluation() {
     setSubmitted(false)
   }
 
+  const selectedEventLabel = eventName || serviceTypeName
+  const selectedDateLabel = sessionDate
+    ? new Date(`${sessionDate}T12:00:00`).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : ''
+
   // ── Loading ───────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -181,15 +216,96 @@ export function Evaluation() {
       {/* Header */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-5 pt-4 pb-3">
         <h2 className="text-gray-900 font-bold text-lg">Post-Service Evaluation</h2>
-        <p className="text-gray-400 text-xs mt-0.5">Anonymous · Multiple submissions welcome</p>
+        <p className="text-gray-400 text-xs mt-0.5">
+          {selectedEventLabel}{selectedDateLabel ? ` · ${selectedDateLabel}` : ''} · Anonymous
+        </p>
       </div>
 
       <div className="p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
-        {unassignedHistoricalCount > 0 && (
+        {isAdmin && unassignedHistoricalCount > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
             <p className="text-amber-800 text-xs font-semibold">
               {unassignedHistoricalCount} historical Sunday-level evaluation response{unassignedHistoricalCount === 1 ? '' : 's'} are hidden from this event until reviewed and assigned.
             </p>
+          </div>
+        )}
+
+        {/* ── Aggregate responses ───────────────────────────────────────────── */}
+        {isAdmin && (
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <button
+              onClick={() => submissions.length > 0 && setShowResponses(v => !v)}
+              disabled={submissions.length === 0}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors disabled:hover:bg-gray-50 disabled:cursor-default"
+            >
+              <div className="flex items-center gap-2 flex-wrap text-left">
+                <Users className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                <span className="text-gray-700 font-semibold text-sm">
+                  {submissions.length} response{submissions.length !== 1 ? 's' : ''}
+                </span>
+                <div className="flex gap-1 flex-wrap">
+                  {FEEL_OPTIONS.filter(o => feelCounts[o.value]).map(o => (
+                    <span key={o.value}
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${o.pillCls}`}>
+                      {feelCounts[o.value]} {o.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {submissions.length > 0 && (
+                <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ml-2 ${showResponses ? 'rotate-180' : ''}`} />
+              )}
+            </button>
+
+            {loadError ? (
+              <div className="flex items-start gap-2 px-4 py-3 bg-red-50 border-t border-red-100">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <p className="text-red-700 text-xs leading-snug">{loadError}</p>
+              </div>
+            ) : submissions.length === 0 ? (
+              <div className="px-4 py-3 border-t border-gray-100">
+                <p className="text-gray-400 text-xs">No responses for this event yet.</p>
+              </div>
+            ) : (
+              <div className={`grid transition-all duration-200 ease-in-out ${showResponses ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                <div className="overflow-hidden">
+                  <div className="divide-y divide-gray-100 border-t border-gray-100">
+                    {submissions.map(s => (
+                      <div key={s.id} className="px-4 py-3 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          {s.service_feel && (
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${feelMeta[s.service_feel].pillCls}`}>
+                              {feelMeta[s.service_feel].label}
+                            </span>
+                          )}
+                          <span className="text-gray-400 text-[10px] ml-auto">
+                            {new Date(s.submitted_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        </div>
+
+                        {s.broken_moment && (
+                          <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                            <p className="text-red-500 text-[10px] font-semibold uppercase tracking-wide mb-0.5">Broke the experience</p>
+                            <p className="text-red-700 text-xs leading-snug">{s.broken_moment_detail || 'No detail provided'}</p>
+                          </div>
+                        )}
+
+                        {[
+                          { label: 'Worked well',      value: s.went_well,         accent: 'text-emerald-600' },
+                          { label: 'Needed attention',  value: s.needed_attention,  accent: 'text-amber-600'   },
+                          { label: 'Area notes',        value: s.area_notes,        accent: 'text-blue-600'    },
+                        ].filter(f => f.value).map(f => (
+                          <div key={f.label}>
+                            <p className={`text-[10px] font-semibold uppercase tracking-wide mb-0.5 ${f.accent}`}>{f.label}</p>
+                            <p className="text-gray-700 text-xs leading-snug">{f.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -330,72 +446,6 @@ export function Evaluation() {
             ))}
           </div>
         </Card>
-
-        {/* ── Aggregate responses ───────────────────────────────────────────── */}
-        {submissions.length > 0 && (
-          <div>
-            <button onClick={() => setShowResponses(v => !v)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Users className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                <span className="text-gray-700 font-semibold text-sm">
-                  {submissions.length} response{submissions.length !== 1 ? 's' : ''}
-                </span>
-                <div className="flex gap-1 flex-wrap">
-                  {FEEL_OPTIONS.filter(o => feelCounts[o.value]).map(o => (
-                    <span key={o.value}
-                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${o.pillCls}`}>
-                      {feelCounts[o.value]} {o.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ml-2 ${showResponses ? 'rotate-180' : ''}`} />
-            </button>
-
-            <div className={`grid transition-all duration-200 ease-in-out ${showResponses ? 'grid-rows-[1fr] mt-3' : 'grid-rows-[0fr]'}`}>
-              <div className="overflow-hidden">
-                <div className="space-y-3 pb-1">
-                  {submissions.map(s => (
-                    <Card key={s.id} className="p-4 space-y-3">
-                      {/* Card header row */}
-                      <div className="flex items-center justify-between gap-2">
-                        {s.service_feel && (
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${feelMeta[s.service_feel].pillCls}`}>
-                            {feelMeta[s.service_feel].label}
-                          </span>
-                        )}
-                        <span className="text-gray-400 text-[10px] ml-auto">
-                          {new Date(s.submitted_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                        </span>
-                      </div>
-
-                      {/* Broken moment callout */}
-                      {s.broken_moment && (
-                        <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                          <p className="text-red-500 text-[10px] font-semibold uppercase tracking-wide mb-0.5">Broke the experience</p>
-                          <p className="text-red-700 text-xs leading-snug">{s.broken_moment_detail || 'No detail provided'}</p>
-                        </div>
-                      )}
-
-                      {/* Text fields */}
-                      {[
-                        { label: 'Worked well',      value: s.went_well,         accent: 'text-emerald-600' },
-                        { label: 'Needed attention',  value: s.needed_attention,  accent: 'text-amber-600'   },
-                        { label: 'Area notes',        value: s.area_notes,        accent: 'text-blue-600'    },
-                      ].filter(f => f.value).map(f => (
-                        <div key={f.label}>
-                          <p className={`text-[10px] font-semibold uppercase tracking-wide mb-0.5 ${f.accent}`}>{f.label}</p>
-                          <p className="text-gray-700 text-xs leading-snug">{f.value}</p>
-                        </div>
-                      ))}
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
       </div>
     </div>

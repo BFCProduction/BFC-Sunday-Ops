@@ -1,5 +1,63 @@
 # Changelog
 
+## 2026-04-25 (Session 16)
+
+### Summary
+
+Navigation/IA session focused on making Sunday Ops feel event-first instead of dropping users directly into one selected event's tabs. Added a first-class Home / Events layer, preserved the existing event workspace screens as drill-down destinations, and cleaned up visible language so the product treats Sunday services and standalone/non-Sunday services as one unified event model.
+
+This work is in the local working tree and is not committed or deployed yet.
+
+### Completed
+
+- Added `src/screens/Home.tsx` as the default landing experience.
+  - Shows the focus event, current/upcoming/recent event lists, and system counts.
+  - Event rows include status, readiness, checklist progress, active issue signal, and evaluation signal.
+  - Event cards open the selected event workspace instead of relying on the event picker modal as the main entry path.
+- Updated `src/App.tsx` so the app starts on Home and the header logo returns to Home.
+- Updated desktop navigation in `src/components/layout/Sidebar.tsx`.
+  - Added **Home / Events** as the top-level entry.
+  - Split navigation into selected event context, **Event Workspace**, and **Global** sections.
+  - Renamed visible event-scoped destinations to `Event Overview`, `Event Data`, etc.
+  - Removed visible `Selected Service` / `Special Event` phrasing from the navigation layer.
+- Updated mobile navigation in `src/components/layout/MobileTabs.tsx` so Home is the primary mobile event-selection entry point.
+- Updated `src/components/layout/SiteHeader.tsx` mobile event switcher labels and header action to match the Home-first model.
+- Updated `src/components/layout/SessionPicker.tsx` so the picker presents one unified event list instead of separate Sunday/special rows.
+  - Event rows now show title, date, time or `Time TBD`, and neutral event type labels.
+- Updated `src/components/layout/QuickCreateModal.tsx` copy from `Service Type` / `Special` language to `Event Type` / `Standalone Event`.
+- Updated `src/screens/Dashboard.tsx` visible copy from `Gameday Overview`, `Today's Schedule`, and `Service Data` toward event-scoped language.
+- Fixed local PCO OAuth redirect normalization in `src/lib/pcoAuth.ts` so local `127.0.0.1` redirects are sent to the registered `localhost` redirect URI.
+- Removed the misleading **Latest Evaluation** shortcut from Home's system panel.
+- Confirmed the Home system-panel **Analytics** shortcut only renders for admins.
+- Updated `README.md` to document the Home / Events layer, unified event model, admin-only analytics shortcut, and the next compatibility cleanup.
+
+### IA Notes
+
+- Top-level model: **Home / Events** is the default surface for selecting and understanding events.
+- Event-scoped model: once an event is selected, existing detailed screens remain available under **Event Workspace**.
+- Global model: admin/global areas such as Analytics, Settings, and Production Support are visually separated from event-scoped screens.
+- Compatibility detail: older Sunday-shaped and standalone-event-shaped checklist storage still exists internally, but the visible product layer no longer presents that split as the IA.
+
+### Verification
+
+- `npx eslint` passed for the touched frontend files.
+- `npm run build` passed. Vite still reports the existing large chunk warning.
+- Local browser/Playwright checks passed for:
+  - desktop Home / Events layout
+  - desktop event picker
+  - desktop quick-create modal
+  - mobile Home
+  - mobile Home → Event Overview drill-down
+  - admin vs non-admin Home analytics visibility
+- Confirmed checked flows do not show old visible labels such as `Special Event`, `Special Events`, `Selected Service`, `Service Data`, `Gameday`, or `Post-Service`.
+
+### Next
+
+- Make checklist/data compatibility paths fully event-native so internal code and storage no longer need to distinguish Sunday-shaped records from standalone event-shaped records.
+- Revisit the Home system panel after real usage: it may want only status counts, or an admin-only operational summary, rather than extra shortcuts.
+
+---
+
 ## 2026-04-25 (Session 15)
 
 ### Summary

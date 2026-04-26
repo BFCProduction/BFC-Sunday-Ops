@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  LayoutDashboard, ClipboardCheck, AlertTriangle,
+  Home, LayoutDashboard, ClipboardCheck, AlertTriangle,
   BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
   Settings, ChevronLeft, ChevronRight, RotateCcw, TrendingUp,
   CalendarDays, ChevronDown, Plus, FolderOpen,
@@ -15,7 +15,7 @@ import { loadAllSessions } from '../../lib/supabase'
 import { useSunday } from '../../context/SundayContext'
 import type { Session } from '../../types'
 
-type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
+type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
 
 interface SidebarProps {
   active: Screen
@@ -25,14 +25,18 @@ interface SidebarProps {
   onSessionsChange: (sessions: Session[]) => void
 }
 
-const navItems = [
-  { id: 'dashboard'   as Screen, label: 'Dashboard',               icon: LayoutDashboard },
-  { id: 'docs'        as Screen, label: 'Production Docs',          icon: FolderOpen      },
-  { id: 'checklist'   as Screen, label: 'Gameday Checklist',        icon: ClipboardCheck  },
-  { id: 'issues'      as Screen, label: 'Issue Log',                icon: AlertTriangle   },
-  { id: 'data'        as Screen, label: 'Service Data',             icon: BarChart2       },
-  { id: 'evaluation'  as Screen, label: 'Post-Service Evaluation',  icon: Star            },
+const eventNavItems = [
+  { id: 'dashboard'   as Screen, label: 'Event Overview', icon: LayoutDashboard },
+  { id: 'docs'        as Screen, label: 'Production Docs', icon: FolderOpen      },
+  { id: 'checklist'   as Screen, label: 'Checklist',       icon: ClipboardCheck  },
+  { id: 'issues'      as Screen, label: 'Issue Log',       icon: AlertTriangle   },
+  { id: 'data'        as Screen, label: 'Event Data',      icon: BarChart2       },
+  { id: 'evaluation'  as Screen, label: 'Evaluation',      icon: Star            },
 ]
+
+function eventNavTitle(session: Session) {
+  return session.name || session.date
+}
 
 export function Sidebar({ active, setActive, issueCount, allSessions, onSessionsChange }: SidebarProps) {
   const { isAdmin } = useAdmin()
@@ -58,9 +62,9 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
       })
     : '—'
 
-  const isSpecial = serviceTypeSlug === 'special'
+  const isNamedEvent = Boolean(eventName)
   const serviceTime = serviceTypeSlug === 'sunday-9am' ? '9am' : serviceTypeSlug === 'sunday-11am' ? '11am' : null
-  const displayLabel = isSpecial && eventName
+  const displayLabel = isNamedEvent && eventName
     ? eventName
     : serviceTime ? `${dateFormatted} · ${serviceTime}` : dateFormatted
 
@@ -75,17 +79,26 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
     <aside className="hidden md:flex flex-col flex-shrink-0 border-r border-white/[0.06] overflow-y-auto"
       style={{ width: 260, background: '#0d0d0d', position: 'sticky', top: 56, height: 'calc(100vh - 56px)' }}>
 
-      <div className="px-4 pt-5 pb-4 border-b border-white/[0.05]">
+      <div className="px-3 py-3 border-b border-white/[0.05]">
+        <button
+          onClick={() => setActive('home')}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${
+            active === 'home' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]'
+          }`}
+        >
+          <Home className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={active === 'home' ? 2.2 : 1.8} />
+          <span className="flex-1 leading-tight">Home / Events</span>
+        </button>
+      </div>
+
+      <div className="px-4 pt-4 pb-4 border-b border-white/[0.05]">
         <div className="flex items-center gap-2 mb-2">
-          {isSpecial
+          {isNamedEvent
             ? <CalendarDays className="w-3.5 h-3.5" style={{ color: serviceTypeColor }} />
             : <Calendar className="w-3.5 h-3.5 text-gray-600" />
           }
           <p className="text-gray-600 text-[10px] font-semibold uppercase tracking-widest">
-            {isViewingPast
-              ? (isSpecial ? 'Past Event' : 'Viewing Past Sunday')
-              : (isSpecial ? 'Special Event' : 'This Sunday')
-            }
+            {isViewingPast ? 'Past Event' : 'Selected Event'}
           </p>
         </div>
 
@@ -95,21 +108,21 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
             onClick={() => prevSession && navigateToEvent(prevSession.id)}
             disabled={!prevSession}
             className="p-1 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-            title={prevSession ? `Go to ${prevSession.serviceTypeSlug === 'special' ? prevSession.name : prevSession.date}` : 'No earlier session'}
+            title={prevSession ? `Go to ${eventNavTitle(prevSession)}` : 'No earlier event'}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          {/* Clicking the date/name opens the session picker */}
+          {/* Clicking the date/name opens the event picker */}
           <button
             onClick={() => setShowPicker(true)}
             className="flex-1 text-center group py-0.5 rounded hover:bg-white/[0.06] transition-colors"
-            title="Browse all sessions"
+            title="Browse all events"
           >
             <p className="text-white text-sm font-semibold leading-tight group-hover:text-blue-300 transition-colors">
               {displayLabel}
             </p>
-            {isSpecial && (
+            {isNamedEvent && (
               <p className="text-gray-500 text-[10px] mt-0.5">{dateFormatted}</p>
             )}
             <ChevronDown className="w-3 h-3 text-gray-600 group-hover:text-blue-400 mx-auto mt-0.5 transition-colors" />
@@ -119,22 +132,22 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
             onClick={() => nextSession && navigateToEvent(nextSession.id)}
             disabled={!nextSession}
             className="p-1 rounded text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] transition-colors flex-shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-            title={nextSession ? `Go to ${nextSession.serviceTypeSlug === 'special' ? nextSession.name : nextSession.date}` : 'No later session'}
+            title={nextSession ? `Go to ${eventNavTitle(nextSession)}` : 'No later event'}
           >
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
 
-        {/* Phase / session badge */}
+        {/* Phase / event badge */}
         <div className="flex gap-2 mt-2 flex-wrap">
-          {isSpecial ? (
+          {isNamedEvent ? (
             <span
               className="text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1"
               style={{ backgroundColor: `${serviceTypeColor}25`, color: serviceTypeColor }}
             >
               <CalendarDays className="w-2.5 h-2.5" />
-              Special Event
+              Event
             </span>
           ) : isViewingPast ? (
             <span className="bg-amber-900/40 text-amber-400 text-[10px] font-medium px-2 py-0.5 rounded-full">
@@ -165,17 +178,17 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
 
         <div className="flex items-center justify-between mt-2">
           <p className="text-gray-700 text-[10px]">
-            {allSessions.length} session{allSessions.length !== 1 ? 's' : ''}
+            {allSessions.length} event{allSessions.length !== 1 ? 's' : ''}
             {' · '}
             <button onClick={() => setShowPicker(true)} className="text-gray-500 hover:text-blue-400 underline transition-colors">
-              browse
+              quick switch
             </button>
           </p>
           {isAdmin && (
             <button
               onClick={() => setShowQuickCreate(true)}
               className="flex items-center gap-1 text-[10px] font-semibold text-gray-500 hover:text-white hover:bg-white/[0.08] px-2 py-0.5 rounded transition-all"
-              title="Create new event or service"
+              title="Create new event"
             >
               <Plus className="w-3 h-3" />
               New Event
@@ -185,7 +198,10 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
       </div>
 
       <nav className="flex-1 px-3 py-3 space-y-0.5 flex flex-col">
-        {navItems.map(item => {
+        <p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-gray-700">
+          Event Workspace
+        </p>
+        {eventNavItems.map(item => {
           const Icon = item.icon
           const isActive = active === item.id
           return (
@@ -205,6 +221,9 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
         })}
 
         <div className="mt-auto pt-4 border-t border-white/[0.05] space-y-0.5">
+          <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-widest text-gray-700">
+            Global
+          </p>
           {isAdmin && (
             <button onClick={() => setActive('analytics')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${
