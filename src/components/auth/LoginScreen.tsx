@@ -1,4 +1,6 @@
+import { ExternalLink, Newspaper } from 'lucide-react'
 import bfcLogo from '../../assets/BFC_Production_Logo_Hor reverse.png'
+import { changelogUrl, releaseNotes } from '../../lib/releaseNotes'
 
 interface Props {
   onLogin: () => void
@@ -57,6 +59,44 @@ export function LoginScreen({ onLogin, error }: Props) {
           </p>
         </div>
       </div>
+
+      <section className="mt-6 w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-white shadow-2xl">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
+              <Newspaper className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-sm font-bold">What&apos;s New</p>
+              <p className="text-xs text-white/45">Recent Sunday Ops updates</p>
+            </div>
+          </div>
+          <a
+            href={changelogUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label="Open full changelog"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </div>
+
+        <div className="space-y-3">
+          {releaseNotes.slice(0, 2).map(note => (
+            <article key={`${note.date}-${note.title}`} className="rounded-xl bg-white/[0.06] p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white/80">
+                  {note.label}
+                </span>
+                <span className="text-[11px] font-semibold text-white/40">{note.date}</span>
+              </div>
+              <h2 className="mt-2 text-sm font-bold leading-5 text-white">{note.title}</h2>
+              <p className="mt-1 text-xs leading-5 text-white/55">{note.summary}</p>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }

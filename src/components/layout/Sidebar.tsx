@@ -49,6 +49,7 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
   const [phase, setPhase] = useState<ServicePhase | null>(() => getServicePhase(new Date(), timezone))
   const [showPicker,      setShowPicker]      = useState(false)
   const [showQuickCreate, setShowQuickCreate] = useState(false)
+  const isHome = active === 'home'
 
   useEffect(() => {
     const id = setInterval(() => setPhase(getServicePhase(new Date(), timezone)), 60_000)
@@ -87,10 +88,11 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
           }`}
         >
           <Home className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={active === 'home' ? 2.2 : 1.8} />
-          <span className="flex-1 leading-tight">Home / Events</span>
+          <span className="flex-1 leading-tight">Home</span>
         </button>
       </div>
 
+      {!isHome && (
       <div className="px-4 pt-4 pb-4 border-b border-white/[0.05]">
         <div className="flex items-center gap-2 mb-2">
           {isNamedEvent
@@ -196,33 +198,38 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
           )}
         </div>
       </div>
+      )}
 
       <nav className="flex-1 px-3 py-3 space-y-0.5 flex flex-col">
-        <p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-gray-700">
-          Event Workspace
-        </p>
-        {eventNavItems.map(item => {
-          const Icon = item.icon
-          const isActive = active === item.id
-          return (
-            <button key={item.id} onClick={() => setActive(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${
-                isActive ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]'
-              }`}>
-              <Icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={isActive ? 2.2 : 1.8} />
-              <span className="flex-1 leading-tight">{item.label}</span>
-              {item.id === 'issues' && issueCount > 0 && (
-                <span className="bg-red-600 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 pulse">
-                  {issueCount}
-                </span>
-              )}
-            </button>
-          )
-        })}
+        {!isHome && (
+          <>
+            <p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-gray-700">
+              Event Workspace
+            </p>
+            {eventNavItems.map(item => {
+              const Icon = item.icon
+              const isActive = active === item.id
+              return (
+                <button key={item.id} onClick={() => setActive(item.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${
+                    isActive ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]'
+                  }`}>
+                  <Icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={isActive ? 2.2 : 1.8} />
+                  <span className="flex-1 leading-tight">{item.label}</span>
+                  {item.id === 'issues' && issueCount > 0 && (
+                    <span className="bg-red-600 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 pulse">
+                      {issueCount}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </>
+        )}
 
-        <div className="mt-auto pt-4 border-t border-white/[0.05] space-y-0.5">
+        <div className={`${isHome ? 'pt-1' : 'mt-auto pt-4 border-t border-white/[0.05]'} space-y-0.5`}>
           <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-widest text-gray-700">
-            Global
+            {isHome ? 'Global Tools' : 'Global'}
           </p>
           {isAdmin && (
             <button onClick={() => setActive('analytics')}

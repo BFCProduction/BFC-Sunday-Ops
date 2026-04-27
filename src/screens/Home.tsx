@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle, BarChart2, Calendar, CalendarDays, CheckCircle2,
-  ChevronRight, Clock3, ClipboardCheck, FolderOpen, Home as HomeIcon,
-  Plus, Star,
+  ChevronRight, Clock3, ClipboardCheck, ExternalLink, FolderOpen, Home as HomeIcon,
+  Newspaper, Plus, Settings as SettingsIcon, Star, TrendingUp, BookOpen,
+  type LucideIcon,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getChurchDateString } from '../lib/churchTime'
 import { loadOrSeedChecklistItems, type ChecklistItemRecord } from '../lib/checklist'
+import { changelogUrl, releaseNotes, type ReleaseNote } from '../lib/releaseNotes'
 import { useSunday } from '../context/SundayContext'
 import { useAdmin } from '../context/adminState'
 import { QuickCreateModal } from '../components/layout/QuickCreateModal'
@@ -432,6 +434,90 @@ function EmptyState({ label }: { label: string }) {
   )
 }
 
+function GlobalToolCard({
+  title,
+  description,
+  icon: Icon,
+  accent,
+  meta,
+  onClick,
+  href,
+  external = false,
+}: {
+  title: string
+  description: string
+  icon: LucideIcon
+  accent: string
+  meta?: string
+  onClick?: () => void
+  href?: string
+  external?: boolean
+}) {
+  const content = (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <div
+          className="flex h-10 w-10 items-center justify-center rounded-lg"
+          style={{ backgroundColor: `${accent}14`, color: accent }}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+        {external ? (
+          <ExternalLink className="h-4 w-4 text-gray-300 transition-colors group-hover:text-gray-500" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-gray-300 transition-colors group-hover:text-gray-500" />
+        )}
+      </div>
+      <div className="mt-4">
+        {meta && <p className="mb-1 text-[11px] font-bold uppercase tracking-widest text-gray-400">{meta}</p>}
+        <h3 className="text-sm font-bold text-gray-950">{title}</h3>
+        <p className="mt-1 text-sm leading-5 text-gray-500">{description}</p>
+      </div>
+    </>
+  )
+  const className = 'group flex min-h-[158px] w-full flex-col justify-between rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md'
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target={external ? '_blank' : undefined}
+        rel={external ? 'noopener noreferrer' : undefined}
+        className={className}
+      >
+        {content}
+      </a>
+    )
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {content}
+    </button>
+  )
+}
+
+function ReleaseNoteCard({ note }: { note: ReleaseNote }) {
+  return (
+    <article className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700">{note.label}</span>
+        <span className="text-xs font-semibold text-gray-400">{note.date}</span>
+      </div>
+      <h3 className="mt-4 text-base font-bold text-gray-950">{note.title}</h3>
+      <p className="mt-2 text-sm leading-6 text-gray-600">{note.summary}</p>
+      <ul className="mt-4 space-y-2">
+        {note.points.map(point => (
+          <li key={point} className="flex gap-2 text-sm leading-5 text-gray-600">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600" />
+            <span>{point}</span>
+          </li>
+        ))}
+      </ul>
+    </article>
+  )
+}
+
 export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
   const {
     activeEventId, timezone, navigateToEvent,
@@ -645,7 +731,6 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
   }
 
   const totalUpcoming = sortedSessions.filter(session => startMs(session) >= now || session.date === today).length
-  const totalRecent = recentEvents.length
   const currentCount = currentEvents.length
   const focusStatus = focusEvent ? getStatus(focusEvent, today, now) : null
   const focusChecklistStats = focusEvent ? checklistStats[focusEvent.id] : undefined
@@ -657,35 +742,99 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
 
   return (
     <div className="fade-in min-h-full bg-gray-50">
-      <div className="border-b border-gray-200 bg-white px-4 py-5 md:px-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <HomeIcon className="h-5 w-5 text-blue-600" />
-              <h1 className="text-xl font-bold text-gray-900">Home</h1>
+      <div className="border-b border-gray-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-6 md:px-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold uppercase tracking-widest text-blue-700">
+                <HomeIcon className="h-3.5 w-3.5" />
+                Sunday Ops
+              </div>
+              <h1 className="mt-3 text-3xl font-bold tracking-normal text-gray-950">Home</h1>
             </div>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Pick an event first, then work its checklist, docs, issues, data, and evaluation.
-            </p>
-          </div>
 
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => setShowQuickCreate(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4" />
-              New Event
-            </button>
-          )}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setShowQuickCreate(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+              >
+                <Plus className="h-4 w-4" />
+                New Event
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
+      <div className="mx-auto max-w-7xl space-y-8 p-4 md:p-6">
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <SectionLabel>Global Tools</SectionLabel>
+            <span className="text-xs font-medium text-gray-400">App-level navigation</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            <GlobalToolCard
+              title="Event Timeline"
+              description="Current, upcoming, and recent services with readiness signals."
+              icon={CalendarDays}
+              accent="#2563eb"
+              meta="Events"
+              href="#events"
+            />
+            {isAdmin && (
+              <GlobalToolCard
+                title="Analytics"
+                description="Trends, KPIs, and the data explorer for event-native records."
+                icon={TrendingUp}
+                accent="#7c3aed"
+                meta="Admin"
+                onClick={() => setScreen('analytics')}
+              />
+            )}
+            <GlobalToolCard
+              title="Production Support"
+              description="Reference docs and production team support resources."
+              icon={BookOpen}
+              accent="#0f766e"
+              meta="Support"
+              href="https://bfcproduction.github.io/bfc-production-support/"
+              external
+            />
+            <GlobalToolCard
+              title="App Updates"
+              description="Recent Sunday Ops changes in a public, release-note style feed."
+              icon={Newspaper}
+              accent="#ea580c"
+              meta="What's new"
+              href="#whats-new"
+            />
+            {isAdmin && (
+              <GlobalToolCard
+                title="Settings"
+                description="Timezone, reporting, checklist templates, and People & Access."
+                icon={SettingsIcon}
+                accent="#4b5563"
+                meta="Admin"
+                onClick={() => setScreen('settings')}
+              />
+            )}
+            {isAdmin && (
+              <GlobalToolCard
+                title="Create Event"
+                description="Add a Sunday service, standalone event, or template-backed workflow."
+                icon={Plus}
+                accent="#16a34a"
+                meta="Admin"
+                onClick={() => setShowQuickCreate(true)}
+              />
+            )}
+          </div>
+        </section>
+
+        <section>
           <div>
-            <SectionLabel>{currentCount > 0 ? 'Current Event' : 'Next Event'}</SectionLabel>
+            <SectionLabel>{currentCount > 0 ? 'Focus Event' : 'Next Event'}</SectionLabel>
             {focusEvent ? (
               <Card className="overflow-hidden rounded-lg">
                 <div className="border-b border-gray-100 bg-white p-5">
@@ -696,7 +845,7 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
                         {focusReadiness && <ReadinessPill readiness={focusReadiness} />}
                         <EventBadge session={focusEvent} />
                       </div>
-                      <h2 className="truncate text-2xl font-bold text-gray-900">{eventTitle(focusEvent)}</h2>
+                      <h2 className="truncate text-2xl font-bold text-gray-950">{eventTitle(focusEvent)}</h2>
                       <p className="mt-1 text-sm text-gray-500">{eventMeta(focusEvent)} · {relativeTiming(focusEvent, today, now)}</p>
                       <div className="mt-3 flex flex-wrap items-center gap-3">
                         <IssueSignal stats={focusIssueStats} loaded={issueStatsLoaded} hasError={issueStatsError} />
@@ -723,12 +872,13 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 divide-x divide-gray-100 md:grid-cols-4">
+                <div className="grid grid-cols-2 border-t border-gray-100 md:grid-cols-5">
                   {[
                     { label: 'Docs',       icon: FolderOpen,     screen: 'docs'       as Screen },
                     { label: 'Checklist',  icon: ClipboardCheck, screen: 'checklist'  as Screen },
                     { label: 'Issues',     icon: AlertTriangle,  screen: 'issues'     as Screen },
-                    { label: 'Data / Eval', icon: BarChart2,     screen: 'data'       as Screen },
+                    { label: 'Data',       icon: BarChart2,      screen: 'data'       as Screen },
+                    { label: 'Eval',       icon: Star,           screen: 'evaluation' as Screen },
                   ].map(action => {
                     const Icon = action.icon
                     return (
@@ -736,7 +886,7 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
                         key={action.label}
                         type="button"
                         onClick={() => openEvent(focusEvent, action.screen)}
-                        className="flex items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                        className="flex items-center gap-2 border-r border-gray-100 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition-colors last:border-r-0 hover:bg-blue-50 hover:text-blue-700"
                       >
                         <Icon className="h-4 w-4 flex-shrink-0" />
                         <span className="truncate">{action.label}</span>
@@ -749,45 +899,9 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
               <EmptyState label="No events found yet." />
             )}
           </div>
+        </section>
 
-          <div>
-            <SectionLabel>System View</SectionLabel>
-            <Card className="rounded-lg p-5">
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{currentCount}</p>
-                  <p className="text-xs font-medium text-gray-500">Current</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{totalUpcoming}</p>
-                  <p className="text-xs font-medium text-gray-500">Upcoming</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{totalRecent}</p>
-                  <p className="text-xs font-medium text-gray-500">Recent</p>
-                </div>
-              </div>
-
-              {isAdmin && (
-                <div className="mt-5 border-t border-gray-100 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setScreen('analytics')}
-                    className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <BarChart2 className="h-4 w-4 text-gray-400" />
-                      Analytics
-                    </span>
-                    <ChevronRight className="h-4 w-4 text-gray-300" />
-                  </button>
-                </div>
-              )}
-            </Card>
-          </div>
-        </div>
-
-        <section>
+        <section id="events" className="scroll-mt-24">
           <div className="mb-2 flex items-center justify-between">
             <SectionLabel>Current / Upcoming</SectionLabel>
             <span className="text-xs font-medium text-gray-400">{totalUpcoming} event{totalUpcoming === 1 ? '' : 's'}</span>
@@ -843,6 +957,29 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
           ) : (
             <EmptyState label="Recent events will appear here after they pass." />
           )}
+        </section>
+
+        <section id="whats-new" className="scroll-mt-24">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <SectionLabel>What&apos;s New</SectionLabel>
+              <h2 className="mt-2 text-xl font-bold text-gray-950">Recent Sunday Ops updates</h2>
+            </div>
+            <a
+              href={changelogUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:text-blue-800"
+            >
+              Full changelog
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {releaseNotes.map(note => (
+              <ReleaseNoteCard key={`${note.date}-${note.title}`} note={note} />
+            ))}
+          </div>
         </section>
       </div>
 
