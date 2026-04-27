@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-04-26 (Session 18)
+
+### Summary
+
+Home/navigation refinement and publish closeout. Reworked the new Home layer from an event picker into a true app hub, added a public-facing "What's New" update surface, removed redundant dashboard-style clutter, and pushed the accumulated local Home/evaluation work to GitHub.
+
+### Completed
+
+- Refined `src/screens/Home.tsx`.
+  - Home now leads with Global Tools: Event Timeline, Analytics for admins, Production Support, App Updates, Settings for admins, and Create Event for admins.
+  - The focus/next event card is full width and remains the main entry into event-scoped work.
+  - Removed the top metric cards, the Home tagline, the Operations Snapshot card, and the duplicate blue **New Event** button.
+  - Kept current/upcoming events, recent events, and app update notes below the global/tooling layer.
+- Updated desktop sidebar behavior in `src/components/layout/Sidebar.tsx`.
+  - On Home, the sidebar shows global navigation instead of immediately presenting the selected event workspace.
+  - Event Workspace navigation appears after entering an event-scoped screen.
+- Added reusable release-note data in `src/lib/releaseNotes.ts`.
+  - Home renders the blog-style **What's New** cards from shared data.
+  - The login screen renders a compact public **What's New** panel before sign-in.
+- Updated `src/components/auth/LoginScreen.tsx` with the public update panel.
+- Confirmed the PCO local redirect issue was caused by previewing on `127.0.0.1:5176`; the local preview should use `http://localhost:5173/BFC-Sunday-Ops/`.
+- Pushed the local work to GitHub:
+  - `bde22de` — Add home-first events navigation
+  - `79ac0d5` — Document evaluation visibility follow-up
+  - `0d834a0` — Refine home navigation mock
+  - `b8d66a2` — Remove duplicate home new event button
+
+### Verification
+
+- `npx eslint src/screens/Home.tsx src/components/layout/Sidebar.tsx src/components/auth/LoginScreen.tsx src/lib/releaseNotes.ts` passed during the Home mock work.
+- `npx eslint src/screens/Home.tsx` passed after final Home cleanup.
+- `npm run build` passed after each Home cleanup. Vite still reports the existing large chunk warning.
+- Local in-app browser preview confirmed the login **What's New** panel and the Home navigation mock during review.
+
+### Notes
+
+- `.claude/` remains untracked local state and was intentionally not pushed.
+- The release notes are currently hardcoded in `src/lib/releaseNotes.ts`; a future public changelog route or markdown-driven feed would make this easier to maintain.
+- GitHub push completed successfully to `main`.
+
+### Next
+
+- Consider turning **What's New** into a first-class public page instead of only a Home/login panel.
+- Continue the event-native compatibility cleanup so internal data paths no longer need Sunday-shaped vs standalone-event-shaped branches.
+- Decide whether evaluation response privacy needs backend/RLS enforcement beyond the current admin-only UI path.
+
+---
+
 ## 2026-04-26 (Session 17)
 
 ### Summary

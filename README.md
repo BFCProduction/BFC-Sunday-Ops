@@ -8,7 +8,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 
 ## Current Scope
 
-- Home / Events landing screen with current, upcoming, and recent event status cards
+- Home landing screen with global tool cards, focus event, event timeline, and public "What's New" update feed
 - Event checklist with initials, timestamps, and expandable item notes
 - Issue log with severity tracking, photo attachments, resolution, and Monday.com follow-up sync
 - Attendance, runtime, loudness, weather, and evaluation tabs
@@ -50,8 +50,8 @@ Live now:
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
 - Runtime captured-at timestamps display in the configured church timezone, not the device timezone.
 - Runtime field admin controls are inline on the actual runtime list: admins drag the real row to reorder, use the row pencil to edit, and use **Add Runtime** to create a new row in place.
-- Home is the default landing experience. Operators choose an event first, then drill into that event's overview, docs, checklist, issue log, data, and evaluation.
-- Desktop navigation separates the global Home / Events layer, the selected event context, event-scoped workspace screens, and admin/global areas.
+- Home is the default landing experience. It now works as the app-level hub: Global Tools, a full-width focus/next event card, event timeline, recent events, and app update notes.
+- Desktop navigation separates the global Home layer from the selected event context, event-scoped workspace screens, and admin/global areas.
 - Mobile navigation includes Home as the event-selection entry point, so event switching no longer depends on a modal as the primary path.
 - Weather location and pull schedule are configured per event in the admin UI.
 - Weather is imported automatically through event-level weather config via the weather workflow.
@@ -100,7 +100,7 @@ Live now:
   - Returns `title`, `item_type`, `length`, `description`, `service_position`, `key_name`, `computed_starts_at`.
   - Dashboard ROS card shows time, type icon, title, description, song key, and duration per item.
 
-- **Home / Events navigation** (`src/screens/Home.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/layout/MobileTabs.tsx`) makes the app event-first. Home shows the focus event, current/upcoming/recent event lists, readiness/checklist/issue/evaluation signals, and admin-only analytics access. Event workspace screens are preserved as drill-downs from the selected event.
+- **Home navigation** (`src/screens/Home.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/layout/MobileTabs.tsx`) makes the app feel like a true global starting point instead of half-inside an event. Home surfaces Global Tools (Event Timeline, Analytics for admins, Production Support, App Updates, Settings for admins, and Create Event for admins), a full-width focus/next event card, current/upcoming/recent event lists, readiness/checklist/issue/evaluation signals, and a public-facing "What's New" update feed. Event workspace screens remain drill-downs from the selected event.
 
 - **Mobile bottom nav** (`src/components/layout/MobileTabs.tsx`) redesigned as a floating dark pill with Home as the primary event-selection entry point.
 
@@ -592,7 +592,7 @@ supabase functions deploy user-admin
 - Scheduled analytics should stay disabled until their backing code exists.
 - `supabase/.temp/` is local Supabase CLI state and is intentionally ignored.
 - A session-level change summary is tracked in `CHANGELOG.md`.
-- Local commit `bde22de` captures the Home / Events navigation work and Evaluation response visibility fix. It has not been pushed or deployed yet.
+- Home navigation and evaluation visibility follow-up commits have been pushed to `main` through `b8d66a2`.
 - As of the April 17, 2026 cleanup, the unified `events` navigation table is intentionally kept to real Sunday Ops usage: March–April 2026 operational sessions plus future events created manually through **New Event**. Historical analytics before March 2026 remain in `service_records` / `analytics_records` and are separate from the removed navigation events.
 
 ## Credentials and Security
