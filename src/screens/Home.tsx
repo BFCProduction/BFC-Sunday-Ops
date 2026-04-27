@@ -753,16 +753,6 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
               <h1 className="mt-3 text-3xl font-bold tracking-normal text-gray-950">Home</h1>
             </div>
 
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setShowQuickCreate(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-              >
-                <Plus className="h-4 w-4" />
-                New Event
-              </button>
-            )}
           </div>
         </div>
       </div>
