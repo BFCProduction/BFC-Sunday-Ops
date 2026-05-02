@@ -149,32 +149,59 @@ Deno.serve(async (req) => {
     return json(cors, 200, { items: [] })
   }
 
-  // ── 3. Fetch plan items and plan times from PCO in parallel ──────────────
-  const planBase = `${PCO_API_BASE}/service_types/${serviceType.pco_service_type_id}`
-    + `/plans/${typedEvent.pco_plan_id}`
+  const candidateServiceTypeIds: string[] = [serviceType.pco_service_type_id]
+  const { data: allServiceTypes } = await supabase
+    .from('service_types')
+    .select('pco_service_type_id')
+    .not('pco_service_type_id', 'is', null)
 
+  for (const row of allServiceTypes ?? []) {
+    const pcoServiceTypeId = row.pco_service_type_id as string | null
+    if (pcoServiceTypeId && !candidateServiceTypeIds.includes(pcoServiceTypeId)) {
+      candidateServiceTypeIds.push(pcoServiceTypeId)
+    }
+  }
+
+  // ── 3. Fetch plan items and plan times from PCO in parallel ──────────────
   const headers = { Authorization: `Bearer ${pcoToken}` }
 
   let rawItems: PcoPlanItem[]     = []
   let planTimes: PcoPlanTime[]    = []
+  let lastFetchError: { status: number; message: string } | null = null
 
   try {
-    const [itemsRes, timesRes] = await Promise.all([
-      fetch(`${planBase}/items?per_page=100&order=sequence`, { headers }),
-      fetch(`${planBase}/plan_times?per_page=25&order=starts_at`, { headers }),
-    ])
+    for (const pcoServiceTypeId of candidateServiceTypeIds) {
+      const planBase = `${PCO_API_BASE}/service_types/${pcoServiceTypeId}`
+        + `/plans/${typedEvent.pco_plan_id}`
 
-    if (!itemsRes.ok) {
-      const errText = await itemsRes.text().catch(() => '')
-      return json(cors, itemsRes.status, { error: `PCO items ${itemsRes.status}: ${errText.slice(0, 200)}` })
+      const [itemsRes, timesRes] = await Promise.all([
+        fetch(`${planBase}/items?per_page=100&order=sequence`, { headers }),
+        fetch(`${planBase}/plan_times?per_page=25&order=starts_at`, { headers }),
+      ])
+
+      if (!itemsRes.ok) {
+        const errText = await itemsRes.text().catch(() => '')
+        lastFetchError = {
+          status: itemsRes.status,
+          message: `PCO items ${itemsRes.status}: ${errText.slice(0, 200)}`,
+        }
+        if (itemsRes.status === 404) continue
+        return json(cors, itemsRes.status, { error: lastFetchError.message })
+      }
+
+      const itemsBody = await itemsRes.json() as { data: PcoPlanItem[] }
+      rawItems = itemsBody.data ?? []
+
+      if (timesRes.ok) {
+        const timesBody = await timesRes.json() as { data: PcoPlanTime[] }
+        planTimes = timesBody.data ?? []
+      }
+
+      break
     }
 
-    const itemsBody = await itemsRes.json() as { data: PcoPlanItem[] }
-    rawItems = itemsBody.data ?? []
-
-    if (timesRes.ok) {
-      const timesBody = await timesRes.json() as { data: PcoPlanTime[] }
-      planTimes = timesBody.data ?? []
+    if (rawItems.length === 0 && lastFetchError) {
+      return json(cors, lastFetchError.status, { error: lastFetchError.message })
     }
   } catch (err) {
     return json(cors, 502, {

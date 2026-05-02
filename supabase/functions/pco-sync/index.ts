@@ -23,6 +23,7 @@ const ALLOWED_ORIGINS = [
 ]
 
 const PCO_API_BASE = 'https://api.planningcenteronline.com/services/v2'
+const DEFAULT_TIMEZONE = 'America/Chicago'
 
 // Default event times by service type slug
 const DEFAULT_EVENT_TIMES: Record<string, string | null> = {
@@ -50,6 +51,35 @@ function json(cors: Record<string, string>, status: number, body: unknown) {
   })
 }
 
+function dateInTimezone(iso: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year:     'numeric',
+    month:    '2-digit',
+    day:      '2-digit',
+  }).formatToParts(new Date(iso))
+
+  const year  = parts.find(part => part.type === 'year')?.value
+  const month = parts.find(part => part.type === 'month')?.value
+  const day   = parts.find(part => part.type === 'day')?.value
+
+  return year && month && day ? `${year}-${month}-${day}` : iso.slice(0, 10)
+}
+
+function timeInTimezone(iso: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour:     '2-digit',
+    minute:   '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(iso))
+
+  const hour = parts.find(part => part.type === 'hour')?.value
+  const minute = parts.find(part => part.type === 'minute')?.value
+
+  return hour && minute ? `${hour}:${minute}:00` : null
+}
+
 interface ServiceType {
   id:                  string
   slug:                string
@@ -65,6 +95,38 @@ interface PcoPlan {
     sort_date:    string | null   // ISO 8601, e.g. "2026-01-05T09:00:00Z"
     dates:        string | null   // human-readable, e.g. "Jan 5, 2026"
   }
+}
+
+interface PcoPlanTime {
+  attributes: {
+    starts_at: string | null
+    time_type: string | null
+  }
+}
+
+async function fetchPlanEventTime(
+  pcoToken: string,
+  pcoServiceTypeId: string,
+  planId: string,
+  eventDate: string,
+  timezone: string,
+) {
+  const url = `${PCO_API_BASE}/service_types/${pcoServiceTypeId}/plans/${planId}/plan_times`
+    + `?per_page=100&order=starts_at`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${pcoToken}` },
+  })
+
+  if (!res.ok) return null
+
+  const body = await res.json() as { data: PcoPlanTime[] }
+  const times = (body.data ?? [])
+    .filter(time => !!time.attributes.starts_at)
+    .filter(time => dateInTimezone(time.attributes.starts_at!, timezone) === eventDate)
+  const first = times.find(time => time.attributes.time_type === 'service') ?? times[0]
+  return first?.attributes.starts_at
+    ? timeInTimezone(first.attributes.starts_at, timezone)
+    : null
 }
 
 interface SyncResult {
@@ -122,6 +184,16 @@ Deno.serve(async (req) => {
   if (stErr || !serviceTypes || serviceTypes.length === 0) {
     return json(cors, 500, { error: 'No service types configured for PCO sync' })
   }
+
+  const { data: timezoneRow } = await supabase
+    .from('app_config')
+    .select('value')
+    .eq('key', 'church_timezone')
+    .maybeSingle()
+
+  const timezone = typeof timezoneRow?.value === 'string'
+    ? timezoneRow.value
+    : DEFAULT_TIMEZONE
 
   // ── 3. Determine date window ──────────────────────────────────────────────
   const today        = new Date().toISOString().slice(0, 10)
@@ -207,7 +279,14 @@ Deno.serve(async (req) => {
         eventName = `${st.name} · ${formatted}`
       }
 
-      const eventTime = DEFAULT_EVENT_TIMES[st.slug] ?? null
+      const pcoEventTime = await fetchPlanEventTime(
+        pcoToken,
+        st.pco_service_type_id,
+        plan.id,
+        eventDate,
+        timezone,
+      )
+      const eventTime = pcoEventTime ?? DEFAULT_EVENT_TIMES[st.slug] ?? null
       const isSpecial = st.slug === 'special'
 
       // Sync only updates matching Sunday Ops events. PCO is no longer allowed
@@ -255,9 +334,15 @@ Deno.serve(async (req) => {
 
         const existingId = existingByPlan?.id ?? existingByDate?.id
         if (existingId) {
+          const updatePayload: Record<string, string | null> = {
+            pco_plan_id: plan.id,
+            name:        eventName,
+          }
+          if (eventTime) updatePayload.event_time = eventTime
+
           const { error: upErr } = await supabase
             .from('events')
-            .update({ pco_plan_id: plan.id, name: eventName })
+            .update(updatePayload)
             .eq('id', existingId)
           upsertErr = upErr
         } else {

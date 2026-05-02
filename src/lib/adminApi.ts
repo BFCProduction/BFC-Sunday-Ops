@@ -68,7 +68,9 @@ export interface PcoPlanResult {
   title:        string | null
   series_title: string | null
   event_date:   string
+  event_time:   string | null
   display_date: string
+  display_time: string | null
 }
 
 export interface PcoServiceTypePlans {

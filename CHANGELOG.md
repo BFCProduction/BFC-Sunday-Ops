@@ -31,6 +31,11 @@ Started the event-native compatibility cleanup after the Home / Events IA work. 
   - Dashboard progress and role bars now read the active event checklist snapshot.
   - Report export now uses event checklist snapshots for Sunday services and standalone events.
 - Updated `TemplateManager` so reusable template items can preserve and edit checklist roles.
+- Fixed PCO-linked event times for standalone events.
+  - `pco-plans` now returns event times from PCO `plan_times`, not the misleading `sort_date` timestamp.
+  - Quick Create stores the selected PCO plan time into `events.event_time`.
+  - `pco-sync` refreshes stored event times for linked events.
+  - `pco-plan-times` and `pco-plan-items` now try all configured PCO service type ids when an older event was linked under the wrong Sunday Ops type.
 - Removed the retired `fetchReportData()` / legacy Service Data reporting wrapper from `src/lib/reportData.ts`; Settings report export remains event-native through `fetchEventReportData()`.
 - Updated README notes for the first cleanup slice and the remaining compatibility work.
 
@@ -38,6 +43,7 @@ Started the event-native compatibility cleanup after the Home / Events IA work. 
 
 - Focused ESLint passed for touched app files with the existing `react-hooks/exhaustive-deps` warning in `src/App.tsx`.
 - `npm run build` passed. Vite still reports the existing large chunk warning.
+- Deployed updated PCO Edge Functions (`pco-plans`, `pco-sync`, `pco-plan-times`, `pco-plan-items`) and ran one production PCO sync.
 
 ### Next
 

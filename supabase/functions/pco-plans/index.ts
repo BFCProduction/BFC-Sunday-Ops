@@ -21,6 +21,7 @@ const ALLOWED_ORIGINS = [
 ]
 
 const PCO_API_BASE = 'https://api.planningcenteronline.com/services/v2'
+const DEFAULT_TIMEZONE = 'America/Chicago'
 
 function corsHeaders(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -36,6 +37,44 @@ function json(cors: Record<string, string>, status: number, body: unknown) {
     status,
     headers: { ...cors, 'Content-Type': 'application/json' },
   })
+}
+
+function timeInTimezone(iso: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour:     '2-digit',
+    minute:   '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(iso))
+
+  const value = (type: string) => parts.find(part => part.type === type)?.value
+  const hour = value('hour')
+  const minute = value('minute')
+
+  return hour && minute ? `${hour}:${minute}:00` : null
+}
+
+function displayTimeInTimezone(iso: string, timezone: string) {
+  return new Date(iso).toLocaleTimeString('en-US', {
+    hour:     'numeric',
+    minute:   '2-digit',
+    timeZone: timezone,
+  })
+}
+
+function dateInTimezone(iso: string, timezone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year:     'numeric',
+    month:    '2-digit',
+    day:      '2-digit',
+  }).formatToParts(new Date(iso))
+
+  const year  = parts.find(part => part.type === 'year')?.value
+  const month = parts.find(part => part.type === 'month')?.value
+  const day   = parts.find(part => part.type === 'day')?.value
+
+  return year && month && day ? `${year}-${month}-${day}` : iso.slice(0, 10)
 }
 
 interface ServiceType {
@@ -55,12 +94,49 @@ interface PcoPlan {
   }
 }
 
+interface PcoPlanTime {
+  attributes: {
+    starts_at: string | null
+    time_type: string | null
+  }
+}
+
+async function fetchPlanEventTime(
+  pcoToken: string,
+  pcoServiceTypeId: string,
+  planId: string,
+  eventDate: string,
+  timezone: string,
+) {
+  const url = `${PCO_API_BASE}/service_types/${pcoServiceTypeId}/plans/${planId}/plan_times`
+    + `?per_page=100&order=starts_at`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${pcoToken}` },
+  })
+
+  if (!res.ok) return null
+
+  const body = await res.json() as { data: PcoPlanTime[] }
+  const times = (body.data ?? [])
+    .filter(time => !!time.attributes.starts_at)
+    .filter(time => dateInTimezone(time.attributes.starts_at!, timezone) === eventDate)
+  const first = times.find(time => time.attributes.time_type === 'service') ?? times[0]
+  if (!first?.attributes.starts_at) return null
+
+  return {
+    event_time: timeInTimezone(first.attributes.starts_at, timezone),
+    display_time: displayTimeInTimezone(first.attributes.starts_at, timezone),
+  }
+}
+
 export interface PcoPlanResult {
   id:           string
   title:        string | null
   series_title: string | null
   event_date:   string         // YYYY-MM-DD
+  event_time:   string | null  // HH:MM:SS in church timezone
   display_date: string         // human-readable, e.g. "Jan 5, 2026"
+  display_time: string | null
 }
 
 export interface PcoServiceTypeResult {
@@ -116,6 +192,16 @@ Deno.serve(async (req) => {
     return json(cors, 200, { service_types: [] })
   }
 
+  const { data: timezoneRow } = await supabase
+    .from('app_config')
+    .select('value')
+    .eq('key', 'church_timezone')
+    .maybeSingle()
+
+  const timezone = typeof timezoneRow?.value === 'string'
+    ? timezoneRow.value
+    : DEFAULT_TIMEZONE
+
   // ── 3. Fetch plans for each service type ─────────────────────────────────
   const results: PcoServiceTypeResult[] = []
 
@@ -159,10 +245,20 @@ Deno.serve(async (req) => {
       })
     }
 
-    const filtered: PcoPlanResult[] = plans
+    const uniquePlans = plans
       .filter(p => !!p.attributes.sort_date)
-      .map(p => {
-        const eventDate = p.attributes.sort_date!.slice(0, 10)
+      .filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
+
+    const filtered: PcoPlanResult[] = (await Promise.all(uniquePlans.map(async p => {
+        const sortDate = p.attributes.sort_date!
+        const eventDate = sortDate.slice(0, 10)
+        const planTime = await fetchPlanEventTime(
+          pcoToken,
+          st.pco_service_type_id,
+          p.id,
+          eventDate,
+          timezone,
+        )
         const d = new Date(eventDate + 'T12:00:00')
         const displayDate = d.toLocaleDateString('en-US', {
           weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
@@ -172,11 +268,15 @@ Deno.serve(async (req) => {
           title:        p.attributes.title || null,
           series_title: p.attributes.series_title || null,
           event_date:   eventDate,
+          event_time:   planTime?.event_time ?? null,
           display_date: displayDate,
+          display_time: planTime?.display_time ?? null,
         }
-      })
-      .filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
-      .sort((a, b) => b.event_date.localeCompare(a.event_date))
+      })))
+      .sort((a, b) =>
+        b.event_date.localeCompare(a.event_date) ||
+        (b.event_time ?? '').localeCompare(a.event_time ?? '')
+      )
 
     results.push({ slug: st.slug, name: st.name, plans: filtered, _debug: debugLog } as unknown as PcoServiceTypeResult)
   }

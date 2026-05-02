@@ -158,6 +158,19 @@ Deno.serve(async (req) => {
     return json(cors, 200, { schedule: [] })
   }
 
+  const candidateServiceTypeIds: string[] = [serviceType.pco_service_type_id]
+  const { data: allServiceTypes } = await supabase
+    .from('service_types')
+    .select('pco_service_type_id')
+    .not('pco_service_type_id', 'is', null)
+
+  for (const row of allServiceTypes ?? []) {
+    const pcoServiceTypeId = row.pco_service_type_id as string | null
+    if (pcoServiceTypeId && !candidateServiceTypeIds.includes(pcoServiceTypeId)) {
+      candidateServiceTypeIds.push(pcoServiceTypeId)
+    }
+  }
+
   // ── 3. Use the configured church timezone to keep this a "today" schedule ─
   const { data: timezoneRow } = await supabase
     .from('app_config')
@@ -170,25 +183,37 @@ Deno.serve(async (req) => {
     : DEFAULT_TIMEZONE
 
   // ── 4. Fetch and normalize the plan's scheduled times from PCO ────────────
-  const url = `${PCO_API_BASE}/service_types/${serviceType.pco_service_type_id}`
-    + `/plans/${typedEvent.pco_plan_id}/plan_times`
-    + `?per_page=100&order=starts_at`
-
   let planTimes: PcoPlanTime[] = []
-  try {
-    const pcoRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${pcoToken}` },
-    })
+  let lastFetchError: { status: number; message: string } | null = null
 
-    if (!pcoRes.ok) {
-      const errText = await pcoRes.text().catch(() => '')
-      return json(cors, pcoRes.status, {
-        error: `PCO API ${pcoRes.status}: ${errText.slice(0, 200)}`,
+  try {
+    for (const pcoServiceTypeId of candidateServiceTypeIds) {
+      const url = `${PCO_API_BASE}/service_types/${pcoServiceTypeId}`
+        + `/plans/${typedEvent.pco_plan_id}/plan_times`
+        + `?per_page=100&order=starts_at`
+
+      const pcoRes = await fetch(url, {
+        headers: { Authorization: `Bearer ${pcoToken}` },
       })
+
+      if (!pcoRes.ok) {
+        const errText = await pcoRes.text().catch(() => '')
+        lastFetchError = {
+          status: pcoRes.status,
+          message: `PCO API ${pcoRes.status}: ${errText.slice(0, 200)}`,
+        }
+        if (pcoRes.status === 404) continue
+        return json(cors, pcoRes.status, { error: lastFetchError.message })
+      }
+
+      const body = await pcoRes.json() as { data: PcoPlanTime[] }
+      planTimes = body.data ?? []
+      break
     }
 
-    const body = await pcoRes.json() as { data: PcoPlanTime[] }
-    planTimes = body.data ?? []
+    if (planTimes.length === 0 && lastFetchError) {
+      return json(cors, lastFetchError.status, { error: lastFetchError.message })
+    }
   } catch (err) {
     return json(cors, 502, {
       error: err instanceof Error ? err.message : 'Unable to fetch PCO plan times',

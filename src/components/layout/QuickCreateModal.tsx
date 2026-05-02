@@ -80,9 +80,13 @@ function PcoPlanPicker({
   const visiblePlans = (activeGroup?.plans ?? []).filter(p =>
     !q ||
     p.display_date.toLowerCase().includes(q) ||
+    (p.display_time?.toLowerCase().includes(q) ?? false) ||
     (p.title?.toLowerCase().includes(q) ?? false) ||
     (p.series_title?.toLowerCase().includes(q) ?? false)
-  ).sort((a, b) => a.event_date.localeCompare(b.event_date))
+  ).sort((a, b) =>
+    a.event_date.localeCompare(b.event_date) ||
+    (a.event_time ?? '').localeCompare(b.event_time ?? '')
+  )
 
   return (
     <div
@@ -172,11 +176,15 @@ function PcoPlanPicker({
                 {isStandaloneEventTab && label ? (
                   <>
                     <p className="text-sm font-medium text-gray-900">{label}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{plan.display_date}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {[plan.display_date, plan.display_time].filter(Boolean).join(' · ')}
+                    </p>
                   </>
                 ) : (
                   <>
-                    <p className="text-sm font-medium text-gray-900">{plan.display_date}</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {[plan.display_date, plan.display_time].filter(Boolean).join(' · ')}
+                    </p>
                     {label && <p className="text-xs text-gray-500 mt-0.5">{label}</p>}
                   </>
                 )}
@@ -266,12 +274,12 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
 
   function handlePcoPlanSelect(plan: PcoPlanResult, selectedSlug: string) {
     setServiceTypeSlug(selectedSlug)
-    setTime(SERVICE_TYPES.find(s => s.slug === selectedSlug)?.defaultTime ?? '')
+    setTime(plan.event_time?.slice(0, 5) ?? SERVICE_TYPES.find(s => s.slug === selectedSlug)?.defaultTime ?? '')
     setPcoPlanId(plan.id)
     // Build a descriptive label for the linked-plan badge
     const label = plan.title || plan.series_title
-      ? `${plan.display_date}${plan.title ? ' · ' + plan.title : plan.series_title ? ' · ' + plan.series_title : ''}`
-      : plan.display_date
+      ? `${[plan.display_date, plan.display_time].filter(Boolean).join(' · ')}${plan.title ? ' · ' + plan.title : plan.series_title ? ' · ' + plan.series_title : ''}`
+      : [plan.display_date, plan.display_time].filter(Boolean).join(' · ')
     setPcoPlanLabel(label)
 
     // Auto-fill name if it's empty and we got a title from PCO
