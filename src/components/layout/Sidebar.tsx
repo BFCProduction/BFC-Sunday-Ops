@@ -3,7 +3,7 @@ import {
   Home, LayoutDashboard, ClipboardCheck, AlertTriangle,
   BarChart2, Star, Calendar, Radio, BookOpen, ExternalLink,
   Settings, ChevronLeft, ChevronRight, RotateCcw, TrendingUp,
-  CalendarDays, ChevronDown, Plus, FolderOpen,
+  CalendarDays, ChevronDown, Plus, FolderOpen, List,
 } from 'lucide-react'
 import { SessionPicker } from './SessionPicker'
 import { QuickCreateModal } from './QuickCreateModal'
@@ -231,6 +231,13 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
           <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-widest text-gray-700">
             {isHome ? 'Global Tools' : 'Global'}
           </p>
+          {isHome && isAdmin && (
+            <button onClick={() => setShowPicker(true)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]">
+              <List className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.8} />
+              <span className="flex-1 leading-tight">Manage Events</span>
+            </button>
+          )}
           {isAdmin && (
             <button onClick={() => setActive('analytics')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${

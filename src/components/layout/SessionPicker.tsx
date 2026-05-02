@@ -165,7 +165,6 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, i
     return (
       <button
         onClick={e => handleDeleteClick(e, s.id)}
-        onMouseLeave={() => { if (confirmingId === s.id) setConfirmingId(null) }}
         disabled={isDeleting}
         className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all
           opacity-0 group-hover:opacity-100 focus:opacity-100

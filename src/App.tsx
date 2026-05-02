@@ -202,7 +202,7 @@ function AppMain() {
       navigateToEvent, navigateSunday,
     }}>
       <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#111827' }}>
-        <SiteHeader allSessions={allSessions} onGoToDashboard={() => setScreen('home')} />
+        <SiteHeader allSessions={allSessions} onGoToDashboard={() => setScreen('home')} onSessionsChange={setAllSessions} />
         <div className="flex flex-1 min-h-0">
           <Sidebar
             active={screen}

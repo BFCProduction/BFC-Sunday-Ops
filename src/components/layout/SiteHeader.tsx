@@ -4,21 +4,24 @@ import bfcLogo from '../../assets/BFC_Production_Logo_Hor reverse.png'
 import { getServicePhase, type ServicePhase } from '../../lib/serviceStatus'
 import { useSunday } from '../../context/SundayContext'
 import { useAuth }   from '../../context/authState'
+import { deleteEventAsAdmin } from '../../lib/adminApi'
+import { loadAllSessions } from '../../lib/supabase'
 import { SessionPicker } from './SessionPicker'
 import type { Session } from '../../types'
 
 interface SiteHeaderProps {
   allSessions: Session[]
   onGoToDashboard: () => void
+  onSessionsChange: (sessions: Session[]) => void
 }
 
-export function SiteHeader({ allSessions, onGoToDashboard }: SiteHeaderProps) {
+export function SiteHeader({ allSessions, onGoToDashboard, onSessionsChange }: SiteHeaderProps) {
   const {
     timezone, activeEventId, sessionDate,
     serviceTypeSlug, serviceTypeColor, eventName,
     navigateToEvent,
   } = useSunday()
-  const { user, isAdmin, logout } = useAuth()
+  const { user, isAdmin, sessionToken, logout } = useAuth()
 
   const [phase, setPhase] = useState<ServicePhase | null>(() => getServicePhase(new Date(), timezone))
   const [showPicker, setShowPicker] = useState(false)
@@ -148,6 +151,15 @@ export function SiteHeader({ allSessions, onGoToDashboard }: SiteHeaderProps) {
           activeEventId={activeEventId}
           onSelect={navigateToEvent}
           onClose={() => setShowPicker(false)}
+          isAdmin={isAdmin}
+          onDelete={sessionToken ? async (id) => {
+            const idx = allSessions.findIndex(s => s.id === id)
+            await deleteEventAsAdmin(sessionToken, id)
+            const fresh = await loadAllSessions()
+            onSessionsChange(fresh)
+            const fallback = fresh[Math.max(0, Math.min(idx, fresh.length - 1))] ?? fresh[0]
+            if (fallback) navigateToEvent(fallback.id)
+          } : undefined}
         />
       )}
     </header>
