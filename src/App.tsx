@@ -131,11 +131,12 @@ function AppMain() {
       await refreshIssueCount(focusSession)
 
       // Background PCO sync — fire after sessions are loaded so the UI isn't
-      // blocked, then reload sessions when done to surface newly synced events.
+      // blocked. PCO sync only updates names/pco_plan_id on existing events;
+      // it never creates or deletes rows. We do not reload sessions afterward
+      // because a stale loadAllSessions() racing with an in-progress deletion
+      // would overwrite state and make the deleted event reappear.
       if (sessionToken) {
         triggerPcoSync(sessionToken)
-          .then(() => loadAllSessions())
-          .then(fresh => setAllSessions(fresh))
           .catch(err => console.warn('PCO auto-sync failed (non-fatal):', err))
       }
     }
