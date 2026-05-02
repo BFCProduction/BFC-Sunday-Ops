@@ -1,5 +1,51 @@
 # Changelog
 
+## 2026-05-02 (Session 19)
+
+### Summary
+
+Started the event-native compatibility cleanup after the Home / Events IA work. This pass removes dead legacy UI surfaces, fixes standalone event creation so new template-backed checklists use the unified `events.id` path rather than the old `special_events` bridge, and migrates regular Sunday services onto per-event checklist snapshots.
+
+### Completed
+
+- Updated `src/lib/supabase.ts`.
+  - `createEvent()` no longer creates a `special_events` row for new standalone events.
+  - Standalone event template seeding now inserts `event_checklist_items.event_id = events.id`.
+  - `getOrCreateTodayEvents()` and Sunday `createEvent()` now seed `event_checklist_items` snapshots from the service-type checklist blueprint.
+  - Added `ensureEventChecklistSeeded()` so existing Sunday events can lazily get a snapshot if the migration has not touched them yet.
+  - Removed deprecated `createSpecialEvent()`, `getSpecialEventByDate()`, and `getOrCreateSunday()` exports.
+- Added `supabase/migrations/042_event_checklist_snapshots_for_sundays.sql`.
+  - Adds `role` to event checklist/template rows.
+  - Snapshots existing Sunday `checklist_items` into `event_checklist_items`.
+  - Copies legacy `checklist_completions` into `event_checklist_completions` by matching each event snapshot row to its source checklist item.
+- Removed dead legacy UI files:
+  - `src/screens/EventChecklist.tsx`
+  - `src/components/admin/SpecialEventManager.tsx`
+  - `src/screens/ServiceData/Reporting.tsx`
+- Simplified active session context.
+  - Removed the legacy `eventId` and `sessionType` fields from `SundayContext`.
+  - `Checklist` now uses the event checklist tables for Sunday services and standalone events.
+  - `Home` and `SessionPicker` classify standalone events from `serviceTypeSlug` instead of `legacySpecialEventId`.
+- Updated Home, Dashboard, and report export checklist signals.
+  - Home readiness/checklist counts now read `event_checklist_items` / `event_checklist_completions` for every visible session.
+  - Dashboard progress and role bars now read the active event checklist snapshot.
+  - Report export now uses event checklist snapshots for Sunday services and standalone events.
+- Updated `TemplateManager` so reusable template items can preserve and edit checklist roles.
+- Removed the retired `fetchReportData()` / legacy Service Data reporting wrapper from `src/lib/reportData.ts`; Settings report export remains event-native through `fetchEventReportData()`.
+- Updated README notes for the first cleanup slice and the remaining compatibility work.
+
+### Verification
+
+- Focused ESLint passed for touched app files with the existing `react-hooks/exhaustive-deps` warning in `src/App.tsx`.
+- `npm run build` passed. Vite still reports the existing large chunk warning.
+
+### Next
+
+- Continue removing legacy Sunday fallback reads from the remaining data tabs once attendance/runtime/loudness/evaluation coverage is fully event-native.
+- Live-verify the YouTube relay and standalone/event-scoped runtime behavior.
+
+---
+
 ## 2026-04-26 (Session 18)
 
 ### Summary

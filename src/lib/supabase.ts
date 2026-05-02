@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { getUpcomingSundayDateString, CHURCH_TIME_ZONE } from './churchTime'
+import { CHECKLIST_ITEMS } from '../data/checklist'
 import type { Session } from '../types'
 
 const supabaseUrl    = import.meta.env.VITE_SUPABASE_URL    as string
@@ -36,11 +37,21 @@ interface EventRow {
   }
 }
 
+interface ChecklistBlueprintRow {
+  id: number
+  task: string
+  role: string
+  section: string
+  subsection: string | null
+  note: string | null
+  sort_order: number
+  service_type_slug: string | null
+}
+
 function rowToSession(row: EventRow): Session {
   const slug = row.service_types.slug
   return {
     id:                    row.id,
-    type:                  slug.startsWith('sunday') ? 'sunday' : 'event',
     serviceTypeSlug:       slug,
     serviceTypeName:       row.service_types.name,
     serviceTypeColor:      row.service_types.color,
@@ -184,30 +195,39 @@ export async function getOrCreateTodayEvents(
   const { data: existing9am } = await supabase
     .from('events').select('id').eq('service_type_id', st9am.id).eq('event_date', today).maybeSingle()
 
+  let event9amId = existing9am?.id ?? null
   if (!existing9am) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('events')
       .insert({ service_type_id: st9am.id, name: formatName('Sunday 9:00 AM'), event_date: today, event_time: '09:00:00', legacy_sunday_id: sundayId })
       .select('id').single()
     if (error) throw error
+    event9amId = data.id
   }
 
   // Get-or-create 11am event
   const { data: existing11am } = await supabase
     .from('events').select('id').eq('service_type_id', st11am.id).eq('event_date', today).maybeSingle()
 
+  let event11amId = existing11am?.id ?? null
   if (!existing11am) {
-    await supabase
+    const { data, error } = await supabase
       .from('events')
       .insert({ service_type_id: st11am.id, name: formatName('Sunday 11:00 AM'), event_date: today, event_time: '11:00:00', legacy_sunday_id: sundayId })
+      .select('id').single()
+    if (error) throw error
+    event11amId = data.id
   }
+
+  if (event9amId) await ensureEventChecklistSeeded(event9amId, 'sunday-9am')
+  if (event11amId) await ensureEventChecklistSeeded(event11amId, 'sunday-11am')
 
   return { sundayDate: today }
 }
 
-// ── Legacy helpers (kept for transition; used by App.tsx focus logic) ─────────
+// ── Sunday bridge helpers ────────────────────────────────────────────────────
 
-export async function getSundayByDate(date: string): Promise<{ id: string; date: string } | null> {
+async function getSundayByDate(date: string): Promise<{ id: string; date: string } | null> {
   const { data } = await supabase
     .from('sundays')
     .select('id, date')
@@ -229,14 +249,75 @@ async function ensureSundayId(date: string): Promise<string> {
   return data.id
 }
 
+async function loadOrSeedChecklistBlueprintItems(serviceTypeSlug: string): Promise<ChecklistBlueprintRow[]> {
+  const { data, error } = await supabase
+    .from('checklist_items')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true })
+  if (error) throw error
+
+  let rows = (data || []) as ChecklistBlueprintRow[]
+
+  if (rows.length === 0) {
+    const seedData = CHECKLIST_ITEMS.map((item, idx) => ({
+      task: item.task,
+      role: item.role,
+      section: item.section,
+      subsection: item.subsection || null,
+      note: item.note || null,
+      sort_order: idx,
+      service_type_slug: null,
+    }))
+
+    const { data: seeded, error: seedError } = await supabase
+      .from('checklist_items')
+      .insert(seedData)
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('id', { ascending: true })
+    if (seedError) throw seedError
+    rows = (seeded || []) as ChecklistBlueprintRow[]
+  }
+
+  return rows.filter(item => item.service_type_slug === null || item.service_type_slug === serviceTypeSlug)
+}
+
+export async function ensureEventChecklistSeeded(eventId: string, serviceTypeSlug: string): Promise<void> {
+  if (!eventId || !serviceTypeSlug.startsWith('sunday')) return
+
+  const { count, error: countError } = await supabase
+    .from('event_checklist_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventId)
+  if (countError) throw countError
+  if ((count ?? 0) > 0) return
+
+  const blueprintItems = await loadOrSeedChecklistBlueprintItems(serviceTypeSlug)
+  if (blueprintItems.length === 0) return
+
+  const { error: insertError } = await supabase.from('event_checklist_items').insert(
+    blueprintItems.map(item => ({
+      event_id: eventId,
+      source_checklist_item_id: item.id,
+      label: item.task,
+      role: item.role,
+      section: item.section,
+      subsection: item.subsection,
+      item_notes: item.note,
+      sort_order: item.sort_order,
+    })),
+  )
+  if (insertError) throw insertError
+}
+
 /**
- * Create any type of event (9am, 11am, or special) — the unified replacement
- * for createSpecialEvent().
+ * Create any type of event (9am, 11am, or standalone).
  *
- * • For special events: also creates a legacy special_events row and seeds
- *   event_checklist_items from the template if provided.
- * • For Sunday services (9am/11am): only creates the events row. The regular
- *   Sunday checklist is service-type–driven, not event-specific.
+ * • For standalone events: seeds event_checklist_items directly with events.id
+ *   when a template is provided.
+ * • For Sunday services (9am/11am): seeds an event-scoped snapshot from the
+ *   service-type checklist blueprint.
  *
  * Returns the new events.id so the caller can navigate to the event.
  */
@@ -260,32 +341,7 @@ export async function createEvent(opts: {
   const isSpecial = opts.serviceTypeSlug === 'special'
   const isSundayService = opts.serviceTypeSlug === 'sunday-9am' || opts.serviceTypeSlug === 'sunday-11am'
 
-  let legacySpecialId: string | null = null
   let legacySundayId: string | null = null
-
-  if (isSpecial) {
-    // Create legacy special_events row (required for EventChecklist compatibility)
-    const { data: se, error: seErr } = await supabase
-      .from('special_events')
-      .insert({
-        name:       opts.name,
-        event_date: opts.event_date,
-        event_time: opts.event_time,
-        notes:      opts.notes ?? null,
-      })
-      .select('id')
-      .single()
-    if (seErr || !se) throw seErr ?? new Error('Failed to create special_events row')
-    legacySpecialId = se.id
-
-    // Link template if provided
-    if (opts.templateId) {
-      await supabase
-        .from('special_events')
-        .update({ template_id: opts.templateId })
-        .eq('id', se.id)
-    }
-  }
 
   if (isSundayService) {
     legacySundayId = await ensureSundayId(opts.event_date)
@@ -302,14 +358,14 @@ export async function createEvent(opts: {
       notes:                   opts.notes ?? null,
       pco_plan_id:             opts.pco_plan_id ?? null,
       legacy_sunday_id:        legacySundayId,
-      legacy_special_event_id: legacySpecialId,
+      legacy_special_event_id: null,
     })
     .select('id')
     .single()
   if (evErr || !ev) throw evErr ?? new Error('Failed to create events row')
 
-  // Seed checklist items from template (special events only)
-  if (isSpecial && legacySpecialId && opts.templateId) {
+  // Seed checklist items from template (standalone events only)
+  if (isSpecial && opts.templateId) {
     const { data: templateItems } = await supabase
       .from('event_template_items')
       .select('*')
@@ -317,146 +373,35 @@ export async function createEvent(opts: {
       .order('sort_order')
 
     if (templateItems && templateItems.length > 0) {
-      await supabase.from('event_checklist_items').insert(
+      const { error: templateInsertError } = await supabase.from('event_checklist_items').insert(
         templateItems.map((ti: {
           id: string
           source_checklist_item_id: number | null
           label: string
+          role?: string | null
           section: string
           subsection: string | null
           item_notes: string | null
           sort_order: number | null
         }, idx: number) => ({
-          event_id:                 legacySpecialId,
+          event_id:                 ev.id,
           source_template_item_id:  ti.id,
           source_checklist_item_id: ti.source_checklist_item_id,
           label:                    ti.label,
+          role:                     ti.role ?? null,
           section:                  ti.section,
           subsection:               ti.subsection,
           item_notes:               ti.item_notes,
           sort_order:               ti.sort_order ?? idx,
         }))
       )
+      if (templateInsertError) throw templateInsertError
     }
   }
 
-  return ev.id
-}
-
-/** @deprecated Use getFirstEventForDate instead */
-export async function getSpecialEventByDate(date: string) {
-  const { data } = await supabase
-    .from('special_events')
-    .select('*')
-    .eq('event_date', date)
-    .maybeSingle()
-  return data
-}
-
-/**
- * Create a new special event — inserts into both special_events (for legacy
- * EventChecklist/issues compat) and events (for sidebar navigation).
- * If templateId is provided, seeds event_checklist_items from the template.
- * Returns the new events.id so the caller can navigate to it.
- */
-export async function createSpecialEvent(opts: {
-  name: string
-  event_date: string
-  event_time: string | null
-  notes?: string | null
-  templateId?: string | null
-}): Promise<string> {
-  // Look up the 'special' service type
-  const { data: st, error: stErr } = await supabase
-    .from('service_types')
-    .select('id')
-    .eq('slug', 'special')
-    .single()
-  if (stErr || !st) throw new Error('Special service type not found')
-
-  // Insert into special_events (legacy — needed for EventChecklist)
-  const { data: se, error: seErr } = await supabase
-    .from('special_events')
-    .insert({
-      name:       opts.name,
-      event_date: opts.event_date,
-      event_time: opts.event_time,
-      notes:      opts.notes ?? null,
-    })
-    .select('id')
-    .single()
-  if (seErr || !se) throw seErr ?? new Error('Failed to create special event')
-
-  // Insert into events (unified model — required for sidebar nav)
-  const { data: ev, error: evErr } = await supabase
-    .from('events')
-    .insert({
-      service_type_id:       st.id,
-      name:                  opts.name,
-      event_date:            opts.event_date,
-      event_time:            opts.event_time,
-      legacy_special_event_id: se.id,
-    })
-    .select('id')
-    .single()
-  if (evErr || !ev) throw evErr ?? new Error('Failed to create events row')
-
-  // If a template was selected, seed checklist items and link template
-  if (opts.templateId) {
-    // Update special_events.template_id
-    await supabase
-      .from('special_events')
-      .update({ template_id: opts.templateId })
-      .eq('id', se.id)
-
-    // Load template items
-    const { data: templateItems } = await supabase
-      .from('event_template_items')
-      .select('*')
-      .eq('template_id', opts.templateId)
-      .order('sort_order')
-
-    if (templateItems && templateItems.length > 0) {
-      await supabase.from('event_checklist_items').insert(
-        templateItems.map((ti: {
-          id: string
-          source_checklist_item_id: number | null
-          label: string
-          section: string
-          subsection: string | null
-          item_notes: string | null
-          sort_order: number | null
-        }, idx: number) => ({
-          event_id:                 se.id,
-          source_template_item_id:  ti.id,
-          source_checklist_item_id: ti.source_checklist_item_id,
-          label:                    ti.label,
-          section:                  ti.section,
-          subsection:               ti.subsection,
-          item_notes:               ti.item_notes,
-          sort_order:               ti.sort_order ?? idx,
-        }))
-      )
-    }
+  if (isSundayService) {
+    await ensureEventChecklistSeeded(ev.id, opts.serviceTypeSlug)
   }
 
   return ev.id
-}
-
-/** @deprecated Use getOrCreateTodayEvents instead */
-export async function getOrCreateSunday(timezone = CHURCH_TIME_ZONE) {
-  const today = getUpcomingSundayDateString(new Date(), timezone)
-  const { data: existing } = await supabase
-    .from('sundays')
-    .select('*')
-    .eq('date', today)
-    .single()
-  if (existing) return existing
-  const { data: created, error } = await supabase
-    .from('sundays')
-    .insert({ date: today })
-    .select()
-    .single()
-  if (error) throw error
-  return created
 }

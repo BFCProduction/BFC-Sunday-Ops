@@ -5,9 +5,8 @@ import {
   Newspaper, Plus, Settings as SettingsIcon, Star, TrendingUp, BookOpen,
   type LucideIcon,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { ensureEventChecklistSeeded, supabase } from '../lib/supabase'
 import { getChurchDateString } from '../lib/churchTime'
-import { loadOrSeedChecklistItems, type ChecklistItemRecord } from '../lib/checklist'
 import { changelogUrl, releaseNotes, type ReleaseNote } from '../lib/releaseNotes'
 import { useSunday } from '../context/SundayContext'
 import { useAdmin } from '../context/adminState'
@@ -72,14 +71,12 @@ function formatTime(time: string | null) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-// Compatibility bridge only: Home presents every row as an event while older
-// checklist storage still has two backing shapes.
 function usesEventScopedChecklist(session: Session) {
-  return session.legacySpecialEventId !== null || session.serviceTypeSlug === 'special'
+  return Boolean(session.id)
 }
 
 function eventTypeLabel(session: Session) {
-  return usesEventScopedChecklist(session) ? 'Event' : session.serviceTypeName
+  return session.serviceTypeName
 }
 
 function eventTitle(session: Session) {
@@ -154,16 +151,6 @@ function groupItemIdsByEvent<Row extends { event_id: string | null; item_id?: nu
     if (rawId == null) continue
     if (!grouped[row.event_id]) grouped[row.event_id] = new Set()
     grouped[row.event_id].add(String(rawId))
-  }
-  return grouped
-}
-
-function groupLegacyCompletionIds(rows: Array<{ sunday_id: string | null; item_id: number | null }>) {
-  const grouped: Record<string, Set<string>> = {}
-  for (const row of rows) {
-    if (!row.sunday_id || row.item_id == null) continue
-    if (!grouped[row.sunday_id]) grouped[row.sunday_id] = new Set()
-    grouped[row.sunday_id].add(String(row.item_id))
   }
   return grouped
 }
@@ -603,34 +590,21 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
     const sessions = ids
       .map(id => sortedSessions.find(session => session.id === id))
       .filter((session): session is Session => Boolean(session))
-    const sharedChecklistSessions = sessions.filter(session => !usesEventScopedChecklist(session))
-    const legacyChecklistIds = Array.from(new Set(sharedChecklistSessions.map(session => session.legacySundayId).filter(Boolean))) as string[]
-    const sharedChecklistSlugs = Array.from(new Set(sharedChecklistSessions.map(session => session.serviceTypeSlug)))
-    const eventScopedChecklistIds = sessions
-      .filter(usesEventScopedChecklist)
-      .map(session => session.id)
+    const eventScopedChecklistIds = sessions.map(session => session.id)
 
     async function loadEventSignals() {
       try {
+        await Promise.all(
+          sessions
+            .filter(session => session.serviceTypeSlug.startsWith('sunday'))
+            .map(session => ensureEventChecklistSeeded(session.id, session.serviceTypeSlug)),
+        )
+
         const [
-          baseChecklistItems,
-          nativeCompletionRes,
-          legacyCompletionRes,
           eventScopedItemRes,
           eventScopedCompletionRes,
           evaluationRes,
         ] = await Promise.all([
-          loadOrSeedChecklistItems(),
-          supabase
-            .from('checklist_completions')
-            .select('event_id, sunday_id, item_id')
-            .in('event_id', ids),
-          legacyChecklistIds.length > 0
-            ? supabase
-              .from('checklist_completions')
-              .select('sunday_id, item_id')
-              .in('sunday_id', legacyChecklistIds)
-            : Promise.resolve({ data: [], error: null }),
           eventScopedChecklistIds.length > 0
             ? supabase
               .from('event_checklist_items')
@@ -652,8 +626,6 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
         if (cancelled) return
 
         for (const result of [
-          nativeCompletionRes,
-          legacyCompletionRes,
           eventScopedItemRes,
           eventScopedCompletionRes,
           evaluationRes,
@@ -661,21 +633,6 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
           if (result.error) throw result.error
         }
 
-        const baseItemsBySlug: Record<string, Set<string>> = {}
-        for (const slug of sharedChecklistSlugs) {
-          baseItemsBySlug[slug] = new Set(
-            (baseChecklistItems as ChecklistItemRecord[])
-              .filter(item => item.service_type_slug === null || item.service_type_slug === slug)
-              .map(item => String(item.id)),
-          )
-        }
-
-        const nativeCompletions = groupItemIdsByEvent(
-          (nativeCompletionRes.data ?? []) as Array<{ event_id: string | null; item_id: number | null }>,
-        )
-        const legacyCompletions = groupLegacyCompletionIds(
-          (legacyCompletionRes.data ?? []) as Array<{ sunday_id: string | null; item_id: number | null }>,
-        )
         const eventScopedItems = groupItemIdsByEvent(
           (eventScopedItemRes.data ?? []) as Array<{ event_id: string | null; id: string }>,
           true,
@@ -686,23 +643,11 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
 
         const nextChecklistStats: Record<string, ChecklistStats> = {}
         for (const session of sessions) {
-          if (usesEventScopedChecklist(session)) {
-            const itemIds = eventScopedItems[session.id] ?? new Set<string>()
-            nextChecklistStats[session.id] = makeChecklistStats(
-              countMatching(eventScopedCompletions[session.id], itemIds),
-              itemIds.size,
-            )
-            continue
-          }
-
-          const itemIds = baseItemsBySlug[session.serviceTypeSlug] ?? new Set<string>()
-          const nativeDoneIds = nativeCompletions[session.id]
-          const legacyDoneIds = session.legacySundayId
-            ? legacyCompletions[session.legacySundayId]
-            : undefined
-          const doneIds = nativeDoneIds && nativeDoneIds.size > 0 ? nativeDoneIds : legacyDoneIds
-
-          nextChecklistStats[session.id] = makeChecklistStats(countMatching(doneIds, itemIds), itemIds.size)
+          const itemIds = eventScopedItems[session.id] ?? new Set<string>()
+          nextChecklistStats[session.id] = makeChecklistStats(
+            countMatching(eventScopedCompletions[session.id], itemIds),
+            itemIds.size,
+          )
         }
 
         const nextEvaluationCounts: Record<string, number> = {}

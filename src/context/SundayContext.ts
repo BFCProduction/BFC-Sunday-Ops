@@ -17,14 +17,10 @@ export interface SundayContextType {
   sundayId: string
   /** The Sunday date (YYYY-MM-DD) — same for both 9am and 11am events */
   sundayDate: string
-  /** special_events.id — set for special events; null for Sunday services */
-  eventId: string | null
-  /** Display name of the special event; null for Sunday services */
+  /** Display name of a named/standalone event; null for regular Sunday services */
   eventName: string | null
 
   // ── Common session fields ────────────────────────────────────────────────
-  /** 'sunday' for 9am/11am services, 'event' for special events */
-  sessionType: 'sunday' | 'event'
   /** ISO date string (YYYY-MM-DD) of the currently viewed session */
   sessionDate: string
 
@@ -54,9 +50,7 @@ export const SundayContext = createContext<SundayContextType>({
   serviceTypeColor: '#3b82f6',
   sundayId:         '',
   sundayDate:       '',
-  eventId:          null,
   eventName:        null,
-  sessionType:      'sunday',
   sessionDate:      '',
   timezone:         CHURCH_TIME_ZONE,
   todaySundayDate:  '',

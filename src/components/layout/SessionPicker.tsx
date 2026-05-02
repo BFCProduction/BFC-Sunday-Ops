@@ -64,9 +64,8 @@ function compareByTime(a: Session, b: Session, descending = false): number {
   return descending ? -diff : diff
 }
 
-// Compatibility bridge only; the picker still presents a single event list.
 function usesEventScopedChecklist(s: Session) {
-  return s.legacySpecialEventId !== null || s.serviceTypeSlug === 'special'
+  return !s.serviceTypeSlug.startsWith('sunday')
 }
 
 function eventTypeLabel(s: Session) {

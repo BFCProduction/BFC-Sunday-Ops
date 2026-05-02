@@ -169,11 +169,9 @@ function AppMain() {
   const serviceTypeName  = session?.serviceTypeName  ?? 'Sunday 9:00 AM'
   const serviceTypeColor = session?.serviceTypeColor ?? '#3b82f6'
   const sessionDate      = session?.date ?? ''
-  const sessionType      = session?.type ?? 'sunday'
   const sundayId         = session?.legacySundayId ?? ''
   const sundayDate       = session?.legacySundayId ? session.date : ''
-  const eventId          = session?.legacySpecialEventId ?? null
-  const eventName        = session?.type === 'event' ? session.name : null
+  const eventName        = session && !session.serviceTypeSlug.startsWith('sunday') ? session.name : null
   const isViewingPast    = !!session && session.date < todaySundayDate
 
   if (loading) return (
@@ -197,8 +195,8 @@ function AppMain() {
   return (
     <SundayContext.Provider value={{
       activeEventId, serviceTypeSlug, serviceTypeName, serviceTypeColor,
-      sundayId, sundayDate, eventId, eventName,
-      sessionType, sessionDate,
+      sundayId, sundayDate, eventName,
+      sessionDate,
       timezone, todaySundayDate, isViewingPast,
       navigateToEvent, navigateSunday,
     }}>

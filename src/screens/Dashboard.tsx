@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, ChevronRight, ClipboardCheck, BarChart2, Star, Music, Type, Film, Layers } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { ensureEventChecklistSeeded, supabase } from '../lib/supabase'
 import { CHECKLIST_ROLE_OPTIONS, ROLE_COLORS } from '../data/checklist'
-import { loadOrSeedChecklistItems } from '../lib/checklist'
 import { useSunday } from '../context/SundayContext'
 import { useAuth } from '../context/authState'
 import { ApiError, fetchPcoPlanTimes, fetchPcoPlanItems, type PcoPlanTimeResult, type PcoPlanItemResult } from '../lib/adminApi'
@@ -10,8 +9,7 @@ import { initiatePCOLogin } from '../lib/pcoAuth'
 import { getChurchDateString } from '../lib/churchTime'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
-import type { Issue } from '../types'
-import type { ChecklistItemRecord } from '../lib/checklist'
+import type { EventChecklistItem, Issue } from '../types'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
 
@@ -179,13 +177,13 @@ function RunOfShow({ items, totalLabel, timezone }: { items: PcoPlanItemResult[]
 
 export function Dashboard({ setScreen }: DashboardProps) {
   const {
-    activeEventId, sundayId, serviceTypeSlug, serviceTypeName,
+    activeEventId, serviceTypeSlug, serviceTypeName,
     eventName, sessionDate, timezone,
   } = useSunday()
   const { sessionToken } = useAuth()
 
-  const [items, setItems] = useState<ChecklistItemRecord[]>([])
-  const [completedIds, setCompletedIds] = useState<number[]>([])
+  const [items, setItems] = useState<EventChecklistItem[]>([])
+  const [completedIds, setCompletedIds] = useState<string[]>([])
   const [issues, setIssues] = useState<Issue[]>([])
   const [pcoSchedule, setPcoSchedule] = useState<ScheduleItem[]>([])
   const [rosItems, setRosItems] = useState<PcoPlanItemResult[]>([])
@@ -198,6 +196,13 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
     async function load() {
       try {
+        if (!activeEventId) {
+          setItems([])
+          setCompletedIds([])
+          setIssues([])
+          return
+        }
+
         const issuePromise = activeEventId
           ? supabase
             .from('issues')
@@ -210,26 +215,30 @@ export function Dashboard({ setScreen }: DashboardProps) {
             })
           : Promise.resolve([])
 
-        // Run all three queries in parallel
-        const [itemData, eventCompletionsRes, legacyCompletionsRes, issueRows] = await Promise.all([
-          loadOrSeedChecklistItems(serviceTypeSlug),
-          supabase.from('checklist_completions').select('item_id').eq('event_id', activeEventId),
-          sundayId
-            ? supabase.from('checklist_completions').select('item_id').eq('sunday_id', sundayId)
-            : Promise.resolve({ data: [] }),
+        if (activeEventId && serviceTypeSlug.startsWith('sunday')) {
+          await ensureEventChecklistSeeded(activeEventId, serviceTypeSlug)
+        }
+
+        const [itemRes, completionRes, issueRows] = await Promise.all([
+          supabase
+            .from('event_checklist_items')
+            .select('*')
+            .eq('event_id', activeEventId)
+            .order('sort_order', { ascending: true }),
+          supabase
+            .from('event_checklist_completions')
+            .select('item_id')
+            .eq('event_id', activeEventId),
           issuePromise,
         ])
 
         if (cancelled) return
 
-        // Prefer event-native completions; fall back to legacy
-        const completionData =
-          (eventCompletionsRes.data && eventCompletionsRes.data.length > 0)
-            ? eventCompletionsRes.data
-            : (legacyCompletionsRes.data ?? [])
+        if (itemRes.error) throw itemRes.error
+        if (completionRes.error) throw completionRes.error
 
-        setItems(itemData)
-        setCompletedIds([...new Set(completionData.map((r: { item_id: number }) => r.item_id))])
+        setItems((itemRes.data ?? []) as EventChecklistItem[])
+        setCompletedIds([...new Set((completionRes.data ?? []).map((r: { item_id: string }) => r.item_id))])
         setIssues(issueRows as Issue[])
       } finally {
         if (!cancelled) setLoading(false)
@@ -238,7 +247,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
 
     load()
     return () => { cancelled = true }
-  }, [activeEventId, sundayId, serviceTypeSlug])
+  }, [activeEventId, serviceTypeSlug])
 
   useEffect(() => {
     let cancelled = false

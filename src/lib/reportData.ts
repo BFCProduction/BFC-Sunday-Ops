@@ -1,5 +1,4 @@
-import { supabase } from './supabase'
-import { loadOrSeedChecklistItems } from './checklist'
+import { ensureEventChecklistSeeded, supabase } from './supabase'
 
 interface ReportEvent {
   id: string
@@ -229,7 +228,7 @@ async function loadScopedSingle<T>(
   return { data: null, source: null }
 }
 
-async function loadSpecialChecklistRows(eventId: string) {
+async function loadEventChecklistRows(eventId: string) {
   const [{ data: items, error: itemsError }, { data: completions, error: completionsError }] = await Promise.all([
     supabase
       .from('event_checklist_items')
@@ -249,7 +248,7 @@ async function loadSpecialChecklistRows(eventId: string) {
     items: (items || []).map(item => ({
       id: item.id,
       task: item.label,
-      role: 'All',
+      role: item.role ?? 'All',
       section: item.section,
       subsection: item.subsection,
     })) as ChecklistRow[],
@@ -259,42 +258,17 @@ async function loadSpecialChecklistRows(eventId: string) {
 
 async function loadChecklistData(event: ReportEvent): Promise<{ items: ChecklistRow[]; completions: CompletionRow[] }> {
   if (event.serviceTypeSlug === 'special') {
-    const currentRows = await loadSpecialChecklistRows(event.id)
+    const currentRows = await loadEventChecklistRows(event.id)
     if (currentRows.items.length > 0 || !event.legacySpecialEventId) return currentRows
 
-    return loadSpecialChecklistRows(event.legacySpecialEventId)
+    return loadEventChecklistRows(event.legacySpecialEventId)
   }
 
-  const [items, completionsRes] = await Promise.all([
-    loadOrSeedChecklistItems(event.serviceTypeSlug),
-    supabase
-      .from('checklist_completions')
-      .select('item_id, initials, completed_at')
-      .eq('event_id', event.id),
-  ])
-
-  if (completionsRes.error) throw completionsRes.error
-
-  let completions = (completionsRes.data || []) as CompletionRow[]
-  if (completions.length === 0 && event.legacySundayId) {
-    const { data, error } = await supabase
-      .from('checklist_completions')
-      .select('item_id, initials, completed_at')
-      .eq('sunday_id', event.legacySundayId)
-    if (error) throw error
-    completions = (data || []) as CompletionRow[]
+  if (event.serviceTypeSlug.startsWith('sunday')) {
+    await ensureEventChecklistSeeded(event.id, event.serviceTypeSlug)
   }
 
-  return {
-    items: items.map(item => ({
-      id: item.id,
-      task: item.task,
-      role: item.role,
-      section: item.section,
-      subsection: item.subsection,
-    })),
-    completions,
-  }
+  return loadEventChecklistRows(event.id)
 }
 
 async function loadIssues(event: ReportEvent): Promise<IssueRow[]> {
@@ -424,110 +398,4 @@ async function buildReportData(event: ReportEvent): Promise<ReportData> {
 
 export async function fetchEventReportData(eventId: string): Promise<ReportData> {
   return buildReportData(await loadEvent(eventId))
-}
-
-async function fetchLegacySundayReport(sundayId: string, sundayDate: string): Promise<ReportData> {
-  const [
-    attendanceRes,
-    runtimeFieldsRes,
-    runtimeValuesRes,
-    issuesRes,
-    checklistItems,
-    completionsRes,
-    evaluationsRes,
-    weatherRes,
-  ] = await Promise.all([
-    supabase.from('attendance').select('*').eq('sunday_id', sundayId).maybeSingle(),
-    supabase.from('runtime_fields').select('id, label').order('sort_order', { ascending: true }),
-    supabase.from('runtime_values').select('field_id, value').eq('sunday_id', sundayId),
-    supabase.from('issues').select('id, title, description, severity, created_at, resolved_at').eq('sunday_id', sundayId),
-    loadOrSeedChecklistItems(),
-    supabase.from('checklist_completions').select('item_id').eq('sunday_id', sundayId),
-    supabase.from('evaluations').select('*').eq('sunday_id', sundayId).order('submitted_at', { ascending: true }),
-    supabase.from('weather').select('*').eq('sunday_id', sundayId).maybeSingle(),
-  ])
-
-  if (attendanceRes.error) throw attendanceRes.error
-  if (runtimeFieldsRes.error) throw runtimeFieldsRes.error
-  if (runtimeValuesRes.error) throw runtimeValuesRes.error
-  if (issuesRes.error) throw issuesRes.error
-  if (completionsRes.error) throw completionsRes.error
-  if (evaluationsRes.error) throw evaluationsRes.error
-  if (weatherRes.error) throw weatherRes.error
-
-  const valueMap: Record<number, string | null> = {}
-  ;((runtimeValuesRes.data || []) as RuntimeValueRow[]).forEach(row => {
-    valueMap[row.field_id] = row.value
-  })
-
-  const runtimes = ((runtimeFieldsRes.data || []) as RuntimeFieldRow[]).map(field => ({
-    label: field.label,
-    value: valueMap[field.id] ?? null,
-  }))
-
-  const checklistRows = checklistItems.map(item => ({
-    id: item.id,
-    task: item.task,
-    role: item.role,
-    section: item.section,
-    subsection: item.subsection,
-  }))
-  const checklistSummary = buildChecklistExceptions(
-    checklistRows,
-    (completionsRes.data || []) as CompletionRow[],
-  )
-
-  const attendanceRow = attendanceRes.data as AttendanceRow | null
-  const counts = attendanceRow
-    ? [attendanceRow.service_1_count, attendanceRow.service_2_count].filter((value): value is number => value != null)
-    : []
-
-  return {
-    eventId: sundayId,
-    eventName: 'Sunday Services',
-    eventDate: sundayDate,
-    eventTime: null,
-    serviceTypeName: 'Sunday Services',
-    serviceTypeSlug: 'sunday',
-    sundayDate,
-    attendance: attendanceRow
-      ? {
-          count: counts.length > 0 ? counts.reduce((sum, value) => sum + value, 0) : null,
-          notes: attendanceRow.notes,
-        }
-      : null,
-    runtimes,
-    issues: sortIssues((issuesRes.data || []) as IssueRow[]),
-    checklistExceptions: checklistSummary.exceptions,
-    checklistTotalItems: checklistRows.length,
-    checklistCompletedCount: checklistSummary.completedCount,
-    evaluations: (evaluationsRes.data || []) as EvaluationRow[],
-    weather: weatherRes.data
-      ? {
-          temp_f: weatherRes.data.temp_f,
-          condition: weatherRes.data.condition,
-          wind_mph: weatherRes.data.wind_mph,
-          humidity: weatherRes.data.humidity,
-        }
-      : null,
-  }
-}
-
-/**
- * @deprecated Settings exports are event-native. This wrapper remains for the
- * old Service Data reporting screen while it is retired from the UI.
- */
-export async function fetchReportData(sundayId: string, sundayDate: string): Promise<ReportData> {
-  const { data, error } = await supabase
-    .from('events')
-    .select(EVENT_SELECT)
-    .eq('legacy_sunday_id', sundayId)
-    .order('event_time', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) throw error
-  if (data) return buildReportData(normalizeEventRow(data as unknown as EventRow))
-
-  return fetchLegacySundayReport(sundayId, sundayDate)
 }

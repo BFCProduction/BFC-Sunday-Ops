@@ -8,28 +8,17 @@ import {
   SortableContext, verticalListSortingStrategy, useSortable, arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { supabase } from '../lib/supabase'
+import { ensureEventChecklistSeeded, supabase } from '../lib/supabase'
 import { ROLE_COLORS, ROLES } from '../data/checklist'
-import { loadOrSeedChecklistItems } from '../lib/checklist'
 import { useAdmin } from '../context/adminState'
 import { useAuth } from '../context/authState'
 import { useSunday } from '../context/SundayContext'
-import { ItemFormModal } from '../components/admin/ItemFormModal'
 import { TemplateManager } from '../components/admin/TemplateManager'
-import type { ChecklistItemRecord } from '../lib/checklist'
 import type { EventChecklistItem, EventChecklistCompletion, EventTemplateItem, Role } from '../types'
 
-// ── Sunday completion map ────────────────────────────────────────────────────
-
-interface SundayCompletionMap {
-  [itemId: number]: { initials: string; time: string }
-}
-
-interface EventCompletionMap {
+interface CompletionMap {
   [itemId: string]: { initials: string; time: string }
 }
-
-// ── Row interface — unified display model ────────────────────────────────────
 
 interface Row {
   uid: string
@@ -41,11 +30,7 @@ interface Row {
   sort_order: number
 }
 
-// ── ADD_NEW constant for dropdowns ───────────────────────────────────────────
-
 const ADD_NEW = '__add_new__'
-
-// ── EventItemFormModal (inline — copied from EventChecklist) ─────────────────
 
 interface EventItemFormProps {
   eventId: string
@@ -57,10 +42,16 @@ interface EventItemFormProps {
   onSaved: () => void
 }
 
+function roleForItem(item?: EventChecklistItem): Role {
+  const value = item?.role
+  return value && ROLES.includes(value as Role) ? value as Role : 'All'
+}
+
 function EventItemFormModal({
   eventId, item, defaultSection, sectionOptions, subsectionsBySection, onClose, onSaved,
 }: EventItemFormProps) {
   const [label, setLabel] = useState(item?.label ?? '')
+  const [role, setRole] = useState<Role>(roleForItem(item))
   const [section, setSection] = useState(item?.section ?? defaultSection ?? sectionOptions[0] ?? '')
   const [subsection, setSubsection] = useState(item?.subsection ?? '')
   const [notes, setNotes] = useState(item?.item_notes ?? '')
@@ -82,20 +73,21 @@ function EventItemFormModal({
     setError('')
     const payload = {
       label: label.trim(),
+      role: role === 'All' ? null : role,
       section: effectiveSection.trim(),
       subsection: effectiveSubsection.trim() || null,
       item_notes: notes.trim() || null,
     }
     if (item) {
-      const { error: e } = await supabase.from('event_checklist_items').update(payload).eq('id', item.id)
-      if (e) { setError(e.message); setSaving(false); return }
+      const { error: updateError } = await supabase.from('event_checklist_items').update(payload).eq('id', item.id)
+      if (updateError) { setError(updateError.message); setSaving(false); return }
     } else {
-      const { error: e } = await supabase.from('event_checklist_items').insert({
+      const { error: insertError } = await supabase.from('event_checklist_items').insert({
         ...payload,
         event_id: eventId,
         sort_order: 9999,
       })
-      if (e) { setError(e.message); setSaving(false); return }
+      if (insertError) { setError(insertError.message); setSaving(false); return }
     }
     setSaving(false)
     onSaved()
@@ -121,6 +113,17 @@ function EventItemFormModal({
           </div>
 
           <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Role</label>
+            <select
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+              value={role}
+              onChange={e => setRole(e.target.value as Role)}
+            >
+              {ROLES.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </div>
+
+          <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Section *</label>
             {addingSection ? (
               <div className="space-y-1.5">
@@ -130,7 +133,7 @@ function EventItemFormModal({
                 />
                 {sectionOptions.length > 0 && (
                   <button onClick={() => { setAddingSection(false); setSection(sectionOptions[0]) }}
-                    className="text-xs text-blue-600 hover:underline">← Choose existing</button>
+                    className="text-xs text-blue-600 hover:underline">Choose existing</button>
                 )}
               </div>
             ) : (
@@ -142,8 +145,8 @@ function EventItemFormModal({
                   else { setSection(e.target.value); setSubsection('') }
                 }}>
                 {sectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                <option disabled>──────────</option>
-                <option value={ADD_NEW}>＋ New section…</option>
+                <option disabled>----------</option>
+                <option value={ADD_NEW}>New section...</option>
               </select>
             )}
           </div>
@@ -159,7 +162,7 @@ function EventItemFormModal({
                   value={newSubsectionText} onChange={e => setNewSubsectionText(e.target.value)} placeholder="New subsection name"
                 />
                 <button onClick={() => { setAddingSubsection(false); setSubsection('') }}
-                  className="text-xs text-blue-600 hover:underline">← Choose existing</button>
+                  className="text-xs text-blue-600 hover:underline">Choose existing</button>
               </div>
             ) : (
               <select
@@ -171,8 +174,8 @@ function EventItemFormModal({
                 }}>
                 <option value="">(None)</option>
                 {subsectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                <option disabled>──────────</option>
-                <option value={ADD_NEW}>＋ New subsection…</option>
+                <option disabled>----------</option>
+                <option value={ADD_NEW}>New subsection...</option>
               </select>
             )}
           </div>
@@ -194,7 +197,7 @@ function EventItemFormModal({
               className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">Cancel</button>
             <button onClick={handleSave} disabled={saving}
               className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60">
-              {saving ? 'Saving…' : (item ? 'Save Changes' : 'Add Item')}
+              {saving ? 'Saving...' : (item ? 'Save Changes' : 'Add Item')}
             </button>
           </div>
         </div>
@@ -202,8 +205,6 @@ function EventItemFormModal({
     </div>
   )
 }
-
-// ── SortableRow — unified row component ──────────────────────────────────────
 
 interface SortableRowProps {
   uid: string
@@ -241,7 +242,6 @@ function SortableRow({
       style={style}
       className={`flex items-start gap-3 px-4 py-2.5 ${isLast ? '' : 'border-b border-gray-50'} ${chk && !editMode ? 'opacity-50' : ''} hover:bg-gray-50/50 transition-colors bg-white`}
     >
-      {/* Drag handle — edit mode only */}
       {editMode && (
         <button
           {...attributes}
@@ -254,7 +254,6 @@ function SortableRow({
         </button>
       )}
 
-      {/* Checkbox — shown when not in edit mode */}
       {!editMode && (
         <button
           onClick={onToggleCheck}
@@ -266,13 +265,9 @@ function SortableRow({
         </button>
       )}
 
-      {/* Text + note */}
       <div className="flex-1 min-w-0">
         {note ? (
-          <button
-            onClick={onToggleNote}
-            className="flex items-start gap-1 text-left w-full group"
-          >
+          <button onClick={onToggleNote} className="flex items-start gap-1 text-left w-full group">
             <span className={`text-sm leading-snug ${chk && !editMode ? 'line-through text-gray-400' : 'text-gray-800'}`}>
               {text}
             </span>
@@ -295,28 +290,21 @@ function SortableRow({
         )}
       </div>
 
-      {/* Role badge + edit actions */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        {role !== undefined && (
+        {role && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-            style={{ background: ROLE_COLORS[role] + '20', color: ROLE_COLORS[role] }}
+            style={{ background: (ROLE_COLORS[role] || '#6b7280') + '20', color: ROLE_COLORS[role] || '#6b7280' }}
           >
             {role}
           </span>
         )}
         {editMode && (
           <>
-            <button
-              onClick={onEdit}
-              className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-            >
+            <button onClick={onEdit} className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
               <Pencil className="w-3.5 h-3.5" />
             </button>
-            <button
-              onClick={onDelete}
-              className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-            >
+            <button onClick={onDelete} className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </>
@@ -326,20 +314,111 @@ function SortableRow({
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export function Checklist() {
   const { isAdmin } = useAdmin()
   const { user } = useAuth()
-  const {
-    activeEventId, sundayId, serviceTypeSlug, serviceTypeName, serviceTypeColor,
-    sessionType, eventId,
-  } = useSunday()
-
-  const isEvent = sessionType === 'event'
+  const { activeEventId, serviceTypeSlug, serviceTypeName, serviceTypeColor } = useSunday()
 
   const [editMode, setEditMode] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
+  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false)
+  const [saveTemplateName, setSaveTemplateName] = useState('')
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [saveTemplateError, setSaveTemplateError] = useState('')
+
+  const [eventItems, setEventItems] = useState<EventChecklistItem[]>([])
+  const [eventCompletions, setEventCompletions] = useState<CompletionMap>({})
+  const [role, setRole] = useState<Role>('All')
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [loading, setLoading] = useState(true)
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({})
+  const [editEventItem, setEditEventItem] = useState<EventChecklistItem | null>(null)
+  const [addSection, setAddSection] = useState<string | null>(null)
+  const [showEventItemForm, setShowEventItemForm] = useState(false)
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState<EventChecklistItem | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  )
+
+  const activeEventIdRef = useRef(activeEventId)
+  useEffect(() => { activeEventIdRef.current = activeEventId }, [activeEventId])
+
+  const refreshEventItems = useCallback(async () => {
+    const curEventId = activeEventIdRef.current
+    if (!curEventId) return
+    const { data, error } = await supabase
+      .from('event_checklist_items')
+      .select('*')
+      .eq('event_id', curEventId)
+      .order('sort_order')
+    if (error) throw error
+    const newItems = (data || []) as EventChecklistItem[]
+    setEventItems(newItems)
+    setExpanded(prev => {
+      const updated = { ...prev }
+      Array.from(new Set(newItems.map(i => i.section))).forEach(sec => {
+        if (!(sec in updated)) updated[sec] = true
+      })
+      return updated
+    })
+  }, [setEventItems, setExpanded])
+
+  const refreshEventCompletions = useCallback(async () => {
+    const curEventId = activeEventIdRef.current
+    if (!curEventId) return
+    const { data, error } = await supabase
+      .from('event_checklist_completions')
+      .select('*')
+      .eq('event_id', curEventId)
+    if (error) throw error
+    const map: CompletionMap = {}
+    for (const c of (data || []) as EventChecklistCompletion[]) {
+      const t = new Date(c.completed_at).toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', hour12: true,
+      })
+      map[c.item_id] = { initials: c.initials, time: t }
+    }
+    setEventCompletions(map)
+  }, [setEventCompletions])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+      setEventCompletions({})
+      if (!activeEventId) { setLoading(false); return }
+
+      try {
+        await ensureEventChecklistSeeded(activeEventId, serviceTypeSlug)
+        if (cancelled) return
+        await Promise.all([refreshEventItems(), refreshEventCompletions()])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void load()
+    return () => { cancelled = true }
+  }, [activeEventId, serviceTypeSlug, refreshEventItems, refreshEventCompletions])
+
+  useEffect(() => {
+    if (!activeEventId) return
+    const channel = supabase
+      .channel(`event-checklist-realtime-${activeEventId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'event_checklist_completions', filter: `event_id=eq.${activeEventId}` },
+        () => { void refreshEventCompletions() },
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'event_checklist_items', filter: `event_id=eq.${activeEventId}` },
+        () => { void refreshEventItems() },
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [activeEventId, refreshEventCompletions, refreshEventItems])
 
   const applyTemplate = async (templateId: string) => {
     const { data, error: fetchError } = await supabase
@@ -352,33 +431,20 @@ export function Checklist() {
     if (!data || data.length === 0) throw new Error('Template has no items to apply.')
     const items = data as EventTemplateItem[]
 
-    if (isEvent) {
-      const rows = items.map(item => ({
-        event_id: activeEventId,
-        label: item.label,
-        section: item.section,
-        subsection: item.subsection,
-        item_notes: item.item_notes,
-        sort_order: item.sort_order,
-        source_template_item_id: item.id,
-      }))
-      const { error: insertError } = await supabase.from('event_checklist_items').insert(rows)
-      if (insertError) throw new Error(insertError.message)
-      await refreshEventItems()
-    } else {
-      const rows = items.map(item => ({
-        task: item.label,
-        role: 'All',
-        section: item.section,
-        subsection: item.subsection,
-        note: item.item_notes,
-        sort_order: item.sort_order,
-        service_type_slug: serviceTypeSlug,
-      }))
-      const { error: insertError } = await supabase.from('checklist_items').insert(rows)
-      if (insertError) throw new Error(insertError.message)
-      await refreshSundayItems()
-    }
+    const rows = items.map(item => ({
+      event_id: activeEventId,
+      label: item.label,
+      role: item.role ?? null,
+      section: item.section,
+      subsection: item.subsection,
+      item_notes: item.item_notes,
+      sort_order: item.sort_order,
+      source_template_item_id: item.id,
+      source_checklist_item_id: item.source_checklist_item_id,
+    }))
+    const { error: insertError } = await supabase.from('event_checklist_items').insert(rows)
+    if (insertError) throw new Error(insertError.message)
+    await refreshEventItems()
     setShowTemplates(false)
   }
 
@@ -390,45 +456,24 @@ export function Checklist() {
     if (!templateItems?.length) return
     const ids = templateItems.map((i: { id: string }) => i.id)
 
-    if (isEvent) {
-      const { error } = await supabase
-        .from('event_checklist_items')
-        .delete()
-        .eq('event_id', activeEventId)
-        .in('source_template_item_id', ids)
-      if (error) throw new Error(error.message)
-      await refreshEventItems()
-    } else {
-      // Sunday items have no source_template_item_id — nothing to remove
-      throw new Error('Remove by template is only supported for special events.')
-    }
+    const { error } = await supabase
+      .from('event_checklist_items')
+      .delete()
+      .eq('event_id', activeEventId)
+      .in('source_template_item_id', ids)
+    if (error) throw new Error(error.message)
+    await refreshEventItems()
   }
 
   const clearAllItems = async () => {
-    if (isEvent) {
-      const { error } = await supabase
-        .from('event_checklist_items')
-        .delete()
-        .eq('event_id', activeEventId)
-      if (error) throw new Error(error.message)
-      await refreshEventItems()
-    } else {
-      const { error } = await supabase
-        .from('checklist_items')
-        .delete()
-        .eq('service_type_slug', serviceTypeSlug)
-      if (error) throw new Error(error.message)
-      await refreshSundayItems()
-    }
+    const { error } = await supabase
+      .from('event_checklist_items')
+      .delete()
+      .eq('event_id', activeEventId)
+    if (error) throw new Error(error.message)
+    await refreshEventItems()
     setShowTemplates(false)
   }
-
-  // ── Save as template ─────────────────────────────────────────────────────────
-
-  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false)
-  const [saveTemplateName, setSaveTemplateName] = useState('')
-  const [savingTemplate, setSavingTemplate] = useState(false)
-  const [saveTemplateError, setSaveTemplateError] = useState('')
 
   const saveAsTemplate = async () => {
     if (!saveTemplateName.trim()) { setSaveTemplateError('Template name is required'); return }
@@ -447,24 +492,16 @@ export function Checklist() {
       return
     }
 
-    const items = isEvent
-      ? eventItems.map(item => ({
-          template_id: tmpl.id,
-          label: item.label,
-          section: item.section,
-          subsection: item.subsection ?? null,
-          item_notes: item.item_notes ?? null,
-          sort_order: item.sort_order,
-        }))
-      : sundayItems.map(item => ({
-          template_id: tmpl.id,
-          label: item.task,
-          section: item.section,
-          subsection: item.subsection ?? null,
-          item_notes: item.note ?? null,
-          sort_order: item.sort_order,
-          source_checklist_item_id: item.id,
-        }))
+    const items = eventItems.map(item => ({
+      template_id: tmpl.id,
+      label: item.label,
+      role: item.role ?? null,
+      section: item.section,
+      subsection: item.subsection ?? null,
+      item_notes: item.item_notes ?? null,
+      sort_order: item.sort_order,
+      source_checklist_item_id: item.source_checklist_item_id ?? null,
+    }))
 
     if (items.length > 0) {
       const { error: itemsErr } = await supabase.from('event_template_items').insert(items)
@@ -481,320 +518,26 @@ export function Checklist() {
     setSaveTemplateName('')
   }
 
-  // Sunday mode state
-  const [sundayItems, setSundayItems] = useState<ChecklistItemRecord[]>([])
-  const [sundayCompletions, setSundayCompletions] = useState<SundayCompletionMap>({})
-  const [role, setRole] = useState<Role>('All')
-
-  // Event mode state
-  const [eventItems, setEventItems] = useState<EventChecklistItem[]>([])
-  const [eventCompletions, setEventCompletions] = useState<EventCompletionMap>({})
-
-  // Shared state
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [loading, setLoading] = useState(true)
-  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({})
-
-  // Sunday edit state
-  const [editSundayItem, setEditSundayItem] = useState<ChecklistItemRecord | null>(null)
-  const [addSection, setAddSection] = useState<string | null>(null)
-  const [showItemForm, setShowItemForm] = useState(false)
-  const [confirmDeleteSunday, setConfirmDeleteSunday] = useState<ChecklistItemRecord | null>(null)
-
-  // Event edit state
-  const [editEventItem, setEditEventItem] = useState<EventChecklistItem | null>(null)
-  const [showEventItemForm, setShowEventItemForm] = useState(false)
-  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState<EventChecklistItem | null>(null)
-
-  // Drag sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor),
-  )
-
-  // Refs so real-time callbacks always see current values
-  const activeEventIdRef = useRef(activeEventId)
-  const sundayIdRef = useRef(sundayId)
-  const serviceTypeSlugRef = useRef(serviceTypeSlug)
-  const eventIdRef = useRef(eventId)
-  useEffect(() => { activeEventIdRef.current = activeEventId }, [activeEventId])
-  useEffect(() => { sundayIdRef.current = sundayId }, [sundayId])
-  useEffect(() => { serviceTypeSlugRef.current = serviceTypeSlug }, [serviceTypeSlug])
-  useEffect(() => { eventIdRef.current = eventId }, [eventId])
-
-  // ── Full reload on service/event switch ──────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setSundayCompletions({})
-    setEventCompletions({})
-
-    async function load() {
-      if (isEvent) {
-        // Event mode: load event_checklist_items + event_checklist_completions
-        if (!activeEventId) { setLoading(false); return }
-
-        const [itemsRes, completionsRes] = await Promise.all([
-          supabase.from('event_checklist_items').select('*').eq('event_id', activeEventId).order('sort_order'),
-          supabase.from('event_checklist_completions').select('*').eq('event_id', activeEventId),
-        ])
-        if (cancelled) return
-
-        const newItems: EventChecklistItem[] = itemsRes.data || []
-        setEventItems(newItems)
-        setExpanded(prev => {
-          const updated = { ...prev }
-          Array.from(new Set(newItems.map(i => i.section))).forEach(sec => {
-            if (!(sec in updated)) updated[sec] = true
-          })
-          return updated
-        })
-
-        const map: EventCompletionMap = {}
-        for (const c of (completionsRes.data || []) as EventChecklistCompletion[]) {
-          const t = new Date(c.completed_at).toLocaleTimeString('en-US', {
-            hour: 'numeric', minute: '2-digit', hour12: true,
-          })
-          map[c.item_id] = { initials: c.initials, time: t }
-        }
-        setEventCompletions(map)
-      } else {
-        // Sunday mode: load checklist_items + completions
-        const data = await loadOrSeedChecklistItems(serviceTypeSlug)
-        if (cancelled) return
-        setSundayItems(data)
-        setExpanded(prev => {
-          const updated = { ...prev }
-          Array.from(new Set(data.map(i => i.section))).forEach(section => {
-            if (!(section in updated)) updated[section] = true
-          })
-          return updated
-        })
-
-        // Completions — event-native first, legacy fallback
-        const { data: eventData } = await supabase
-          .from('checklist_completions')
-          .select('item_id, initials, completed_at')
-          .eq('event_id', activeEventId)
-        if (cancelled) return
-
-        const rawData = eventData && eventData.length > 0
-          ? eventData
-          : sundayId
-            ? (await supabase
-                .from('checklist_completions')
-                .select('item_id, initials, completed_at')
-                .eq('sunday_id', sundayId)
-              ).data
-            : null
-        if (cancelled) return
-
-        if (rawData) {
-          const map: SundayCompletionMap = {}
-          rawData.forEach((r: { item_id: number; initials: string; completed_at: string }) => {
-            map[r.item_id] = {
-              initials: r.initials,
-              time: new Date(r.completed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-            }
-          })
-          setSundayCompletions(map)
-        }
-      }
-
-      setLoading(false)
-    }
-
-    load()
-    return () => { cancelled = true }
-  }, [isEvent, activeEventId, sundayId, serviceTypeSlug])
-
-  // ── Refresh callbacks (use refs — never go stale) ────────────────────────────
-
-  const refreshSundayItems = useCallback(async () => {
-    const data = await loadOrSeedChecklistItems(serviceTypeSlugRef.current)
-    setSundayItems(data)
-    setExpanded(prev => {
-      const updated = { ...prev }
-      Array.from(new Set(data.map(i => i.section))).forEach(section => {
-        if (!(section in updated)) updated[section] = true
-      })
-      return updated
-    })
-  }, [])
-
-  const refreshSundayCompletions = useCallback(async () => {
-    const targetEventId = activeEventIdRef.current
-    const { data: eventData } = await supabase
-      .from('checklist_completions')
-      .select('item_id, initials, completed_at')
-      .eq('event_id', targetEventId)
-    if (activeEventIdRef.current !== targetEventId) return
-
-    const rawData = eventData && eventData.length > 0
-      ? eventData
-      : sundayIdRef.current
-        ? (await supabase
-            .from('checklist_completions')
-            .select('item_id, initials, completed_at')
-            .eq('sunday_id', sundayIdRef.current)
-          ).data
-        : null
-    if (activeEventIdRef.current !== targetEventId) return
-
-    if (rawData) {
-      const map: SundayCompletionMap = {}
-      rawData.forEach((r: { item_id: number; initials: string; completed_at: string }) => {
-        map[r.item_id] = {
-          initials: r.initials,
-          time: new Date(r.completed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-        }
-      })
-      setSundayCompletions(map)
-    } else {
-      setSundayCompletions({})
-    }
-  }, [])
-
-  const refreshEventItems = useCallback(async () => {
-    const curEventId = activeEventIdRef.current
-    if (!curEventId) return
-    const { data } = await supabase
-      .from('event_checklist_items')
-      .select('*')
-      .eq('event_id', curEventId)
-      .order('sort_order')
-    const newItems: EventChecklistItem[] = data || []
-    setEventItems(newItems)
-    setExpanded(prev => {
-      const updated = { ...prev }
-      Array.from(new Set(newItems.map(i => i.section))).forEach(sec => {
-        if (!(sec in updated)) updated[sec] = true
-      })
-      return updated
-    })
-  }, [])
-
-  const refreshEventCompletions = useCallback(async () => {
-    const curEventId = activeEventIdRef.current
-    if (!curEventId) return
-    const { data } = await supabase
-      .from('event_checklist_completions')
-      .select('*')
-      .eq('event_id', curEventId)
-    const map: EventCompletionMap = {}
-    for (const c of (data || []) as EventChecklistCompletion[]) {
-      const t = new Date(c.completed_at).toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', hour12: true,
-      })
-      map[c.item_id] = { initials: c.initials, time: t }
-    }
-    setEventCompletions(map)
-  }, [])
-
-  // ── Real-time subscriptions ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (isEvent) {
-      if (!activeEventId) return
-      const channel = supabase
-        .channel(`event-checklist-realtime-${activeEventId}`)
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'event_checklist_completions', filter: `event_id=eq.${activeEventId}` },
-          () => refreshEventCompletions(),
-        )
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'event_checklist_items', filter: `event_id=eq.${activeEventId}` },
-          () => refreshEventItems(),
-        )
-        .subscribe()
-      return () => { supabase.removeChannel(channel) }
-    } else {
-      if (!activeEventId) return
-      const channel = supabase
-        .channel(`checklist-realtime-${activeEventId}`)
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'checklist_completions', filter: `event_id=eq.${activeEventId}` },
-          () => refreshSundayCompletions(),
-        )
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'checklist_items' },
-          () => refreshSundayItems(),
-        )
-        .subscribe()
-      return () => { supabase.removeChannel(channel) }
-    }
-  }, [isEvent, activeEventId, refreshEventCompletions, refreshEventItems, refreshSundayCompletions, refreshSundayItems])
-
-  // ── Toggle completion ────────────────────────────────────────────────────────
-
   const toggleItem = async (uid: string) => {
-    if (isEvent) {
-      if (eventCompletions[uid]) {
-        await supabase.from('event_checklist_completions')
-          .delete().eq('event_id', activeEventId).eq('item_id', uid)
-        setEventCompletions(p => { const n = { ...p }; delete n[uid]; return n })
-      } else {
-        const checkedBy = user?.name ?? 'Unknown'
-        const now = new Date().toISOString()
-        await supabase.from('event_checklist_completions')
-          .upsert({ event_id: activeEventId, item_id: uid, initials: checkedBy, completed_at: now },
-            { onConflict: 'event_id,item_id' })
-        setEventCompletions(p => ({
-          ...p,
-          [uid]: {
-            initials: checkedBy,
-            time: new Date(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          },
-        }))
-      }
-    } else {
-      const numId = Number(uid)
-      if (sundayCompletions[numId]) {
-        // Un-check — prefer event-native row; fall back to legacy
-        const { data: eventRecord } = await supabase
-          .from('checklist_completions')
-          .select('id')
-          .eq('event_id', activeEventId)
-          .eq('item_id', numId)
-          .maybeSingle()
-        if (eventRecord) {
-          await supabase.from('checklist_completions').delete().eq('id', eventRecord.id)
-        } else if (sundayId) {
-          await supabase.from('checklist_completions')
-            .delete().eq('sunday_id', sundayId).eq('item_id', numId)
-        }
-        setSundayCompletions(p => { const n = { ...p }; delete n[numId]; return n })
-      } else {
-        const checkedBy = user?.name ?? 'Unknown'
-        const now = new Date().toISOString()
-        const { data: existing } = await supabase
-          .from('checklist_completions')
-          .select('id')
-          .eq('event_id', activeEventId)
-          .eq('item_id', numId)
-          .maybeSingle()
-        const payload = { event_id: activeEventId, item_id: numId, initials: checkedBy, completed_at: now }
-        if (existing) {
-          await supabase.from('checklist_completions').update(payload).eq('id', existing.id)
-        } else {
-          await supabase.from('checklist_completions').insert(payload)
-        }
-        setSundayCompletions(p => ({
-          ...p,
-          [numId]: {
-            initials: checkedBy,
-            time: new Date(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-          },
-        }))
-      }
+    if (eventCompletions[uid]) {
+      await supabase.from('event_checklist_completions')
+        .delete().eq('event_id', activeEventId).eq('item_id', uid)
+      setEventCompletions(prev => { const next = { ...prev }; delete next[uid]; return next })
+      return
     }
-  }
 
-  // ── Delete ───────────────────────────────────────────────────────────────────
-
-  const deleteSundayItem = async (item: ChecklistItemRecord) => {
-    await supabase.from('checklist_items').delete().eq('id', item.id)
-    setSundayItems(prev => prev.filter(i => i.id !== item.id))
-    setConfirmDeleteSunday(null)
+    const checkedBy = user?.name ?? 'Unknown'
+    const now = new Date().toISOString()
+    await supabase.from('event_checklist_completions')
+      .upsert({ event_id: activeEventId, item_id: uid, initials: checkedBy, completed_at: now },
+        { onConflict: 'event_id,item_id' })
+    setEventCompletions(prev => ({
+      ...prev,
+      [uid]: {
+        initials: checkedBy,
+        time: new Date(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      },
+    }))
   }
 
   const deleteEventItem = async (item: EventChecklistItem) => {
@@ -803,96 +546,53 @@ export function Checklist() {
     setConfirmDeleteEvent(null)
   }
 
-  // ── Drag end ─────────────────────────────────────────────────────────────────
-
   const handleDragEnd = async (event: DragEndEvent, section: string) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    if (isEvent) {
-      const allSections = Array.from(new Set(eventItems.map(i => i.section)))
-      const newItems: EventChecklistItem[] = []
-      for (const sec of allSections) {
-        const secItems = eventItems.filter(i => i.section === sec)
-        if (sec === section) {
-          const oldIdx = secItems.findIndex(i => i.id === active.id)
-          const newIdx = secItems.findIndex(i => i.id === over.id)
-          newItems.push(...arrayMove(secItems, oldIdx, newIdx))
-        } else {
-          newItems.push(...secItems)
-        }
+    const allSections = Array.from(new Set(eventItems.map(i => i.section)))
+    const newItems: EventChecklistItem[] = []
+    for (const sec of allSections) {
+      const secItems = eventItems.filter(i => i.section === sec)
+      if (sec === section) {
+        const oldIdx = secItems.findIndex(i => i.id === active.id)
+        const newIdx = secItems.findIndex(i => i.id === over.id)
+        newItems.push(...arrayMove(secItems, oldIdx, newIdx))
+      } else {
+        newItems.push(...secItems)
       }
-      const withOrder = newItems.map((item, idx) => ({ ...item, sort_order: idx }))
-      setEventItems(withOrder)
-      const changed = withOrder.filter((item, idx) =>
-        eventItems[idx]?.id !== item.id || eventItems.find(i => i.id === item.id)?.sort_order !== item.sort_order
+    }
+    const withOrder = newItems.map((item, idx) => ({ ...item, sort_order: idx }))
+    setEventItems(withOrder)
+    const changed = withOrder.filter((item, idx) =>
+      eventItems[idx]?.id !== item.id || eventItems.find(i => i.id === item.id)?.sort_order !== item.sort_order
+    )
+    if (changed.length > 0) {
+      await supabase.from('event_checklist_items').upsert(
+        changed.map(i => ({ id: i.id, sort_order: i.sort_order })),
+        { onConflict: 'id' },
       )
-      if (changed.length > 0) {
-        await supabase.from('event_checklist_items').upsert(
-          changed.map(i => ({ id: i.id, sort_order: i.sort_order })),
-          { onConflict: 'id' }
-        )
-      }
-    } else {
-      const allSectionNames = Array.from(new Set(sundayItems.map(i => i.section)))
-      const newItems: ChecklistItemRecord[] = []
-      for (const sec of allSectionNames) {
-        const secItems = sundayItems.filter(i => i.section === sec)
-        if (sec === section) {
-          const oldIdx = secItems.findIndex(i => String(i.id) === active.id)
-          const newIdx = secItems.findIndex(i => String(i.id) === over.id)
-          newItems.push(...arrayMove(secItems, oldIdx, newIdx))
-        } else {
-          newItems.push(...secItems)
-        }
-      }
-      const withOrder = newItems.map((item, idx) => ({ ...item, sort_order: idx }))
-      setSundayItems(withOrder)
-      const changed = withOrder.filter((item, idx) =>
-        sundayItems[idx]?.id !== item.id || sundayItems.find(i => i.id === item.id)?.sort_order !== item.sort_order
-      )
-      if (changed.length > 0) {
-        await supabase.from('checklist_items').upsert(
-          changed.map(i => ({ id: i.id, sort_order: i.sort_order })),
-          { onConflict: 'id' }
-        )
-      }
     }
   }
 
-  // ── Display rows ─────────────────────────────────────────────────────────────
+  const visibleEventItems = editMode || role === 'All'
+    ? eventItems
+    : eventItems.filter(item => !item.role || item.role === role)
 
-  const displayRows: Row[] = useMemo(() => {
-    if (isEvent) {
-      return eventItems.map(i => ({
-        uid: i.id,
-        text: i.label,
-        note: i.item_notes ?? null,
-        section: i.section,
-        subsection: i.subsection ?? null,
-        sort_order: i.sort_order,
-      }))
-    }
-    const filtered = editMode ? sundayItems : sundayItems.filter(i => role === 'All' || i.role === role)
-    return filtered.map(i => ({
-      uid: String(i.id),
-      text: i.task,
-      note: i.note ?? null,
-      section: i.section,
-      subsection: i.subsection ?? null,
-      role: i.role,
-      sort_order: i.sort_order,
-    }))
-  }, [isEvent, eventItems, sundayItems, editMode, role])
+  const displayRows: Row[] = useMemo(() => visibleEventItems.map(item => ({
+    uid: item.id,
+    text: item.label,
+    note: item.item_notes ?? null,
+    section: item.section,
+    subsection: item.subsection ?? null,
+    role: item.role ?? undefined,
+    sort_order: item.sort_order,
+  })), [visibleEventItems])
 
-  // ── Section options (for forms) ──────────────────────────────────────────────
-
-  const allSections = useMemo(() =>
-    Array.from(new Set(displayRows.map(r => r.section))),
-    [displayRows]
+  const allSections = useMemo(
+    () => Array.from(new Set(displayRows.map(r => r.section))),
+    [displayRows],
   )
-
-  const sectionOptions = allSections
 
   const subsectionsBySection: Record<string, string[]> = useMemo(() => {
     const map: Record<string, string[]> = {}
@@ -905,19 +605,16 @@ export function Checklist() {
     return map
   }, [displayRows])
 
-  // ── Sectioned display ────────────────────────────────────────────────────────
-
   const sectionedRows = useMemo(() => {
     return allSections.map(section => {
       const rows = displayRows.filter(r => r.section === section)
-      // Preserve subsection grouping order
       const subsectionOrder: string[] = []
       rows.forEach(r => {
         const key = r.subsection || ''
         if (!subsectionOrder.includes(key)) subsectionOrder.push(key)
       })
       const sorted = [...rows].sort(
-        (a, b) => subsectionOrder.indexOf(a.subsection || '') - subsectionOrder.indexOf(b.subsection || '')
+        (a, b) => subsectionOrder.indexOf(a.subsection || '') - subsectionOrder.indexOf(b.subsection || ''),
       )
       return { section, rows: sorted }
     })
@@ -925,23 +622,15 @@ export function Checklist() {
 
   const displaySections = editMode
     ? sectionedRows
-    : sectionedRows.filter(s => s.rows.length > 0)
+    : sectionedRows.filter(section => section.rows.length > 0)
 
-  // ── Progress ─────────────────────────────────────────────────────────────────
-
-  const visRows = sectionedRows.filter(s => s.rows.length > 0).flatMap(s => s.rows)
-  const visDone = isEvent
-    ? visRows.filter(r => eventCompletions[r.uid]).length
-    : visRows.filter(r => sundayCompletions[Number(r.uid)]).length
+  const visRows = sectionedRows.filter(section => section.rows.length > 0).flatMap(section => section.rows)
+  const visDone = visRows.filter(row => eventCompletions[row.uid]).length
   const pct = visRows.length ? Math.round(visDone / visRows.length * 100) : 0
+  const hasRoleScopedItems = eventItems.some(item => item.role)
 
-  // ── Helpers for getting completions by uid ───────────────────────────────────
-
-  const getChk = (uid: string) =>
-    isEvent ? eventCompletions[uid] : sundayCompletions[Number(uid)]
-
-  const getEventItemById = (uid: string) => eventItems.find(i => i.id === uid)
-  const getSundayItemById = (uid: string) => sundayItems.find(i => String(i.id) === uid)
+  const getChk = (uid: string) => eventCompletions[uid]
+  const getEventItemById = (uid: string) => eventItems.find(item => item.id === uid)
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -951,14 +640,11 @@ export function Checklist() {
 
   return (
     <div className="fade-in">
-      {/* Sticky header */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-5 pt-4 pb-3">
         <div className="flex items-center justify-between mb-3">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-gray-900 font-bold text-lg">
-                {isEvent ? 'Event Checklist' : 'Gameday Checklist'}
-              </h2>
+              <h2 className="text-gray-900 font-bold text-lg">Event Checklist</h2>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: serviceTypeColor }} />
@@ -992,7 +678,7 @@ export function Checklist() {
                   </>
                 )}
                 <button
-                  onClick={() => setEditMode(m => !m)}
+                  onClick={() => setEditMode(value => !value)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     editMode
                       ? 'bg-amber-500 text-white hover:bg-amber-600'
@@ -1007,18 +693,17 @@ export function Checklist() {
           </div>
         </div>
 
-        {/* Role pills — Sunday mode only */}
-        {!isEvent && (
+        {hasRoleScopedItems && (
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {ROLES.map(r => {
-              const active = role === r
+            {ROLES.map(option => {
+              const active = role === option
               return (
-                <button key={r} onClick={() => setRole(r as Role)}
+                <button key={option} onClick={() => setRole(option as Role)}
                   className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
                   style={active
-                    ? { background: r === 'All' ? '#2563eb' : ROLE_COLORS[r], color: '#fff' }
+                    ? { background: option === 'All' ? '#2563eb' : ROLE_COLORS[option], color: '#fff' }
                     : { background: '#f3f4f6', color: '#6b7280' }}>
-                  {r}
+                  {option}
                 </button>
               )
             })}
@@ -1043,8 +728,7 @@ export function Checklist() {
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
             <span className="text-amber-500 text-sm flex-shrink-0">!</span>
             <p className="text-amber-700 text-xs font-medium">
-              {visRows.length - visDone} item{visRows.length - visDone !== 1 ? 's' : ''} remaining
-              {!isEvent ? ' before service starts' : ''}
+              {visRows.length - visDone} item{visRows.length - visDone !== 1 ? 's' : ''} remaining before event starts
             </p>
           </div>
         )}
@@ -1060,13 +744,8 @@ export function Checklist() {
                 onClick={() => {
                   setEditMode(true)
                   setAddSection(null)
-                  if (isEvent) {
-                    setEditEventItem(null)
-                    setShowEventItemForm(true)
-                  } else {
-                    setEditSundayItem(null)
-                    setShowItemForm(true)
-                  }
+                  setEditEventItem(null)
+                  setShowEventItemForm(true)
                 }}
                 className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
                 <Plus className="w-4 h-4" />
@@ -1079,16 +758,14 @@ export function Checklist() {
         {displaySections.length > 0 && (
           <div className="space-y-3 xl:space-y-0 xl:columns-2 xl:[column-gap:0.75rem]">
             {displaySections.map(({ section, rows: sectionRows }) => {
-              const secDone = isEvent
-                ? sectionRows.filter(r => eventCompletions[r.uid]).length
-                : sectionRows.filter(r => sundayCompletions[Number(r.uid)]).length
+              const secDone = sectionRows.filter(row => eventCompletions[row.uid]).length
               const isOpen = expanded[section] !== false
 
               return (
                 <div key={section} className="xl:inline-block xl:w-full xl:break-inside-avoid xl:mb-3">
                   <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                     <button
-                      onClick={() => setExpanded(p => ({ ...p, [section]: !p[section] }))}
+                      onClick={() => setExpanded(prev => ({ ...prev, [section]: !prev[section] }))}
                       className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-center gap-2.5">
@@ -1110,10 +787,10 @@ export function Checklist() {
                         <DndContext
                           sensors={sensors}
                           collisionDetection={closestCenter}
-                          onDragEnd={e => handleDragEnd(e, section)}
+                          onDragEnd={event => handleDragEnd(event, section)}
                         >
                           <SortableContext
-                            items={sectionRows.map(r => r.uid)}
+                            items={sectionRows.map(row => row.uid)}
                             strategy={verticalListSortingStrategy}
                           >
                             {sectionRows.map((row, idx) => {
@@ -1137,25 +814,15 @@ export function Checklist() {
                                     isLast={idx === sectionRows.length - 1}
                                     chk={chk}
                                     expandedNote={!!expandedNotes[row.uid]}
-                                    onToggleNote={() => setExpandedNotes(p => ({ ...p, [row.uid]: !p[row.uid] }))}
-                                    onToggleCheck={() => toggleItem(row.uid)}
+                                    onToggleNote={() => setExpandedNotes(prev => ({ ...prev, [row.uid]: !prev[row.uid] }))}
+                                    onToggleCheck={() => { void toggleItem(row.uid) }}
                                     onEdit={() => {
-                                      if (isEvent) {
-                                        const item = getEventItemById(row.uid)
-                                        if (item) { setEditEventItem(item); setAddSection(null); setShowEventItemForm(true) }
-                                      } else {
-                                        const item = getSundayItemById(row.uid)
-                                        if (item) { setEditSundayItem(item); setAddSection(null); setShowItemForm(true) }
-                                      }
+                                      const item = getEventItemById(row.uid)
+                                      if (item) { setEditEventItem(item); setAddSection(null); setShowEventItemForm(true) }
                                     }}
                                     onDelete={() => {
-                                      if (isEvent) {
-                                        const item = getEventItemById(row.uid)
-                                        if (item) setConfirmDeleteEvent(item)
-                                      } else {
-                                        const item = getSundayItemById(row.uid)
-                                        if (item) setConfirmDeleteSunday(item)
-                                      }
+                                      const item = getEventItemById(row.uid)
+                                      if (item) setConfirmDeleteEvent(item)
                                     }}
                                   />
                                 </Fragment>
@@ -1168,13 +835,8 @@ export function Checklist() {
                           <button
                             onClick={() => {
                               setAddSection(section)
-                              if (isEvent) {
-                                setEditEventItem(null)
-                                setShowEventItemForm(true)
-                              } else {
-                                setEditSundayItem(null)
-                                setShowItemForm(true)
-                              }
+                              setEditEventItem(null)
+                              setShowEventItemForm(true)
                             }}
                             className="w-full flex items-center gap-2 px-4 py-2.5 text-blue-600 hover:bg-blue-50 transition-colors border-t border-gray-100 text-xs font-medium"
                           >
@@ -1192,59 +854,22 @@ export function Checklist() {
         )}
       </div>
 
-      {/* Sunday item form modal */}
-      {showItemForm && !isEvent && (
-        <ItemFormModal
-          item={editSundayItem || undefined}
-          defaultSection={addSection || undefined}
-          defaultServiceTypeSlug={editSundayItem ? undefined : serviceTypeSlug}
-          sectionOptions={sectionOptions}
-          subsectionsBySection={subsectionsBySection}
-          onClose={() => { setShowItemForm(false); setEditSundayItem(null); setAddSection(null) }}
-          onSaved={refreshSundayItems}
-        />
-      )}
-
-      {/* Event item form modal */}
-      {showEventItemForm && isEvent && activeEventId && (
+      {showEventItemForm && activeEventId && (
         <EventItemFormModal
           eventId={activeEventId}
           item={editEventItem || undefined}
           defaultSection={addSection || undefined}
-          sectionOptions={sectionOptions}
+          sectionOptions={allSections}
           subsectionsBySection={subsectionsBySection}
           onClose={() => { setShowEventItemForm(false); setEditEventItem(null); setAddSection(null) }}
           onSaved={refreshEventItems}
         />
       )}
 
-      {/* Delete confirmation — Sunday */}
-      {confirmDeleteSunday && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-gray-900 font-bold mb-2">Delete Item</h3>
-            <p className="text-gray-500 text-sm mb-4">
-              Delete "<span className="font-medium text-gray-700">{confirmDeleteSunday.task}</span>"? This cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmDeleteSunday(null)}
-                className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
-                Cancel
-              </button>
-              <button onClick={() => deleteSundayItem(confirmDeleteSunday)}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors">
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Templates modal */}
       {showTemplates && (
         <div
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={e => { if (e.target === e.currentTarget) setShowTemplates(false) }}
+          onClick={event => { if (event.target === event.currentTarget) setShowTemplates(false) }}
         >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -1262,7 +887,7 @@ export function Checklist() {
             <div className="flex-1 overflow-y-auto p-5">
               <TemplateManager
                 onApply={applyTemplate}
-                onRemove={isEvent ? removeTemplate : undefined}
+                onRemove={removeTemplate}
                 onClearAll={clearAllItems}
               />
             </div>
@@ -1270,8 +895,6 @@ export function Checklist() {
         </div>
       )}
 
-      {/* Delete confirmation — Event */}
-      {/* Save as Template modal */}
       {showSaveAsTemplate && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
@@ -1279,7 +902,7 @@ export function Checklist() {
               <div>
                 <h3 className="text-gray-900 font-bold">Save as Template</h3>
                 <p className="text-gray-400 text-xs mt-0.5">
-                  Snapshots all {isEvent ? eventItems.length : sundayItems.length} items into a reusable template.
+                  Snapshots all {eventItems.length} items into a reusable template.
                 </p>
               </div>
               <button onClick={() => setShowSaveAsTemplate(false)} className="text-gray-400 hover:text-gray-600">
@@ -1293,8 +916,8 @@ export function Checklist() {
                   autoFocus
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
                   value={saveTemplateName}
-                  onChange={e => setSaveTemplateName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') saveAsTemplate() }}
+                  onChange={event => setSaveTemplateName(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') void saveAsTemplate() }}
                   placeholder="e.g. Sunday 9am Standard"
                 />
               </div>
@@ -1304,9 +927,9 @@ export function Checklist() {
                   className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
                   Cancel
                 </button>
-                <button onClick={saveAsTemplate} disabled={savingTemplate}
+                <button onClick={() => { void saveAsTemplate() }} disabled={savingTemplate}
                   className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60">
-                  {savingTemplate ? 'Saving…' : 'Save Template'}
+                  {savingTemplate ? 'Saving...' : 'Save Template'}
                 </button>
               </div>
             </div>
@@ -1326,7 +949,7 @@ export function Checklist() {
                 className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
                 Cancel
               </button>
-              <button onClick={() => deleteEventItem(confirmDeleteEvent)}
+              <button onClick={() => { void deleteEventItem(confirmDeleteEvent) }}
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors">
                 Delete
               </button>

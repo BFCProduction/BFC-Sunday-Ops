@@ -19,8 +19,9 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - Event-native service data and analytics path: attendance, runtimes, loudness, weather, stream analytics, and imports sync through event-linked `service_records`
 - ProPresenter relay script for runtime capture
 - **Analytics screen** with Dashboard (6 KPI cards, trend charts, date-range filter) and Data Explorer tabs — powered by the `analytics_records` view
-- **Unified events** — Sunday services and standalone events share one chronological event model, with reusable templates, template seeding at event creation, per-event checklists where applicable, and unified navigation
+- **Unified events** — Sunday services and standalone events share one chronological event model, with reusable templates, template seeding at event creation, per-event checklist snapshots, and unified navigation
 - **Manual event creation** — all events are created in Sunday Ops via the "New Event" modal; multiple events of the same type can exist on the same date (Easter, extra traditional services, etc.)
+- **Event-native standalone event creation** — new standalone events no longer create `special_events` bridge rows; template seeding writes checklist rows directly against `events.id`
 - **Admin-only event deletion** — admins can delete events from the desktop session picker via a hover-reveal trash icon with a two-step confirmation; deletes are routed through the protected `event-admin` Supabase Edge Function and public `events` table deletes are blocked by migration `037`
 - **People & Access** — Settings section lets admins view all users who have logged into Sunday Ops (with last login dates) and toggle admin status, backed by the `user-admin` Edge Function
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
@@ -34,13 +35,13 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 ## What Is Live vs Pending
 
 Live now:
-- Checklist data is seeded into Supabase on first run and then managed from the admin UI.
-- Dashboard checklist counts now come from the live `checklist_items` table.
+- Checklist blueprint data is seeded into Supabase on first run; live checklist work happens through per-event `event_checklist_items` snapshots.
+- Dashboard checklist counts now come from the live event checklist snapshot for the selected event.
 - Operators can set persistent checklist initials once and reuse them for multiple checkoffs.
 - Checklist items with notes show a chevron indicator; tapping the task label slides the note open inline.
 - Checklist section and subsection fields use dropdowns with an "Add new…" option in the item edit modal; free-text fallback is gone.
 - Checklist items can be dragged to reorder within each section in admin mode; order is persisted to `sort_order`.
-- Checklist completions and checklist items subscribe to Supabase Realtime so the list updates across devices without a page refresh.
+- Event checklist completions and event checklist items subscribe to Supabase Realtime so the list updates across devices without a page refresh.
 - Issues capture a short title, description, severity, and optional photo attachments.
 - Issue photos upload to Supabase Storage, display as thumbnail strips on each issue card, and open in a full-screen lightbox.
 - Issues can be marked resolved; resolved issues move to a dimmed section and are excluded from the sidebar badge and dashboard alert.
@@ -92,6 +93,8 @@ Live now:
 
 - **Historical issue/evaluation review** (`scripts/review-session-assignments.js`) — exports ambiguous Sunday-level issues and evaluations with candidate events, high-confidence suggestions, and blank `assigned_event_id` cells for manual review. Apply mode updates `event_id` only from a reviewed CSV; delete mode removes reviewed rows left unassigned. Session 15 cleanup confirmed 0 Sunday-level issue/evaluation rows remain.
 
+- **Event-native cleanup pass** (`src/lib/supabase.ts`, `src/screens/Checklist.tsx`, `src/screens/Home.tsx`, `src/components/layout/SessionPicker.tsx`) — standalone event creation now seeds checklist items directly with unified `events.id`, regular Sunday services now use event-scoped checklist snapshots, the active app shell no longer exposes a separate legacy `eventId`/`sessionType` context, and dead legacy UI files (`EventChecklist`, `SpecialEventManager`, retired Service Data reporting tab) have been removed.
+
 - **Dashboard layout** — compact progress strip (dial + overall bar + role bars) spans the full width at the top; Today's Schedule (25%) and Run of Show (75%) sit side by side below it; Quick Actions below that. Stacks vertically on mobile.
 
 - **PCO Run of Show** (`supabase/functions/pco-plan-items/`):
@@ -106,12 +109,12 @@ Live now:
 
 - **Evaluation response visibility** (`src/screens/Evaluation.tsx`) — all logged-in users can submit event-native evaluations, but only admins see the response summary and submitted notes in the app UI. Event report export includes evaluation responses for admin review.
 
-- **Unified event support** (`src/components/admin/SpecialEventManager.tsx`, `src/components/admin/TemplateManager.tsx`, `src/screens/Checklist.tsx`):
+- **Unified event support** (`src/components/layout/QuickCreateModal.tsx`, `src/components/admin/TemplateManager.tsx`, `src/screens/Checklist.tsx`):
   - Admin-managed event templates (reusable checklist blueprints) and standalone events with name, date, time, and template assignment.
-  - Template seeding: when a template is selected in the QuickCreate modal, checklist items are snapshotted into the event at creation time — later template changes don't affect existing events.
+  - Template seeding: when a template is selected in the QuickCreate modal for a standalone event, checklist items are snapshotted into `event_checklist_items.event_id = events.id` at creation time — later template changes don't affect existing events.
   - Events appear chronologically in Home, the sidebar, and the event picker; prev/next navigation steps through the unified event list.
   - Per-event checklists: items can be added, edited, reordered, and deleted per-event in admin mode.
-  - **Unified checklist component** (`src/screens/Checklist.tsx`) handles both shared-template and event-scoped checklist storage while presenting a single event workflow.
+  - **Unified checklist component** (`src/screens/Checklist.tsx`) reads and writes event-scoped checklist snapshots for Sunday services and standalone events.
   - All operational screens (issues, attendance, runtimes, loudness, weather, evaluations) work for events using the same `event_id` column pattern. `event_id` FKs on all operational tables now correctly reference `events(id)`.
   - Template manager in Settings → Checklist Templates (admin only).
 
@@ -153,7 +156,7 @@ Still pending:
 - Historical script burn-down follow-up — see `docs/operational-script-inventory.md` for guarded scripts and remaining archive cleanup.
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
 - Any downstream reporting beyond manual report export
-- Make checklist/data compatibility paths fully event-native so internal naming and storage no longer have to distinguish Sunday-shaped and standalone event-shaped records.
+- Continue data compatibility cleanup: several operational screens still keep legacy Sunday fallback reads for old attendance/runtime/loudness/evaluation rows.
 - Harden evaluation response privacy at the Supabase/RLS or Edge Function layer if response visibility needs to be enforced beyond the current admin-only UI path.
 
 Completed (previously listed as pending):
@@ -178,8 +181,8 @@ Completed (previously listed as pending):
 - `service_types` — service type definitions (`sunday-9am`, `sunday-11am`, `special`)
 - `events` — unified event instances (replaces the split between `sundays` and `special_events` in the navigation layer)
 - `user_sessions` — PCO OAuth session tokens
-- `checklist_items`
-- `checklist_completions`
+- `checklist_items` — Sunday checklist blueprint rows used to seed event snapshots
+- `checklist_completions` — legacy Sunday completion rows retained for historical migration/audit compatibility
 - `attendance`
 - `runtime_fields`
 - `runtime_values`
@@ -195,8 +198,8 @@ Completed (previously listed as pending):
 - `service_records` — unified analytics table, now event-linked by `event_id` when available; queried via the `analytics_records` view
 - `event_templates` — reusable checklist blueprints for standalone/event-scoped checklists
 - `event_template_items` — checklist items belonging to a template
-- `special_events` — legacy bridge table for standalone/non-Sunday events until all compatibility paths are fully event-native
-- `event_checklist_items` — per-event checklist items (snapshotted from template at creation)
+- `special_events` — legacy bridge table retained for older standalone/non-Sunday events; new standalone event creation writes directly to `events`
+- `event_checklist_items` — per-event checklist items (snapshotted from Sunday blueprints or standalone event templates)
 - `event_checklist_completions` — completions for event checklist items
 
 Views:
@@ -244,6 +247,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/039_event_native_service_records.sql`
 - `supabase/migrations/040_import_runs.sql`
 - `supabase/migrations/041_event_native_weather_config.sql`
+- `supabase/migrations/042_event_checklist_snapshots_for_sundays.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

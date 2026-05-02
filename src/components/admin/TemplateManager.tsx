@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, ChevronLeft, Download, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import type { EventTemplate, EventTemplateItem } from '../../types'
+import { ROLE_COLORS, ROLES } from '../../data/checklist'
+import type { EventTemplate, EventTemplateItem, Role } from '../../types'
 
 const ADD_NEW = '__add_new__'
 
@@ -16,10 +17,16 @@ interface TemplateItemFormModalProps {
   onSaved: () => void
 }
 
+function roleForTemplateItem(item?: EventTemplateItem): Role {
+  const value = item?.role
+  return value && ROLES.includes(value as Role) ? value as Role : 'All'
+}
+
 function TemplateItemFormModal({
   templateId, item, sectionOptions, subsectionsBySection, onClose, onSaved,
 }: TemplateItemFormModalProps) {
   const [label, setLabel] = useState(item?.label ?? '')
+  const [role, setRole] = useState<Role>(roleForTemplateItem(item))
   const [section, setSection] = useState(item?.section ?? sectionOptions[0] ?? '')
   const [subsection, setSubsection] = useState(item?.subsection ?? '')
   const [notes, setNotes] = useState(item?.item_notes ?? '')
@@ -41,6 +48,7 @@ function TemplateItemFormModal({
     setError('')
     const payload = {
       label: label.trim(),
+      role: role === 'All' ? null : role,
       section: effectiveSection.trim(),
       subsection: effectiveSubsection.trim() || null,
       item_notes: notes.trim() || null,
@@ -77,6 +85,17 @@ function TemplateItemFormModal({
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500 resize-none"
               value={label} onChange={e => setLabel(e.target.value)} placeholder="Task description"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Role</label>
+            <select
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-500"
+              value={role}
+              onChange={e => setRole(e.target.value as Role)}
+            >
+              {ROLES.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
           </div>
 
           <div>
@@ -181,7 +200,7 @@ function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   const [editItem, setEditItem] = useState<EventTemplateItem | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<EventTemplateItem | null>(null)
 
-  const loadItems = async () => {
+  const loadItems = useCallback(async () => {
     const { data } = await supabase
       .from('event_template_items')
       .select('*')
@@ -189,9 +208,26 @@ function TemplateEditor({ template, onBack }: TemplateEditorProps) {
       .order('sort_order')
     setItems((data || []) as EventTemplateItem[])
     setLoading(false)
-  }
+  }, [template.id])
 
-  useEffect(() => { void loadItems() }, [template.id])
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+      const { data } = await supabase
+        .from('event_template_items')
+        .select('*')
+        .eq('template_id', template.id)
+        .order('sort_order')
+      if (cancelled) return
+      setItems((data || []) as EventTemplateItem[])
+      setLoading(false)
+    }
+
+    void load()
+    return () => { cancelled = true }
+  }, [template.id])
 
   const deleteItem = async (item: EventTemplateItem) => {
     await supabase.from('event_template_items').delete().eq('id', item.id)
@@ -257,6 +293,17 @@ function TemplateEditor({ template, onBack }: TemplateEditorProps) {
               <div className="flex-1 min-w-0">
                 <p className="text-gray-900 text-sm leading-snug">{item.label}</p>
                 <div className="flex items-center gap-2 mt-0.5">
+                  {item.role && (
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                      style={{
+                        background: `${ROLE_COLORS[item.role as keyof typeof ROLE_COLORS] || '#6b7280'}20`,
+                        color: ROLE_COLORS[item.role as keyof typeof ROLE_COLORS] || '#6b7280',
+                      }}
+                    >
+                      {item.role}
+                    </span>
+                  )}
                   <span className="text-gray-400 text-[10px]">{item.section}</span>
                   {item.subsection && (
                     <>
@@ -535,7 +582,7 @@ export function TemplateManager({ onApply, onRemove, onClearAll }: TemplateManag
   const [formError, setFormError] = useState('')
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<TemplateWithCount | null>(null)
 
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     const { data } = await supabase
       .from('event_templates')
       .select('id, name, notes, created_at, event_template_items(id)')
@@ -549,9 +596,32 @@ export function TemplateManager({ onApply, onRemove, onClearAll }: TemplateManag
       itemCount: t.event_template_items?.length ?? 0,
     })))
     setLoading(false)
-  }
+  }, [])
 
-  useEffect(() => { void loadTemplates() }, [])
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+      const { data } = await supabase
+        .from('event_templates')
+        .select('id, name, notes, created_at, event_template_items(id)')
+        .order('name')
+      if (cancelled) return
+      const rows = (data || []) as (EventTemplate & { event_template_items: { id: string }[] })[]
+      setTemplates(rows.map(t => ({
+        id: t.id,
+        name: t.name,
+        notes: t.notes,
+        created_at: t.created_at,
+        itemCount: t.event_template_items?.length ?? 0,
+      })))
+      setLoading(false)
+    }
+
+    void load()
+    return () => { cancelled = true }
+  }, [])
 
   const createTemplate = async () => {
     if (!newName.trim()) { setFormError('Template name is required'); return }

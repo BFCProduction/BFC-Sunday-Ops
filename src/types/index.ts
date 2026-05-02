@@ -143,7 +143,7 @@ export interface ChecklistItem {
 
 export type Role = 'All' | 'A1' | 'Video' | 'Graphics' | 'PTZ' | 'Lighting' | 'Stage'
 
-// ── Special Events (legacy — kept for checklist/template system) ──────────────
+// ── Event checklist templates ────────────────────────────────────────────────
 
 export interface EventTemplate {
   id: string
@@ -157,20 +157,11 @@ export interface EventTemplateItem {
   template_id: string
   source_checklist_item_id: number | null
   label: string
+  role: string | null
   section: string
   subsection: string | null
   item_notes: string | null
   sort_order: number
-  created_at: string
-}
-
-export interface SpecialEvent {
-  id: string
-  name: string
-  event_date: string   // YYYY-MM-DD
-  event_time: string | null  // HH:MM
-  template_id: string | null
-  notes: string | null
   created_at: string
 }
 
@@ -180,6 +171,7 @@ export interface EventChecklistItem {
   source_template_item_id: string | null
   source_checklist_item_id: number | null
   label: string
+  role: string | null
   section: string
   subsection: string | null
   item_notes: string | null
@@ -225,15 +217,13 @@ export interface ServiceType {
  * A unified session — every service instance across all types.
  *
  * Backward compat fields:
- *   type             'sunday' for 9am/11am services, 'event' for special events
  *   legacySundayId   sundays.id — passed to data queries for 9am/11am services
- *   legacySpecialEventId  special_events.id — passed to data queries for specials
+ *   legacySpecialEventId  historical special_events.id bridge for old rows
  *
  * These legacy fields are removed once all data tables are event-native.
  */
 export interface Session {
   id: string                        // events.id (new primary key for navigation)
-  type: 'sunday' | 'event'          // 'sunday' = regular service, 'event' = special
   serviceTypeSlug: string           // 'sunday-9am' | 'sunday-11am' | 'special'
   serviceTypeName: string           // 'Sunday 9:00 AM'
   serviceTypeColor: string          // '#3b82f6'
@@ -243,5 +233,5 @@ export interface Session {
 
   // ── Backward-compat bridges ───────────────────────────────────────────────
   legacySundayId: string | null        // sundays.id for 9am/11am events
-  legacySpecialEventId: string | null  // special_events.id for special events
+  legacySpecialEventId: string | null  // historical special_events.id bridge
 }
