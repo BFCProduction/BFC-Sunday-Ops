@@ -46,12 +46,16 @@ const DEFAULT_TIMES: Record<string, string> = {
   'sunday-11am': '11:00:00',
 }
 
-function sessionTimeValue(session: Session): string {
-  return session.eventTime || DEFAULT_TIMES[session.serviceTypeSlug] || '09:00:00'
+function displayTimeValue(session: Session): string | null {
+  return session.eventTime || DEFAULT_TIMES[session.serviceTypeSlug] || null
+}
+
+function sortTimeValue(session: Session): string {
+  return displayTimeValue(session) || '23:59:59'
 }
 
 function startMs(session: Session) {
-  return new Date(`${session.date}T${sessionTimeValue(session).slice(0, 5)}:00`).getTime()
+  return new Date(`${session.date}T${sortTimeValue(session).slice(0, 5)}:00`).getTime()
 }
 
 function formatDate(date: string, options: Intl.DateTimeFormatOptions = {}) {
@@ -84,7 +88,8 @@ function eventTitle(session: Session) {
 }
 
 function eventMeta(session: Session) {
-  return `${formatDate(session.date)} · ${formatTime(sessionTimeValue(session))}`
+  const time = displayTimeValue(session)
+  return [formatDate(session.date), time ? formatTime(time) : null].filter(Boolean).join(' · ')
 }
 
 function getStatus(session: Session, today: string, now = Date.now()): EventStatus {
@@ -123,12 +128,13 @@ function relativeTiming(session: Session, today: string, now = Date.now()) {
   const dayDiff = Math.round((new Date(`${session.date}T12:00:00`).getTime() - new Date(`${today}T12:00:00`).getTime()) / msPerDay)
 
   if (status === 'current') return 'In the active event window'
-  if (session.date === today && start > now) return `Starts at ${formatTime(sessionTimeValue(session))}`
-  if (dayDiff === 1) return `Tomorrow at ${formatTime(sessionTimeValue(session))}`
+  const time = displayTimeValue(session)
+  if (session.date === today && start > now) return time ? `Starts at ${formatTime(time)}` : 'Today'
+  if (dayDiff === 1) return time ? `Tomorrow at ${formatTime(time)}` : 'Tomorrow'
   if (dayDiff > 1) return `${dayDiff} days out`
   if (dayDiff === -1) return 'Yesterday'
   if (dayDiff < -1) return `${Math.abs(dayDiff)} days ago`
-  return `Started at ${formatTime(sessionTimeValue(session))}`
+  return time ? `Started at ${formatTime(time)}` : 'Today'
 }
 
 function uniqueSessions(sessions: Array<Session | null | undefined>) {

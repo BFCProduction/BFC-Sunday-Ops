@@ -55,12 +55,16 @@ function AppShell() {
 
 // ── Focus selection: midpoint between the last event's end and next event's start ──
 // "Last event ended" is approximated as 6 PM on the event date.
-// "Next event starts" uses the stored event_time, defaulting to 9 AM.
+// "Next event starts" uses stored event_time, Sunday service defaults, then
+// end-of-day for unscheduled standalone events.
 function getActiveFocusSession(sessions: Session[], now = new Date()): Session | null {
   if (sessions.length === 0) return null
 
   const startMs = (s: Session) => {
-    const time = s.eventTime?.slice(0, 5) ?? '09:00'
+    const time = s.eventTime?.slice(0, 5)
+      ?? (s.serviceTypeSlug === 'sunday-9am' ? '09:00' : null)
+      ?? (s.serviceTypeSlug === 'sunday-11am' ? '11:00' : null)
+      ?? '23:59'
     return new Date(`${s.date}T${time}:00`).getTime()
   }
   const endMs = (s: Session) => new Date(`${s.date}T18:00:00`).getTime()

@@ -264,7 +264,9 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
     }
   }
 
-  function handlePcoPlanSelect(plan: PcoPlanResult) {
+  function handlePcoPlanSelect(plan: PcoPlanResult, selectedSlug: string) {
+    setServiceTypeSlug(selectedSlug)
+    setTime(SERVICE_TYPES.find(s => s.slug === selectedSlug)?.defaultTime ?? '')
     setPcoPlanId(plan.id)
     // Build a descriptive label for the linked-plan badge
     const label = plan.title || plan.series_title
