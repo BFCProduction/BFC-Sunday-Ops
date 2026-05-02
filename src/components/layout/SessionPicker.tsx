@@ -73,8 +73,8 @@ function eventTypeLabel(s: Session) {
   return usesEventScopedChecklist(s) ? 'Event' : s.serviceTypeName
 }
 
-function eventTimeLabel(s: Session) {
-  if (!s.eventTime && usesEventScopedChecklist(s)) return 'Time TBD'
+function eventTimeLabel(s: Session): string | null {
+  if (!s.eventTime && usesEventScopedChecklist(s)) return null
   return sessionTimeValue(s).slice(0, 5)
 }
 
@@ -208,7 +208,7 @@ export function SessionPicker({ allSessions, activeEventId, onSelect, onClose, i
               {eventTitle(s)}
             </p>
             <p className="truncate text-xs text-gray-400">
-              {formatDayLabel(s.date)} · {eventTimeLabel(s)} · {eventTypeLabel(s)}
+              {[formatDayLabel(s.date), eventTimeLabel(s), eventTypeLabel(s)].filter(Boolean).join(' · ')}
             </p>
           </div>
           {isActive && <span className="text-xs font-semibold text-blue-600 flex-shrink-0">Current</span>}
