@@ -213,6 +213,7 @@ Deno.serve(async (req) => {
     if (pcoStRes.ok) {
       const pcoStBody = await pcoStRes.json() as { data: PcoServiceType[] }
       const pcoServiceTypes = pcoStBody.data ?? []
+      console.log(`pco-plans: fetched ${pcoServiceTypes.length} service types from PCO`)
 
       const toInsert = pcoServiceTypes
         .filter(p => !byPcoId.has(p.id))
@@ -225,17 +226,22 @@ Deno.serve(async (req) => {
         }))
 
       if (toInsert.length > 0) {
-        const { data: inserted } = await supabase
+        console.log(`pco-plans: registering ${toInsert.length} new service types: ${toInsert.map(t => t.name).join(', ')}`)
+        const { data: inserted, error: insertErr } = await supabase
           .from('service_types')
-          .insert(toInsert)
+          .upsert(toInsert, { onConflict: 'pco_service_type_id', ignoreDuplicates: false })
           .select('id, slug, name, color, sort_order, pco_service_type_id')
+        if (insertErr) console.error('pco-plans: service type insert error:', insertErr.message)
         for (const r of (inserted ?? []) as ServiceType[]) {
           byPcoId.set(r.pco_service_type_id, r)
         }
       }
+    } else {
+      const errText = await pcoStRes.text().catch(() => '')
+      console.error(`pco-plans: PCO service types fetch failed ${pcoStRes.status}: ${errText.slice(0, 300)}`)
     }
-  } catch (_) {
-    // PCO service type discovery failed — proceed with DB rows only.
+  } catch (err) {
+    console.error('pco-plans: PCO service type discovery threw:', err instanceof Error ? err.message : String(err))
   }
 
   const serviceTypes: ServiceType[] = Array.from(byPcoId.values())
@@ -329,7 +335,11 @@ Deno.serve(async (req) => {
         (b.event_time ?? '').localeCompare(a.event_time ?? '')
       )
 
-    results.push({ slug: st.slug, name: st.name, pco_service_type_id: st.pco_service_type_id, plans: filtered, _debug: debugLog } as unknown as PcoServiceTypeResult)
+    const sortedFiltered = [...filtered].sort((a, b) =>
+      a.event_date.localeCompare(b.event_date) ||
+      (a.event_time ?? '').localeCompare(b.event_time ?? ''),
+    )
+    results.push({ slug: st.slug, name: st.name, pco_service_type_id: st.pco_service_type_id, plans: sortedFiltered, _debug: debugLog } as unknown as PcoServiceTypeResult)
   }
 
   return json(cors, 200, { service_types: results, _debug: true })

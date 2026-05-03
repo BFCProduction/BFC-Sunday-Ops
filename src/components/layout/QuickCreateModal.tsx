@@ -61,8 +61,8 @@ function PcoPlanPicker({
     (p.title?.toLowerCase().includes(q) ?? false) ||
     (p.series_title?.toLowerCase().includes(q) ?? false),
   ).sort((a, b) =>
-    b.event_date.localeCompare(a.event_date) ||
-    (b.event_time ?? '').localeCompare(a.event_time ?? ''),
+    a.event_date.localeCompare(b.event_date) ||
+    (a.event_time ?? '').localeCompare(b.event_time ?? ''),
   )
 
   const title = activeGroup ? activeGroup.name : 'Select a PCO Plan'
