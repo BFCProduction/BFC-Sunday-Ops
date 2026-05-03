@@ -6,6 +6,7 @@ interface MobileTabsProps {
   active: Screen
   setActive: (s: Screen) => void
   issueCount: number
+  includeInAnalytics?: boolean
 }
 
 const tabs = [
@@ -17,7 +18,8 @@ const tabs = [
   { id: 'evaluation' as Screen, label: 'Eval',       icon: Star            },
 ]
 
-export function MobileTabs({ active, setActive, issueCount }: MobileTabsProps) {
+export function MobileTabs({ active, setActive, issueCount, includeInAnalytics = true }: MobileTabsProps) {
+  const visibleTabs = tabs.filter(tab => tab.id !== 'data' || includeInAnalytics)
   return (
     <div
       className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white flex justify-center"
@@ -30,7 +32,7 @@ export function MobileTabs({ active, setActive, issueCount }: MobileTabsProps) {
           boxShadow: '0 4px 24px rgba(0,0,0,0.18), 0 1.5px 6px rgba(0,0,0,0.12)',
         }}
       >
-        {tabs.map(tab => {
+        {visibleTabs.map(tab => {
           const Icon = tab.icon
           const isActive = active === tab.id
           return (

@@ -226,7 +226,7 @@ function AppMain() {
             {screen === 'docs'       && <ProductionDocs />}
           </main>
         </div>
-        <MobileTabs active={screen} setActive={setScreen} issueCount={issueCount} />
+        <MobileTabs active={screen} setActive={setScreen} issueCount={issueCount} includeInAnalytics={session?.includeInAnalytics ?? true} />
       </div>
     </SundayContext.Provider>
   )

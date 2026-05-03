@@ -27,6 +27,7 @@ interface EventRow {
   name: string
   event_date: string
   event_time: string | null
+  include_in_analytics: boolean
   legacy_sunday_id: string | null
   legacy_special_event_id: string | null
   service_types: {
@@ -58,6 +59,7 @@ function rowToSession(row: EventRow): Session {
     name:                  row.name,
     date:                  row.event_date,
     eventTime:             row.event_time,
+    includeInAnalytics:    row.include_in_analytics,
     legacySundayId:        row.legacy_sunday_id,
     legacySpecialEventId:  row.legacy_special_event_id,
   }
@@ -73,7 +75,7 @@ export async function loadAllSessions(): Promise<Session[]> {
   const { data, error } = await supabase
     .from('events')
     .select(`
-      id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+      id, name, event_date, event_time, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
       service_types ( slug, name, color, sort_order )
     `)
     .order('event_date', { ascending: true })
@@ -96,7 +98,7 @@ export async function getEventById(id: string): Promise<Session | null> {
   const { data } = await supabase
     .from('events')
     .select(`
-      id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+      id, name, event_date, event_time, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
       service_types ( slug, name, color, sort_order )
     `)
     .eq('id', id)
@@ -113,7 +115,7 @@ export async function getFirstEventForDate(date: string): Promise<Session | null
   const { data } = await supabase
     .from('events')
     .select(`
-      id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+      id, name, event_date, event_time, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
       service_types ( slug, name, color, sort_order )
     `)
     .eq('event_date', date)
@@ -131,7 +133,7 @@ export async function getEventsForDate(date: string): Promise<Session[]> {
   const { data } = await supabase
     .from('events')
     .select(`
-      id, name, event_date, event_time, legacy_sunday_id, legacy_special_event_id,
+      id, name, event_date, event_time, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
       service_types ( slug, name, color, sort_order )
     `)
     .eq('event_date', date)
@@ -199,7 +201,7 @@ export async function getOrCreateTodayEvents(
   if (!existing9am) {
     const { data, error } = await supabase
       .from('events')
-      .insert({ service_type_id: st9am.id, name: formatName('Sunday 9:00 AM'), event_date: today, event_time: '09:00:00', legacy_sunday_id: sundayId })
+      .insert({ service_type_id: st9am.id, name: formatName('Sunday 9:00 AM'), event_date: today, event_time: '09:00:00', include_in_analytics: true, legacy_sunday_id: sundayId })
       .select('id').single()
     if (error) throw error
     event9amId = data.id
@@ -213,7 +215,7 @@ export async function getOrCreateTodayEvents(
   if (!existing11am) {
     const { data, error } = await supabase
       .from('events')
-      .insert({ service_type_id: st11am.id, name: formatName('Sunday 11:00 AM'), event_date: today, event_time: '11:00:00', legacy_sunday_id: sundayId })
+      .insert({ service_type_id: st11am.id, name: formatName('Sunday 11:00 AM'), event_date: today, event_time: '11:00:00', include_in_analytics: true, legacy_sunday_id: sundayId })
       .select('id').single()
     if (error) throw error
     event11amId = data.id
@@ -322,13 +324,14 @@ export async function ensureEventChecklistSeeded(eventId: string, serviceTypeSlu
  * Returns the new events.id so the caller can navigate to the event.
  */
 export async function createEvent(opts: {
-  name:             string
-  serviceTypeSlug:  string       // 'sunday-9am' | 'sunday-11am' | 'special'
-  event_date:       string       // YYYY-MM-DD
-  event_time:       string | null
-  notes?:           string | null
-  templateId?:      string | null
-  pco_plan_id?:     string | null
+  name:                string
+  serviceTypeSlug:     string       // e.g. 'sunday-9am' | 'sunday-11am' | any PCO-derived slug
+  event_date:          string       // YYYY-MM-DD
+  event_time:          string | null
+  notes?:              string | null
+  templateId?:         string | null
+  pco_plan_id?:        string | null
+  includeInAnalytics?: boolean
 }): Promise<string> {
   // Resolve service type
   const { data: st, error: stErr } = await supabase
@@ -338,8 +341,9 @@ export async function createEvent(opts: {
     .single()
   if (stErr || !st) throw new Error(`Service type not found: ${opts.serviceTypeSlug}`)
 
-  const isSpecial = opts.serviceTypeSlug === 'special'
+  const isSpecial = opts.serviceTypeSlug !== 'sunday-9am' && opts.serviceTypeSlug !== 'sunday-11am'
   const isSundayService = opts.serviceTypeSlug === 'sunday-9am' || opts.serviceTypeSlug === 'sunday-11am'
+  const includeInAnalytics = opts.includeInAnalytics ?? isSundayService
 
   let legacySundayId: string | null = null
 
@@ -357,6 +361,7 @@ export async function createEvent(opts: {
       event_time:              opts.event_time,
       notes:                   opts.notes ?? null,
       pco_plan_id:             opts.pco_plan_id ?? null,
+      include_in_analytics:    includeInAnalytics,
       legacy_sunday_id:        legacySundayId,
       legacy_special_event_id: null,
     })

@@ -74,9 +74,10 @@ export interface PcoPlanResult {
 }
 
 export interface PcoServiceTypePlans {
-  slug:  string
-  name:  string
-  plans: PcoPlanResult[]
+  slug:                string
+  name:                string
+  pco_service_type_id: string
+  plans:               PcoPlanResult[]
 }
 
 export async function fetchPcoPlans(

@@ -71,6 +71,8 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
 
   // ── Prev / next navigation (by events.id) ─────────────────────────────────
   const currentIdx = allSessions.findIndex(s => s.id === activeEventId)
+  const activeSession = currentIdx >= 0 ? allSessions[currentIdx] : null
+  const includeInAnalytics = activeSession?.includeInAnalytics ?? true
   const prevSession = currentIdx > 0 ? allSessions[currentIdx - 1] : null
   const nextSession = currentIdx >= 0 && currentIdx < allSessions.length - 1
     ? allSessions[currentIdx + 1]
@@ -206,7 +208,7 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
             <p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-gray-700">
               Event Workspace
             </p>
-            {eventNavItems.map(item => {
+            {eventNavItems.filter(item => item.id !== 'data' || includeInAnalytics).map(item => {
               const Icon = item.icon
               const isActive = active === item.id
               return (

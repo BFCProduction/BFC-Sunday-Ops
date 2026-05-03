@@ -230,6 +230,7 @@ export interface Session {
   name: string                      // 'Sunday 9:00 AM · April 13, 2026'
   date: string                      // event_date YYYY-MM-DD
   eventTime: string | null
+  includeInAnalytics: boolean       // whether this event shows in Data Explorer
 
   // ── Backward-compat bridges ───────────────────────────────────────────────
   legacySundayId: string | null        // sundays.id for 9am/11am events

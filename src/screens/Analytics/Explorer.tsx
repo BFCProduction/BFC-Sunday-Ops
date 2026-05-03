@@ -12,7 +12,7 @@ interface ServiceRecord {
   event_time: string | null
   service_type_label: string | null
   service_date: string
-  service_type: 'sunday-9am' | 'sunday-11am' | 'special'
+  service_type: string
   service_label: string | null
   in_person_attendance: number | null
   church_online_views: number | null
@@ -206,8 +206,9 @@ const SERVICE_META: Record<string, { label: string; color: string; bg: string }>
   'special':     { label: 'Special', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)'  },
 }
 
-function ServiceBadge({ type }: { type: string }) {
+function ServiceBadge({ type, label }: { type: string; label?: string | null }) {
   const meta = SERVICE_META[type] ?? { label: type, color: '#6b7280', bg: 'rgba(107,114,128,0.15)' }
+  const displayLabel = label ?? meta.label
   return (
     <span
       className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
@@ -217,7 +218,7 @@ function ServiceBadge({ type }: { type: string }) {
         className="rounded-full flex-shrink-0"
         style={{ width: 6, height: 6, backgroundColor: meta.color }}
       />
-      {meta.label}
+      {displayLabel}
     </span>
   )
 }
@@ -258,15 +259,13 @@ function compareRecords(a: ServiceRecord, b: ServiceRecord, key: SortKey, asc: b
 
 // ── Explorer ──────────────────────────────────────────────────────────────────
 
-type ServiceFilter = 'all' | 'sunday-9am' | 'sunday-11am' | 'special'
-
 export function Explorer() {
   const [allRecords, setAllRecords] = useState<ServiceRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // Filters & sort
-  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('all')
+  const [serviceFilter, setServiceFilter] = useState<string>('all')
   const [yearFilter, setYearFilter] = useState<string>('all')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortAsc, setSortAsc] = useState(false)
@@ -291,13 +290,23 @@ export function Explorer() {
     load()
   }, [])
 
-  // Derive available years from loaded records
+  // Derive available years and service types from loaded records
   const availableYears = useMemo(() => {
     const years = new Set<string>()
-    for (const r of allRecords) {
-      years.add(r.service_date.slice(0, 4))
-    }
+    for (const r of allRecords) years.add(r.service_date.slice(0, 4))
     return Array.from(years).sort((a, b) => b.localeCompare(a))
+  }, [allRecords])
+
+  const availableServiceTypes = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const r of allRecords) {
+      if (!seen.has(r.service_type)) {
+        seen.set(r.service_type, r.service_type_label ?? r.service_type)
+      }
+    }
+    return Array.from(seen.entries())
+      .map(([slug, label]) => ({ slug, label }))
+      .sort((a, b) => a.label.localeCompare(b.label))
   }, [allRecords])
 
   // Filter + sort client-side
@@ -342,15 +351,15 @@ export function Explorer() {
         <select
           value={serviceFilter}
           onChange={e => {
-            setServiceFilter(e.target.value as ServiceFilter)
+            setServiceFilter(e.target.value)
             setPage(0)
           }}
           className={ctrlClass}
         >
           <option value="all">All Services</option>
-          <option value="sunday-9am">9:00 AM</option>
-          <option value="sunday-11am">11:00 AM</option>
-          <option value="special">Special</option>
+          {availableServiceTypes.map(st => (
+            <option key={st.slug} value={st.slug}>{st.label}</option>
+          ))}
         </select>
 
         {/* Year filter */}
@@ -407,11 +416,12 @@ export function Explorer() {
       {/* Table */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: 1560 }}>
+          <table className="w-full" style={{ minWidth: 1760 }}>
             <thead>
               <tr>
                 <TH sticky>Date</TH>
-                <TH>Service</TH>
+                <TH>Service Type</TH>
+                <TH>Plan Title</TH>
                 <TH right>Combined</TH>
                 <TH right>In-Person</TH>
                 <TH right>CO Views</TH>
@@ -431,11 +441,11 @@ export function Explorer() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={16} className="py-10 text-center text-gray-400 text-xs">Loading…</td>
+                  <td colSpan={18} className="py-10 text-center text-gray-400 text-xs">Loading…</td>
                 </tr>
               ) : pageRows.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="py-10 text-center text-gray-400 text-xs">No records found</td>
+                  <td colSpan={18} className="py-10 text-center text-gray-400 text-xs">No records found</td>
                 </tr>
               ) : pageRows.map(r => {
                 const goal = GOAL_LAeq[r.service_type]
@@ -443,7 +453,10 @@ export function Explorer() {
                 return (
                   <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                     <TD sticky className="font-medium text-gray-900">{fmtDate(r.service_date)}</TD>
-                    <TD><ServiceBadge type={r.service_type} /></TD>
+                    <TD className="whitespace-nowrap">
+                      <ServiceBadge type={r.service_type} label={r.service_type_label} />
+                    </TD>
+                    <TD className="text-gray-700 max-w-[200px] truncate">{r.event_name ?? '—'}</TD>
                     <TD right mono>{combinedAttStr(r)}</TD>
                     <TD right mono>{fmtNum(r.in_person_attendance)}</TD>
                     <TD right mono>{fmtNum(r.church_online_views)}</TD>
