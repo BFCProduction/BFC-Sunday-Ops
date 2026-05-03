@@ -291,10 +291,9 @@ Deno.serve(async (req) => {
     }
 
     if (successfulFetches === 0) {
-      return json(cors, 502, {
-        error: `Unable to fetch PCO plans for ${st.name}`,
-        details: debugLog,
-      })
+      // Skip this service type rather than aborting the whole request.
+      console.warn(`Skipping ${st.name}: ${debugLog.join(' | ')}`)
+      continue
     }
 
     const uniquePlans = plans
