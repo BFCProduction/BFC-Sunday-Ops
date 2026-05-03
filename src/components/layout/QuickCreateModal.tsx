@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  CalendarDays, Link2, Loader2, Search, X, BarChart2,
+  CalendarDays, Link2, Loader2, Search, X, BarChart2, ChevronRight, ChevronLeft,
 } from 'lucide-react'
 import { createEvent, loadAllSessions, supabase } from '../../lib/supabase'
 import { ApiError, fetchPcoPlans, type PcoPlanResult, type PcoServiceTypePlans } from '../../lib/adminApi'
@@ -24,12 +24,10 @@ interface Props {
 
 function PcoPlanPicker({
   sessionToken,
-  initialSlug,
   onSelect,
   onClose,
 }: {
   sessionToken: string
-  initialSlug: string | null
   onSelect: (plan: PcoPlanResult, group: PcoServiceTypePlans) => void
   onClose: () => void
 }) {
@@ -37,28 +35,24 @@ function PcoPlanPicker({
   const [error,          setError]          = useState('')
   const [reauthRequired, setReauthRequired] = useState(false)
   const [groups,         setGroups]         = useState<PcoServiceTypePlans[]>([])
-  const [activeSlug,     setActiveSlug]     = useState(initialSlug ?? '')
+  const [activeGroup,    setActiveGroup]    = useState<PcoServiceTypePlans | null>(null)
   const [query,          setQuery]          = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchPcoPlans(sessionToken)
-      .then(data => {
-        setGroups(data)
-        if (!activeSlug && data.length > 0) setActiveSlug(data[0].slug)
-        else if (data.length > 0 && !data.find(g => g.slug === activeSlug)) setActiveSlug(data[0].slug)
-      })
+      .then(data => setGroups(data))
       .catch(e => {
         if (e instanceof ApiError && e.code === 'reauth_required') setReauthRequired(true)
         setError(e instanceof Error ? e.message : 'Failed to load PCO plans')
       })
-      .finally(() => {
-        setLoading(false)
-        searchRef.current?.focus()
-      })
-  }, [sessionToken, activeSlug])
+      .finally(() => setLoading(false))
+  }, [sessionToken])
 
-  const activeGroup = groups.find(g => g.slug === activeSlug)
+  useEffect(() => {
+    if (activeGroup) searchRef.current?.focus()
+  }, [activeGroup])
+
   const q = query.toLowerCase()
   const visiblePlans = (activeGroup?.plans ?? []).filter(p =>
     !q ||
@@ -71,104 +65,117 @@ function PcoPlanPicker({
     (b.event_time ?? '').localeCompare(a.event_time ?? ''),
   )
 
+  const title = activeGroup ? activeGroup.name : 'Select a PCO Plan'
+
   return (
     <div
       className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh]">
+
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <Link2 className="w-4 h-4 text-blue-500" />
-            <h3 className="text-sm font-semibold text-gray-900">Select a PCO Plan</h3>
+            {activeGroup ? (
+              <button
+                onClick={() => { setActiveGroup(null); setQuery('') }}
+                className="p-1 -ml-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            ) : (
+              <Link2 className="w-4 h-4 text-blue-500" />
+            )}
+            <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
           </div>
           <button onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Service type tabs */}
-        {!loading && groups.length > 0 && (
-          <div className="flex border-b border-gray-100 flex-shrink-0 overflow-x-auto">
+        {/* Loading / error */}
+        {loading && (
+          <div className="flex items-center justify-center py-12 gap-2 text-gray-500 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+          </div>
+        )}
+        {!loading && error && (
+          <div className="px-5 py-5 text-center">
+            <p className="text-sm font-medium text-red-600">{error}</p>
+            {reauthRequired && (
+              <button type="button" onClick={initiatePCOLogin}
+                className="mt-3 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
+                Sign in again with Planning Center
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Service type list */}
+        {!loading && !error && !activeGroup && (
+          <div className="flex-1 overflow-y-auto">
+            {groups.length === 0 && (
+              <p className="px-5 py-6 text-sm text-gray-400 text-center">No service types found</p>
+            )}
             {groups.map(g => (
               <button
                 key={g.slug}
-                onClick={() => { setActiveSlug(g.slug); setQuery('') }}
-                className={`flex-shrink-0 px-4 py-2.5 text-xs font-semibold transition-colors border-b-2 -mb-px whitespace-nowrap ${
-                  activeSlug === g.slug
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                onClick={() => setActiveGroup(g)}
+                className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-blue-50 border-b border-gray-50 transition-colors text-left"
               >
-                {g.name}
+                <span className="text-sm font-medium text-gray-900">{g.name}</span>
+                <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
               </button>
             ))}
           </div>
         )}
 
-        {/* Search */}
-        <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search by date or title…"
-              className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-
-        {/* Plan list */}
-        <div className="flex-1 overflow-y-auto">
-          {loading && (
-            <div className="flex items-center justify-center py-12 gap-2 text-gray-500 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading plans…
+        {/* Plan list (after service type selected) */}
+        {!loading && !error && activeGroup && (
+          <>
+            <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search by date or title…"
+                  className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
-          )}
-          {!loading && error && (
-            <div className="px-5 py-5 text-center">
-              <p className="text-sm font-medium text-red-600">{error}</p>
-              {reauthRequired && (
-                <button
-                  type="button"
-                  onClick={initiatePCOLogin}
-                  className="mt-3 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
-                >
-                  Sign in again with Planning Center
-                </button>
+            <div className="flex-1 overflow-y-auto">
+              {visiblePlans.length === 0 && (
+                <p className="px-5 py-6 text-sm text-gray-400 text-center">No plans found</p>
               )}
+              {visiblePlans.map(plan => {
+                const label = plan.title || plan.series_title
+                return (
+                  <button
+                    key={plan.id}
+                    onClick={() => onSelect(plan, activeGroup)}
+                    className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 transition-colors"
+                  >
+                    {label ? (
+                      <>
+                        <p className="text-sm font-medium text-gray-900">{label}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {[plan.display_date, plan.display_time].filter(Boolean).join(' · ')}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm font-medium text-gray-900">
+                        {[plan.display_date, plan.display_time].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </button>
+                )
+              })}
             </div>
-          )}
-          {!loading && !error && visiblePlans.length === 0 && (
-            <p className="px-5 py-6 text-sm text-gray-400 text-center">No plans found</p>
-          )}
-          {!loading && !error && visiblePlans.map(plan => {
-            const label = plan.title || plan.series_title
-            return (
-              <button
-                key={plan.id}
-                onClick={() => onSelect(plan, activeGroup!)}
-                className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 transition-colors"
-              >
-                {label ? (
-                  <>
-                    <p className="text-sm font-medium text-gray-900">{label}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {[plan.display_date, plan.display_time].filter(Boolean).join(' · ')}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-sm font-medium text-gray-900">
-                    {[plan.display_date, plan.display_time].filter(Boolean).join(' · ')}
-                  </p>
-                )}
-              </button>
-            )
-          })}
-        </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -444,7 +451,6 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
       {showPcoPicker && sessionToken && (
         <PcoPlanPicker
           sessionToken={sessionToken}
-          initialSlug={pcoServiceTypeSlug}
           onSelect={handlePcoPlanSelect}
           onClose={() => setShowPcoPicker(false)}
         />

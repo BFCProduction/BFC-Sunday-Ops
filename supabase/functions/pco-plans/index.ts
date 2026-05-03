@@ -194,21 +194,7 @@ Deno.serve(async (req) => {
     return json(cors, 401, pcoReauthBody(err))
   }
 
-  // ── 2. Fetch all service types from PCO API ───────────────────────────────
-  const pcoStRes = await fetch(`${PCO_API_BASE}/service_types?per_page=100`, {
-    headers: { Authorization: `Bearer ${pcoToken}` },
-  })
-  if (!pcoStRes.ok) {
-    return json(cors, 502, { error: 'Failed to fetch service types from PCO' })
-  }
-  const pcoStBody = await pcoStRes.json() as { data: PcoServiceType[] }
-  const pcoServiceTypes = pcoStBody.data ?? []
-
-  if (pcoServiceTypes.length === 0) {
-    return json(cors, 200, { service_types: [] })
-  }
-
-  // Load existing service_types rows that are linked to PCO.
+  // ── 2. Load DB service types (always available as baseline) ─────────────────
   const { data: existingRows } = await supabase
     .from('service_types')
     .select('id, slug, name, color, sort_order, pco_service_type_id')
@@ -218,31 +204,45 @@ Deno.serve(async (req) => {
     (existingRows ?? []).map((r: ServiceType) => [r.pco_service_type_id, r]),
   )
 
-  // Auto-register any PCO service type that has no matching row yet.
-  const toInsert = pcoServiceTypes
-    .filter(p => !byPcoId.has(p.id))
-    .map(p => ({
-      slug:                slugify(p.attributes.name),
-      name:                p.attributes.name,
-      color:               '#6b7280',
-      sort_order:          100,
-      pco_service_type_id: p.id,
-    }))
+  // ── 3. Try to discover new service types from PCO API ────────────────────
+  // Failure here is non-fatal — we fall back to DB rows only.
+  try {
+    const pcoStRes = await fetch(`${PCO_API_BASE}/service_types?per_page=100`, {
+      headers: { Authorization: `Bearer ${pcoToken}` },
+    })
+    if (pcoStRes.ok) {
+      const pcoStBody = await pcoStRes.json() as { data: PcoServiceType[] }
+      const pcoServiceTypes = pcoStBody.data ?? []
 
-  if (toInsert.length > 0) {
-    const { data: inserted } = await supabase
-      .from('service_types')
-      .insert(toInsert)
-      .select('id, slug, name, color, sort_order, pco_service_type_id')
-    for (const r of (inserted ?? []) as ServiceType[]) {
-      byPcoId.set(r.pco_service_type_id, r)
+      const toInsert = pcoServiceTypes
+        .filter(p => !byPcoId.has(p.id))
+        .map(p => ({
+          slug:                slugify(p.attributes.name),
+          name:                p.attributes.name,
+          color:               '#6b7280',
+          sort_order:          100,
+          pco_service_type_id: p.id,
+        }))
+
+      if (toInsert.length > 0) {
+        const { data: inserted } = await supabase
+          .from('service_types')
+          .insert(toInsert)
+          .select('id, slug, name, color, sort_order, pco_service_type_id')
+        for (const r of (inserted ?? []) as ServiceType[]) {
+          byPcoId.set(r.pco_service_type_id, r)
+        }
+      }
     }
+  } catch (_) {
+    // PCO service type discovery failed — proceed with DB rows only.
   }
 
-  // Build the ordered list of service types matching the PCO response order.
-  const serviceTypes: ServiceType[] = pcoServiceTypes
-    .map(p => byPcoId.get(p.id))
-    .filter((r): r is ServiceType => r != null)
+  const serviceTypes: ServiceType[] = Array.from(byPcoId.values())
+
+  if (serviceTypes.length === 0) {
+    return json(cors, 200, { service_types: [] })
+  }
 
   const { data: timezoneRow } = await supabase
     .from('app_config')
