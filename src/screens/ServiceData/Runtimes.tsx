@@ -175,7 +175,7 @@ interface RuntimeValue {
 export function Runtimes() {
   const { isAdmin } = useAdmin()
   const {
-    activeEventId, sundayId, sessionDate, eventName, timezone,
+    activeEventId, sessionDate, eventName, timezone,
     serviceTypeSlug, serviceTypeName, serviceTypeColor,
   } = useSunday()
   const eventId = activeEventId   // alias for clarity
@@ -212,18 +212,14 @@ export function Runtimes() {
   }, [serviceTypeSlug])
 
   const loadValues = useCallback(async () => {
-    const q = supabase.from('runtime_values').select('field_id, value, captured_at')
-    // Try event-native first; fall back to legacy Sunday record
-    const { data: eventData } = await q.eq('event_id', eventId)
-    const data = eventData && eventData.length > 0
-      ? eventData
-      : sundayId
-        ? (await supabase.from('runtime_values').select('field_id, value, captured_at').eq('sunday_id', sundayId)).data
-        : null
-    if (data) {
+    const { data } = await supabase
+      .from('runtime_values')
+      .select('field_id, value, captured_at')
+      .eq('event_id', eventId)
+    if (data && data.length > 0) {
       const vals: Record<number, string> = {}
       const caps: Record<number, string> = {}
-      data.forEach((r: RuntimeValue) => {
+      data!.forEach((r: RuntimeValue) => {
         vals[r.field_id] = r.value || ''
         if (r.captured_at) {
           caps[r.field_id] = new Date(r.captured_at).toLocaleTimeString('en-US', {
@@ -234,7 +230,7 @@ export function Runtimes() {
       setValues(vals)
       setCaptured(caps)
     }
-  }, [sundayId, eventId, timezone])
+  }, [eventId, timezone])
 
   useEffect(() => {
     let active = true
@@ -256,35 +252,22 @@ export function Runtimes() {
     setNotice('')
 
     try {
+      if (!eventId) throw new Error('No active event is selected.')
       const fields = allFields.filter(f => values[f.id] !== undefined)
-      if (fields.length > 0) {
-        if (eventId) {
-          // For events, use manual upsert to work around partial unique index
-          for (const f of fields) {
-            const { data: existing, error: findError } = await supabase
-              .from('runtime_values')
-              .select('id')
-              .eq('event_id', eventId)
-              .eq('field_id', f.id)
-              .maybeSingle()
-            if (findError) throw findError
+      for (const f of fields) {
+        const { data: existing, error: findError } = await supabase
+          .from('runtime_values')
+          .select('id')
+          .eq('event_id', eventId)
+          .eq('field_id', f.id)
+          .maybeSingle()
+        if (findError) throw findError
 
-            const payload = { event_id: eventId, field_id: f.id, value: values[f.id] || null, captured_at: new Date().toISOString() }
-            const result = existing
-              ? await supabase.from('runtime_values').update(payload).eq('id', existing.id)
-              : await supabase.from('runtime_values').insert(payload)
-            if (result.error) throw result.error
-          }
-        } else {
-          const upserts = fields.map(f => ({
-            sunday_id: sundayId,
-            field_id: f.id,
-            value: values[f.id] || null,
-            captured_at: new Date().toISOString(),
-          }))
-          const { error } = await supabase.from('runtime_values').upsert(upserts, { onConflict: 'sunday_id,field_id' })
-          if (error) throw error
-        }
+        const payload = { event_id: eventId, field_id: f.id, value: values[f.id] || null, captured_at: new Date().toISOString() }
+        const result = existing
+          ? await supabase.from('runtime_values').update(payload).eq('id', existing.id)
+          : await supabase.from('runtime_values').insert(payload)
+        if (result.error) throw result.error
       }
 
       // Sync tagged fields to service_records
@@ -303,7 +286,7 @@ export function Runtimes() {
         await syncToServiceRecords({
           eventId,
           serviceTypeSlug,
-          sundayId: sundayId ?? null,
+          sundayId: null,
           sessionDate,
           eventName: eventName ?? null,
           fields: analyticsFields,

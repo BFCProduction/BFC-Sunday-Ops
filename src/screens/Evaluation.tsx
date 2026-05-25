@@ -60,7 +60,7 @@ const FEEL_OPTIONS: {
 const feelMeta = Object.fromEntries(FEEL_OPTIONS.map(o => [o.value, o])) as Record<ServiceFeel, typeof FEEL_OPTIONS[number]>
 
 export function Evaluation() {
-  const { activeEventId, sundayId, serviceTypeName, sessionDate, eventName } = useSunday()
+  const { activeEventId, serviceTypeName, sessionDate, eventName } = useSunday()
   const { isAdmin } = useAdmin()
   const eventId = activeEventId
   // ── Form state ──────────────────────────────────────────────────────────────
@@ -79,39 +79,18 @@ export function Evaluation() {
   // ── Data ─────────────────────────────────────────────────────────────────────
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [analytics,   setAnalytics]   = useState<StreamAnalytics | null>(null)
-  const [loading,     setLoading]     = useState(true)
-  const [loadError,   setLoadError]   = useState<string | null>(null)
-  const [unassignedHistoricalCount, setUnassignedHistoricalCount] = useState(0)
+  const [loading,   setLoading]   = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const loadData = async (options?: { showSpinner?: boolean }) => {
     if (options?.showSpinner) setLoading(true)
     setLoadError(null)
 
-    // Evaluations are submit-able by everyone, but response text is admin-only.
     const evalPromise = isAdmin && eventId
       ? supabase.from('evaluations').select('*').eq('event_id', eventId).order('submitted_at', { ascending: false })
-      : isAdmin && sundayId
-        ? supabase.from('evaluations').select('*').eq('sunday_id', sundayId).order('submitted_at', { ascending: false })
-        : Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: [], error: null })
 
-    // Stream analytics: still sunday-level data
-    const analyticsQ = sundayId
-      ? supabase.from('stream_analytics').select('*').eq('sunday_id', sundayId).single()
-      : Promise.resolve({ data: null, error: null })
-
-    const unassignedQ = isAdmin && eventId && sundayId
-      ? supabase
-        .from('evaluations')
-        .select('id', { count: 'exact', head: true })
-        .eq('sunday_id', sundayId)
-        .is('event_id', null)
-      : Promise.resolve({ count: 0, error: null })
-
-    const [subsRes, analyticsRes, unassignedRes] = await Promise.all([
-      evalPromise,
-      analyticsQ,
-      unassignedQ,
-    ])
+    const [subsRes] = await Promise.all([evalPromise])
 
     let loadedSubmissions: Submission[] = []
     if (subsRes.error) {
@@ -125,25 +104,13 @@ export function Evaluation() {
       setShowResponses(isAdmin && loadedSubmissions.length > 0)
     }
 
-    if (analyticsRes.error && analyticsRes.error.code !== 'PGRST116') {
-      console.warn('Stream analytics failed to load:', analyticsRes.error.message)
-      setAnalytics(null)
-    } else {
-      setAnalytics((analyticsRes.data as StreamAnalytics | null) ?? null)
-    }
-
-    if (unassignedRes.error) {
-      console.warn('Historical evaluation count failed:', unassignedRes.error.message)
-      setUnassignedHistoricalCount(0)
-    } else {
-      setUnassignedHistoricalCount(unassignedRes.count ?? 0)
-    }
+    setAnalytics(null)
     setLoading(false)
     return loadedSubmissions
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void loadData({ showSpinner: true }) }, [activeEventId, sundayId, isAdmin])
+  useEffect(() => { void loadData({ showSpinner: true }) }, [activeEventId, isAdmin])
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const canSubmit =
@@ -222,14 +189,6 @@ export function Evaluation() {
       </div>
 
       <div className="p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
-        {isAdmin && unassignedHistoricalCount > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            <p className="text-amber-800 text-xs font-semibold">
-              {unassignedHistoricalCount} historical Sunday-level evaluation response{unassignedHistoricalCount === 1 ? '' : 's'} are hidden from this event until reviewed and assigned.
-            </p>
-          </div>
-        )}
-
         {/* ── Aggregate responses ───────────────────────────────────────────── */}
         {isAdmin && (
           <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">

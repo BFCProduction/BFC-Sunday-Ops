@@ -32,7 +32,7 @@ function hasWeatherValues(weather: WeatherRecord | null): weather is WeatherReco
 
 export function Weather() {
   const { isAdmin } = useAdmin()
-  const { activeEventId, sundayId, serviceTypeSlug, serviceTypeName, serviceTypeColor, sessionDate } = useSunday()
+  const { activeEventId, serviceTypeSlug, serviceTypeName, serviceTypeColor, sessionDate } = useSunday()
   const eventId = activeEventId
   const [weather, setWeather] = useState<WeatherRecord | null>(null)
   const [config, setConfig] = useState<WeatherConfig | null>(null)
@@ -64,12 +64,8 @@ export function Weather() {
       }
 
       async function loadWeather() {
-        if (!eventId && !sundayId) return { data: null, error: null }
-
-        const weatherQ = supabase.from('weather').select('*')
-        return eventId
-          ? weatherQ.eq('event_id', eventId).maybeSingle()
-          : weatherQ.eq('sunday_id', sundayId).maybeSingle()
+        if (!eventId) return { data: null, error: null }
+        return supabase.from('weather').select('*').eq('event_id', eventId).maybeSingle()
       }
 
       const [configRes, weatherRes] = await Promise.all([loadConfig(), loadWeather()])
@@ -89,7 +85,7 @@ export function Weather() {
 
     load()
     return () => { cancelled = true }
-  }, [eventId, sundayId])
+  }, [eventId])
 
   const saveConfig = async () => {
     if (!zipCode.trim()) {

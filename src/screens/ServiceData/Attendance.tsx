@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { syncToServiceRecords } from '../../lib/serviceRecords'
 import { useSunday } from '../../context/SundayContext'
 import { Card } from '../../components/ui/Card'
 import {
@@ -10,17 +9,22 @@ import {
 } from './historyData'
 import { ServiceHistoryTable } from './history'
 
+function toServiceType(slug: string): string {
+  if (slug === 'sunday-9am')  return 'regular_9am'
+  if (slug === 'sunday-11am') return 'regular_11am'
+  return 'special'
+}
+
 export function Attendance() {
   const {
     activeEventId, serviceTypeName, serviceTypeColor,
-    serviceTypeSlug, sundayId, sessionDate, eventName,
+    serviceTypeSlug, sessionDate, eventName,
   } = useSunday()
 
-  const [count,   setCount]   = useState('')
-  const [notes,   setNotes]   = useState('')
-  const [saved,   setSaved]   = useState(false)
-  const [saving,  setSaving]  = useState(false)
-  const [notice,  setNotice]  = useState('')
+  const [count,  setCount]  = useState('')
+  const [saved,  setSaved]  = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
   const {
     rows: historyRows,
     loading: historyLoading,
@@ -33,46 +37,18 @@ export function Attendance() {
     let cancelled = false
 
     async function load() {
-      // 1. Event-native record (new model)
-      const { data: eventRow } = await supabase
-        .from('attendance')
-        .select('service_1_count, notes')
+      const { data } = await supabase
+        .from('service_records')
+        .select('in_person_attendance')
         .eq('event_id', activeEventId)
         .maybeSingle()
 
-      if (eventRow) {
-        if (!cancelled) {
-          setCount(eventRow.service_1_count?.toString() ?? '')
-          setNotes(eventRow.notes ?? '')
-        }
-        return
-      }
-
-      // 2. Legacy Sunday fallback
-      if (sundayId) {
-        const { data: sundayRow } = await supabase
-          .from('attendance')
-          .select('service_1_count, service_2_count, notes')
-          .eq('sunday_id', sundayId)
-          .maybeSingle()
-
-        if (!cancelled && sundayRow) {
-          const col = serviceTypeSlug === 'sunday-11am' ? 'service_2_count' : 'service_1_count'
-          setCount((sundayRow[col] as number | null)?.toString() ?? '')
-          setNotes(sundayRow.notes ?? '')
-          return
-        }
-      }
-
-      if (!cancelled) {
-        setCount('')
-        setNotes('')
-      }
+      if (!cancelled) setCount(data?.in_person_attendance?.toString() ?? '')
     }
 
     load()
     return () => { cancelled = true }
-  }, [activeEventId, sundayId, serviceTypeSlug])
+  }, [activeEventId])
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const submit = async () => {
@@ -84,45 +60,28 @@ export function Attendance() {
 
       const attendanceCount = count ? parseInt(count, 10) : null
       const { data: existing, error: existingError } = await supabase
-        .from('attendance')
+        .from('service_records')
         .select('id')
         .eq('event_id', activeEventId)
         .maybeSingle()
       if (existingError) throw existingError
 
-      const payload = {
-        event_id:        activeEventId,
-        service_1_count: attendanceCount,
-        notes:           notes || null,
-        submitted_at:    new Date().toISOString(),
+      if (existing) {
+        const { error } = await supabase
+          .from('service_records')
+          .update({ in_person_attendance: attendanceCount })
+          .eq('id', existing.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('service_records').insert({
+          event_id:             activeEventId,
+          service_date:         sessionDate,
+          service_type:         toServiceType(serviceTypeSlug),
+          service_label:        serviceTypeSlug === 'special' ? (eventName ?? null) : null,
+          in_person_attendance: attendanceCount,
+        })
+        if (error) throw error
       }
-
-      const saveResult = existing
-        ? await supabase.from('attendance').update(payload).eq('id', existing.id)
-        : await supabase.from('attendance').insert(payload)
-      if (saveResult.error) throw saveResult.error
-
-      // Reload from DB so the displayed value always reflects what was saved
-      const { data: reloaded, error: reloadError } = await supabase
-        .from('attendance')
-        .select('service_1_count, notes')
-        .eq('event_id', activeEventId)
-        .maybeSingle()
-      if (reloadError) throw reloadError
-      if (reloaded) {
-        setCount(reloaded.service_1_count?.toString() ?? '')
-        setNotes(reloaded.notes ?? '')
-      }
-
-      // Sync to service_records for analytics
-      await syncToServiceRecords({
-        eventId: activeEventId,
-        serviceTypeSlug,
-        sundayId: sundayId ?? null,
-        sessionDate,
-        eventName: eventName ?? null,
-        fields: { in_person_attendance: attendanceCount },
-      })
 
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -150,16 +109,6 @@ export function Attendance() {
             className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
           />
         </div>
-      </Card>
-
-      <Card className="p-4">
-        <label className="block text-gray-500 text-xs font-medium mb-1.5">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
-        <input
-          placeholder="Any context for today's count…"
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
-        />
       </Card>
 
       <button

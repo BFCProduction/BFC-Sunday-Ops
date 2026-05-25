@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { syncToServiceRecords } from '../../lib/serviceRecords'
 import { useSunday } from '../../context/SundayContext'
 import { Card } from '../../components/ui/Card'
 import { generateLoudnessReportHtml } from '../../lib/generateLoudnessReportHtml'
@@ -13,7 +12,18 @@ const GOAL: Record<string, number> = {
 }
 const defaultGoal = 88
 
-// ── History row (flattened for display) ───────────────────────────────────────
+const SERVICE_DISPLAY: Record<string, { label: string; color: string }> = {
+  'sunday-9am':  { label: 'Sunday 9:00 AM',  color: '#3b82f6' },
+  'sunday-11am': { label: 'Sunday 11:00 AM', color: '#8b5cf6' },
+}
+
+function toServiceType(slug: string): string {
+  if (slug === 'sunday-9am')  return 'regular_9am'
+  if (slug === 'sunday-11am') return 'regular_11am'
+  return 'special'
+}
+
+// ── History row ───────────────────────────────────────────────────────────────
 interface HistoryRow {
   date:         string
   serviceSlug:  string
@@ -26,62 +36,33 @@ interface HistoryRow {
   lceq:  number | null
 }
 
-// ── DB row shapes ─────────────────────────────────────────────────────────────
-interface LoudnessDBRow {
-  event_id:  string | null
-  sunday_id: string | null
-  service_1_max_db:   number | null
-  service_1_laeq:     number | null
-  service_1_max_db_c: number | null
-  service_1_lceq:     number | null
-  service_2_max_db:   number | null
-  service_2_laeq:     number | null
-  service_2_max_db_c: number | null
-  service_2_lceq:     number | null
-  sundays?: { date: string } | null
-  events?:  { event_date: string; service_types: { slug: string; name: string; color: string } } | null
+interface AnalyticsRow {
+  service_date: string
+  service_type: string
+  max_db_a_slow: number | null
+  la_eq_15:      number | null
+  max_db_c_slow: number | null
+  lc_eq_15:      number | null
 }
 
-function flattenHistory(rows: LoudnessDBRow[]): HistoryRow[] {
-  const result: HistoryRow[] = []
-  for (const row of rows) {
-    if (row.event_id && row.events) {
-      // Event-native: one row per event, uses service_1_* columns
-      const st = row.events.service_types
-      const dateStr = new Date(row.events.event_date + 'T12:00:00').toLocaleDateString('en-US', {
-        month: 'long', day: 'numeric', year: 'numeric',
-      })
-      result.push({
-        date: dateStr, serviceSlug: st.slug, serviceLabel: st.name, serviceColor: st.color,
-        goal: GOAL[st.slug] ?? defaultGoal,
-        maxA: row.service_1_max_db,   maxC: row.service_1_max_db_c,
-        laeq: row.service_1_laeq,     lceq: row.service_1_lceq,
-      })
-    } else if (row.sunday_id && row.sundays) {
-      // Legacy Sunday: split into a 9am row and an 11am row
-      const dateStr = new Date(row.sundays.date + 'T12:00:00').toLocaleDateString('en-US', {
-        month: 'long', day: 'numeric', year: 'numeric',
-      })
-      if (row.service_1_max_db != null || row.service_1_laeq != null) {
-        result.push({
-          date: dateStr, serviceSlug: 'sunday-9am',
-          serviceLabel: 'Sunday 9:00 AM', serviceColor: '#3b82f6', goal: GOAL['sunday-9am'],
-          maxA: row.service_1_max_db,   maxC: row.service_1_max_db_c,
-          laeq: row.service_1_laeq,     lceq: row.service_1_lceq,
-        })
-      }
-      if (row.service_2_max_db != null || row.service_2_laeq != null) {
-        result.push({
-          date: dateStr, serviceSlug: 'sunday-11am',
-          serviceLabel: 'Sunday 11:00 AM', serviceColor: '#8b5cf6', goal: GOAL['sunday-11am'],
-          maxA: row.service_2_max_db,   maxC: row.service_2_max_db_c,
-          laeq: row.service_2_laeq,     lceq: row.service_2_lceq,
-        })
-      }
-    }
+function mapHistoryRow(r: AnalyticsRow): HistoryRow | null {
+  const meta = SERVICE_DISPLAY[r.service_type]
+  if (!meta) return null
+  return {
+    date: new Date(r.service_date + 'T12:00:00').toLocaleDateString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric',
+    }),
+    serviceSlug:  r.service_type,
+    serviceLabel: meta.label,
+    serviceColor: meta.color,
+    goal: GOAL[r.service_type] ?? defaultGoal,
+    maxA: r.max_db_a_slow,
+    maxC: r.max_db_c_slow,
+    laeq: r.la_eq_15,
+    lceq: r.lc_eq_15,
   }
-  return result
 }
+
 
 // ── NumField ──────────────────────────────────────────────────────────────────
 interface NumFieldProps {
@@ -120,7 +101,7 @@ function NumField({ label, value, onChange, goal, accent }: NumFieldProps) {
 export function LoudnessLog() {
   const {
     activeEventId, serviceTypeSlug, serviceTypeName, serviceTypeColor,
-    sundayId, sessionDate, eventName,
+    sessionDate, eventName,
   } = useSunday()
 
   const laeqGoal = GOAL[serviceTypeSlug] ?? defaultGoal
@@ -136,6 +117,24 @@ export function LoudnessLog() {
 
   const [history, setHistory] = useState<HistoryRow[]>([])
 
+  const loadHistory = useCallback(async () => {
+    const { data } = await supabase
+      .from('analytics_records')
+      .select('service_date, service_type, max_db_a_slow, la_eq_15, max_db_c_slow, lc_eq_15')
+      .or('max_db_a_slow.not.is.null,la_eq_15.not.is.null')
+      .in('service_type', ['sunday-9am', 'sunday-11am'])
+      .order('service_date', { ascending: false })
+      .limit(40)
+
+    if (data) {
+      setHistory(
+        (data as AnalyticsRow[])
+          .map(mapHistoryRow)
+          .filter((r): r is HistoryRow => r !== null)
+      )
+    }
+  }, [])
+
   // ── Load current readings ─────────────────────────────────────────────────
   useEffect(() => {
     if (!activeEventId) return
@@ -143,63 +142,26 @@ export function LoudnessLog() {
     let cancelled = false
 
     async function loadCurrent() {
-      // 1. Event-native
-      const { data: eventRow } = await supabase
-        .from('loudness')
-        .select('service_1_max_db, service_1_laeq, service_1_max_db_c, service_1_lceq')
+      const { data } = await supabase
+        .from('service_records')
+        .select('max_db_a_slow, la_eq_15, max_db_c_slow, lc_eq_15')
         .eq('event_id', activeEventId)
         .maybeSingle()
 
-      if (cancelled) return
-      if (eventRow) {
-        setMaxA(eventRow.service_1_max_db?.toString()   ?? '')
-        setLaeq(eventRow.service_1_laeq?.toString()     ?? '')
-        setMaxC(eventRow.service_1_max_db_c?.toString() ?? '')
-        setLceq(eventRow.service_1_lceq?.toString()     ?? '')
-        return
-      }
-
-      // 2. Legacy Sunday fallback — pick columns based on service type
-      if (sundayId) {
-        const { data: sundayRow } = await supabase
-          .from('loudness')
-          .select('service_1_max_db, service_1_laeq, service_1_max_db_c, service_1_lceq, service_2_max_db, service_2_laeq, service_2_max_db_c, service_2_lceq')
-          .eq('sunday_id', sundayId)
-          .maybeSingle()
-
-        if (!cancelled && sundayRow) {
-          const is11am = serviceTypeSlug === 'sunday-11am'
-          setMaxA((is11am ? sundayRow.service_2_max_db   : sundayRow.service_1_max_db)?.toString()   ?? '')
-          setLaeq((is11am ? sundayRow.service_2_laeq     : sundayRow.service_1_laeq)?.toString()     ?? '')
-          setMaxC((is11am ? sundayRow.service_2_max_db_c : sundayRow.service_1_max_db_c)?.toString() ?? '')
-          setLceq((is11am ? sundayRow.service_2_lceq     : sundayRow.service_1_lceq)?.toString()     ?? '')
-        }
+      if (!cancelled) {
+        setMaxA(data?.max_db_a_slow?.toString() ?? '')
+        setLaeq(data?.la_eq_15?.toString()      ?? '')
+        setMaxC(data?.max_db_c_slow?.toString() ?? '')
+        setLceq(data?.lc_eq_15?.toString()      ?? '')
       }
     }
 
     loadCurrent()
     return () => { cancelled = true }
-  }, [activeEventId, sundayId, serviceTypeSlug])
+  }, [activeEventId])
 
   // ── Load history ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    async function loadHistory() {
-      const { data } = await supabase
-        .from('loudness')
-        .select(`
-          event_id, sunday_id,
-          service_1_max_db, service_1_laeq, service_1_max_db_c, service_1_lceq,
-          service_2_max_db, service_2_laeq, service_2_max_db_c, service_2_lceq,
-          sundays ( date ),
-          events ( event_date, service_types ( slug, name, color ) )
-        `)
-        .order('logged_at', { ascending: false })
-        .limit(20)
-
-      if (data) setHistory(flattenHistory(data as unknown as LoudnessDBRow[]).slice(0, 16))
-    }
-    loadHistory()
-  }, [])
+  useEffect(() => { void loadHistory() }, [loadHistory])
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const submit = async () => {
@@ -209,57 +171,38 @@ export function LoudnessLog() {
     try {
       if (!activeEventId) throw new Error('No active event is selected.')
 
+      const loudnessPayload = {
+        max_db_a_slow: maxA ? parseFloat(maxA) : null,
+        la_eq_15:      laeq ? parseFloat(laeq) : null,
+        max_db_c_slow: maxC ? parseFloat(maxC) : null,
+        lc_eq_15:      lceq ? parseFloat(lceq) : null,
+      }
+
       const { data: existing, error: existingError } = await supabase
-        .from('loudness')
+        .from('service_records')
         .select('id')
         .eq('event_id', activeEventId)
         .maybeSingle()
       if (existingError) throw existingError
 
-      const payload = {
-        event_id:           activeEventId,
-        service_1_max_db:   maxA ? parseFloat(maxA) : null,
-        service_1_laeq:     laeq ? parseFloat(laeq) : null,
-        service_1_max_db_c: maxC ? parseFloat(maxC) : null,
-        service_1_lceq:     lceq ? parseFloat(lceq) : null,
-        logged_at:          new Date().toISOString(),
+      if (existing) {
+        const { error } = await supabase
+          .from('service_records')
+          .update(loudnessPayload)
+          .eq('id', existing.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('service_records').insert({
+          event_id:     activeEventId,
+          service_date: sessionDate,
+          service_type: toServiceType(serviceTypeSlug),
+          service_label: serviceTypeSlug === 'special' ? (eventName ?? null) : null,
+          ...loudnessPayload,
+        })
+        if (error) throw error
       }
 
-      const saveResult = existing
-        ? await supabase.from('loudness').update(payload).eq('id', existing.id)
-        : await supabase.from('loudness').insert(payload)
-      if (saveResult.error) throw saveResult.error
-
-      // Sync to service_records for analytics
-      await syncToServiceRecords({
-        eventId: activeEventId,
-        serviceTypeSlug,
-        sundayId: sundayId ?? null,
-        sessionDate,
-        eventName: eventName ?? null,
-        fields: {
-          max_db_a_slow: maxA ? parseFloat(maxA) : null,
-          la_eq_15:      laeq ? parseFloat(laeq) : null,
-          max_db_c_slow: maxC ? parseFloat(maxC) : null,
-          lc_eq_15:      lceq ? parseFloat(lceq) : null,
-        },
-      })
-
-      // Refresh history
-      const { data, error } = await supabase
-        .from('loudness')
-        .select(`
-          event_id, sunday_id,
-          service_1_max_db, service_1_laeq, service_1_max_db_c, service_1_lceq,
-          service_2_max_db, service_2_laeq, service_2_max_db_c, service_2_lceq,
-          sundays ( date ),
-          events ( event_date, service_types ( slug, name, color ) )
-        `)
-        .order('logged_at', { ascending: false })
-        .limit(20)
-      if (error) throw error
-      if (data) setHistory(flattenHistory(data as unknown as LoudnessDBRow[]).slice(0, 16))
-
+      await loadHistory()
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch (err) {
@@ -274,19 +217,26 @@ export function LoudnessLog() {
     setExporting(true)
     try {
       const { data } = await supabase
-        .from('loudness')
-        .select('*, sundays(date)')
-        .not('sunday_id', 'is', null)
-        .order('sunday_id')
-      const rows = (data ?? []).map((r: {
-        sundays: { date: string }
-        service_1_max_db: number | null; service_1_laeq: number | null
-        service_2_max_db: number | null; service_2_laeq: number | null
-      }) => ({
-        date: r.sundays.date,
-        service_1_max_db: r.service_1_max_db, service_1_laeq: r.service_1_laeq,
-        service_2_max_db: r.service_2_max_db, service_2_laeq: r.service_2_laeq,
-      }))
+        .from('service_records')
+        .select('service_date, service_type, max_db_a_slow, la_eq_15')
+        .or('max_db_a_slow.not.is.null,la_eq_15.not.is.null')
+        .in('service_type', ['regular_9am', 'regular_11am'])
+        .order('service_date', { ascending: true })
+
+      type PdfRecord = { service_date: string; service_type: string; max_db_a_slow: number | null; la_eq_15: number | null }
+      const byDate: Record<string, { date: string; service_1_max_db: number | null; service_1_laeq: number | null; service_2_max_db: number | null; service_2_laeq: number | null }> = {}
+      for (const r of (data ?? []) as PdfRecord[]) {
+        const d = r.service_date
+        if (!byDate[d]) byDate[d] = { date: d, service_1_max_db: null, service_1_laeq: null, service_2_max_db: null, service_2_laeq: null }
+        if (r.service_type === 'regular_9am') {
+          byDate[d].service_1_max_db = r.max_db_a_slow
+          byDate[d].service_1_laeq   = r.la_eq_15
+        } else {
+          byDate[d].service_2_max_db = r.max_db_a_slow
+          byDate[d].service_2_laeq   = r.la_eq_15
+        }
+      }
+      const rows = Object.values(byDate)
       const logoBase64 = await new Promise<string>((resolve) => {
         fetch(bfcLogo).then(r => r.blob()).then(blob => {
           const reader = new FileReader()
