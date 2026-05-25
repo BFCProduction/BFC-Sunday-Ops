@@ -156,11 +156,12 @@ Still pending:
 - Historical script burn-down follow-up — see `docs/operational-script-inventory.md` for guarded scripts and remaining archive cleanup.
 - AI "Ask a Question" Analytics tab (Claude API via Supabase Edge Function)
 - Any downstream reporting beyond manual report export
-- Continue data compatibility cleanup: several operational screens still keep legacy Sunday fallback reads for old attendance/runtime/loudness/evaluation rows.
 - Harden evaluation response privacy at the Supabase/RLS or Edge Function layer if response visibility needs to be enforced beyond the current admin-only UI path.
+- Stream analytics section in Evaluation still reads from the legacy `stream_analytics` table via `sunday_id`.
 
 Completed (previously listed as pending):
 - Attendance, runtimes, and loudness all sync to `service_records` via the shared `syncToServiceRecords` utility.
+- **Service data legacy cleanup** — all `sunday_id` fallback reads removed from Attendance, Runtimes, Weather, LoudnessLog, and Evaluation. Attendance and Loudness now write directly to `service_records` (no more dual-write + sync); the individual `attendance` and `loudness` tables are no longer actively written by the app. LoudnessLog history and Full History PDF export now read from `analytics_records` / `service_records` and correctly include all event-native data.
 - Attendance and loudness data backfilled into `service_records` from legacy tables.
 - Sunday focus direction corrected (app now defaults to most recent past Sunday on weekdays).
 - Evaluation submissions now fail loudly instead of silently.

@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-05-25 (Session 21)
+
+### Summary
+
+Service data legacy cleanup and architectural simplification. All `sunday_id` fallback reads removed from the five service data screens. Attendance and Loudness simplified from a dual-write pattern (individual table + `syncToServiceRecords`) to writing directly to `service_records`. LoudnessLog history and Full History PDF export migrated to read from `analytics_records` / `service_records`, fixing a bug where the PDF was only exporting legacy Sunday-level rows and missing all modern event-native data.
+
+### Completed
+
+- **`Attendance.tsx`** — reads and writes directly to `service_records` by `event_id`. Removed the `attendance` table read/write and `syncToServiceRecords` call. Notes field removed (no column in `service_records`). `sundayId` fallback path removed.
+- **`LoudnessLog.tsx`** — reads and writes directly to `service_records`. Removed the `loudness` table read/write and `syncToServiceRecords` call. History panel rewired to query `analytics_records` (was reading from `loudness` table via a custom `loadHistory` + `flattenHistory` path). Full History PDF export fixed to read from `service_records` grouped by date — now includes all event-native loudness data.
+- **`Weather.tsx`** — removed `sundayId` fallback from the current-event load. Weather data display still reads from the `weather` table (which carries wind/humidity/fetched_at detail not in `service_records`); config still writes to `weather_config`.
+- **`Runtimes.tsx`** — removed `sundayId` fallback from `loadValues` and the `sundayId` save branch. Runtimes still write to `runtime_values` and sync summary fields to `service_records` via `syncToServiceRecords` (necessary because the per-field structure doesn't fit `service_records` columns). `sundayId: null` passed to sync call.
+- **`Evaluation.tsx`** — removed `sundayId` fallback from the evaluation query. Removed the unassigned-historical-evaluations warning banner (confirmed 0 orphan rows remain). Stream analytics stub left as `null` pending separate cleanup.
+
+### Verification
+
+- `npm run build` passed. Only the pre-existing large chunk size warning.
+- Confirmed against Supabase: `runtime_values` and `evaluations` already had 0 `sunday_id`-only rows; `attendance` had 1 orphan row (a March 29 duplicate); `weather` had 4 orphan rows; `loudness` had 146 historical rows that now serve as read-only history via `service_records`.
+
+### Next
+
+- Live-verify YouTube relay on a real Sunday stream.
+- Stream analytics in Evaluation still reads from `stream_analytics` via `sunday_id` — separate cleanup item.
+- AI "Ask a Question" Analytics tab.
+
+---
+
 ## 2026-05-02 (Session 19)
 
 ### Summary
