@@ -1,6 +1,6 @@
 import { Home, ClipboardCheck, AlertTriangle, BarChart2, Star, FolderOpen } from 'lucide-react'
 
-type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
+type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs' | 'workbooks'
 
 interface MobileTabsProps {
   active: Screen

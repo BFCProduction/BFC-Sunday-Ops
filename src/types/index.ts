@@ -202,6 +202,80 @@ export interface ProductionDoc {
   uploaded_at: string
 }
 
+// -- Workbooks / Schedule ------------------------------------------------------
+
+export interface Workbook {
+  id: string
+  name: string
+  start_date: string
+  end_date: string
+  venue: string | null
+  description: string | null
+  status: 'draft' | 'published' | 'archived'
+  published_version: number
+  published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkbookLocation {
+  id: string
+  workbook_id: string
+  name: string
+  sort_order: number
+  created_at: string
+}
+
+export type WorkbookScheduleItemType =
+  | 'call'
+  | 'rehearsal'
+  | 'meal'
+  | 'meeting'
+  | 'programming'
+  | 'transition'
+  | 'load_in'
+  | 'strike'
+  | 'task'
+
+export interface WorkbookScheduleAssignment {
+  id: string
+  schedule_item_id: string
+  user_id: string | null
+  person_name: string | null
+  role: string | null
+  department: string | null
+  is_open: boolean
+  created_at: string
+}
+
+export interface WorkbookScheduleItem {
+  id: string
+  workbook_id: string
+  event_id: string | null
+  location_id: string | null
+  title: string
+  item_type: WorkbookScheduleItemType
+  scheduled_date: string
+  start_time: string
+  end_time: string | null
+  notes: string | null
+  departments: string[]
+  tags: string[]
+  sort_order: number
+  created_at: string
+  updated_at: string
+  assignments: WorkbookScheduleAssignment[]
+}
+
+export interface WorkbookScheduleVersion {
+  id: string
+  workbook_id: string
+  version_number: number
+  published_by: string | null
+  published_at: string
+  snapshot: unknown
+}
+
 // ── Unified Event Model ───────────────────────────────────────────────────────
 
 /** A service type definition (Sunday 9am, 11am, Special Events, etc.) */
@@ -230,6 +304,9 @@ export interface Session {
   name: string                      // 'Sunday 9:00 AM · April 13, 2026'
   date: string                      // event_date YYYY-MM-DD
   eventTime: string | null
+  eventEndTime: string | null
+  workbookId: string | null
+  workbookLocationId: string | null
   includeInAnalytics: boolean       // whether this event shows in Data Explorer
 
   // ── Backward-compat bridges ───────────────────────────────────────────────

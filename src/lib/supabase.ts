@@ -27,6 +27,9 @@ interface EventRow {
   name: string
   event_date: string
   event_time: string | null
+  event_end_time: string | null
+  workbook_id: string | null
+  workbook_location_id: string | null
   include_in_analytics: boolean
   legacy_sunday_id: string | null
   legacy_special_event_id: string | null
@@ -59,6 +62,9 @@ function rowToSession(row: EventRow): Session {
     name:                  row.name,
     date:                  row.event_date,
     eventTime:             row.event_time,
+    eventEndTime:          row.event_end_time,
+    workbookId:            row.workbook_id,
+    workbookLocationId:    row.workbook_location_id,
     includeInAnalytics:    row.include_in_analytics,
     legacySundayId:        row.legacy_sunday_id,
     legacySpecialEventId:  row.legacy_special_event_id,
@@ -75,7 +81,7 @@ export async function loadAllSessions(): Promise<Session[]> {
   const { data, error } = await supabase
     .from('events')
     .select(`
-      id, name, event_date, event_time, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
+      id, name, event_date, event_time, event_end_time, workbook_id, workbook_location_id, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
       service_types ( slug, name, color, sort_order )
     `)
     .order('event_date', { ascending: true })
@@ -98,7 +104,7 @@ export async function getEventById(id: string): Promise<Session | null> {
   const { data } = await supabase
     .from('events')
     .select(`
-      id, name, event_date, event_time, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
+      id, name, event_date, event_time, event_end_time, workbook_id, workbook_location_id, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
       service_types ( slug, name, color, sort_order )
     `)
     .eq('id', id)
@@ -115,7 +121,7 @@ export async function getFirstEventForDate(date: string): Promise<Session | null
   const { data } = await supabase
     .from('events')
     .select(`
-      id, name, event_date, event_time, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
+      id, name, event_date, event_time, event_end_time, workbook_id, workbook_location_id, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
       service_types ( slug, name, color, sort_order )
     `)
     .eq('event_date', date)
@@ -133,7 +139,7 @@ export async function getEventsForDate(date: string): Promise<Session[]> {
   const { data } = await supabase
     .from('events')
     .select(`
-      id, name, event_date, event_time, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
+      id, name, event_date, event_time, event_end_time, workbook_id, workbook_location_id, include_in_analytics, legacy_sunday_id, legacy_special_event_id,
       service_types ( slug, name, color, sort_order )
     `)
     .eq('event_date', date)

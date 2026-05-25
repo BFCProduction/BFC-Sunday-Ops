@@ -15,7 +15,7 @@ import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import type { Session } from '../types'
 
-type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
+type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs' | 'workbooks'
 
 interface HomeProps {
   allSessions: Session[]
@@ -714,7 +714,7 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
             <SectionLabel>Global Tools</SectionLabel>
             <span className="text-xs font-medium text-gray-400">App-level navigation</span>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
             <GlobalToolCard
               title="Event Timeline"
               description="Current, upcoming, and recent services with readiness signals."
@@ -722,6 +722,14 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
               accent="#2563eb"
               meta="Events"
               href="#events"
+            />
+            <GlobalToolCard
+              title="Workbooks"
+              description="Coordinate complex productions with multi-event schedules and room views."
+              icon={BookOpen}
+              accent="#0f766e"
+              meta="Planning"
+              onClick={() => setScreen('workbooks')}
             />
             {isAdmin && (
               <GlobalToolCard

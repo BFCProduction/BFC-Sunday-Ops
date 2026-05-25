@@ -21,9 +21,10 @@ import { Evaluation }     from './screens/Evaluation'
 import { Analytics }      from './screens/Analytics'
 import { Settings }       from './screens/Settings'
 import { ProductionDocs } from './screens/ProductionDocs'
+import { Workbooks }      from './screens/Workbooks'
 import type { Session }   from './types'
 
-export type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
+export type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs' | 'workbooks'
 
 // ── Root: provides auth context ───────────────────────────────────────────────
 export default function App() {
@@ -148,7 +149,7 @@ function AppMain() {
     init()
       .catch(err => { setError((err as Error).message); setLoading(false) })
       .then(() => setLoading(false))
-  }, [])
+  }, [sessionToken])
 
   // ── Navigation ──────────────────────────────────────────────────────────────
   const navigateToEvent = useCallback(async (eventId: string) => {
@@ -224,6 +225,7 @@ function AppMain() {
             {screen === 'analytics'  && <Analytics />}
             {screen === 'settings'   && <Settings />}
             {screen === 'docs'       && <ProductionDocs />}
+            {screen === 'workbooks'  && <Workbooks allSessions={allSessions} onSessionsChange={setAllSessions} setScreen={setScreen} />}
           </main>
         </div>
         <MobileTabs active={screen} setActive={setScreen} issueCount={issueCount} includeInAnalytics={session?.includeInAnalytics ?? true} />

@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- 043_include_in_analytics.sql
+-- 20260503005015_043_include_in_analytics.sql
 --
 -- Adds include_in_analytics to events so individual events can opt in to the
 -- Data Explorer and analytics screens.  Sunday services default to true;

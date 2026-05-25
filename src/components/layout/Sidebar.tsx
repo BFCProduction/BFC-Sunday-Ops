@@ -15,7 +15,7 @@ import { loadAllSessions } from '../../lib/supabase'
 import { useSunday } from '../../context/SundayContext'
 import type { Session } from '../../types'
 
-type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs'
+type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs' | 'workbooks'
 
 interface SidebarProps {
   active: Screen
@@ -240,6 +240,13 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
               <span className="flex-1 leading-tight">Manage Events</span>
             </button>
           )}
+          <button onClick={() => setActive('workbooks')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${
+              active === 'workbooks' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]'
+            }`}>
+            <CalendarDays className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={active === 'workbooks' ? 2.2 : 1.8} />
+            <span className="flex-1 leading-tight">Workbooks</span>
+          </button>
           {isAdmin && (
             <button onClick={() => setActive('analytics')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${
