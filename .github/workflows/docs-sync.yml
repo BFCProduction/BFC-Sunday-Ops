@@ -19,12 +19,27 @@ jobs:
           cache: npm
       - run: npm ci --legacy-peer-deps
       - name: Sync production docs from Google Drive
-        run: node scripts/sync-production-docs.js
+        # Retry to absorb transient Google API hiccups (e.g. the token endpoint
+        # returning "Premature close"). Each attempt is a fresh process that
+        # re-mints its own access token, and the sync is idempotent
+        # (already-synced files are skipped), so re-running is safe.
+        run: |
+          attempt=1
+          max_attempts=3
+          until node scripts/sync-production-docs.js; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "Sync failed after $attempt attempts."
+              exit 1
+            fi
+            echo "Attempt $attempt failed; retrying in $((attempt * 10))s..."
+            sleep $((attempt * 10))
+            attempt=$((attempt + 1))
+          done
         env:
-          SUPABASE_URL:                          ${{ secrets.VITE_SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY:                  ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL:   ${{ secrets.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL }}
-          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:    ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
-          GOOGLE_SERVICE_ACCOUNT_JSON:           ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           # Optional override if the folder ID ever changes:
           # DRIVE_PRODUCTION_DOCS_FOLDER_ID: ${{ secrets.DRIVE_PRODUCTION_DOCS_FOLDER_ID }}
