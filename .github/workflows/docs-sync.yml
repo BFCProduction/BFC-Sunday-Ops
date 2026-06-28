@@ -37,6 +37,7 @@ jobs:
           done
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          NODE_OPTIONS: "--dns-result-order=ipv4first --no-network-family-autoselection"
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL }}
           GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
