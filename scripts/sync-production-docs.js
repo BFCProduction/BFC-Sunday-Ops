@@ -206,6 +206,8 @@ const auth = new google.auth.JWT(SA_EMAIL, null, SA_KEY, [
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/spreadsheets.readonly',
 ])
+// node-fetch (gaxios v6's client) mishandles gzip responses on GitHub runners ("Premature close"); use native fetch
+auth.transporter.defaults = { ...auth.transporter.defaults, fetchImplementation: globalThis.fetch }
 const drive  = google.drive({ version: 'v3', auth })
 const sheets = google.sheets({ version: 'v4', auth })
 
