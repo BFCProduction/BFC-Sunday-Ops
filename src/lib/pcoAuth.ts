@@ -50,7 +50,14 @@ export function getRedirectUri(): string {
 }
 
 // ── Initiate login ────────────────────────────────────────────────────────────
-export function initiatePCOLogin(): void {
+// By default this is the fast path: if the device already has an active Planning
+// Center session, PCO silently re-approves that account (one-tap sign-in).
+//
+// Pass { switchAccount: true } to force PCO's account chooser instead. This is
+// the "log in as someone else" path for shared devices. It uses PCO's OIDC
+// `prompt=select_account` parameter, which requires the `openid` scope; the
+// extra id_token in the token response is ignored by the pco-auth edge function.
+export function initiatePCOLogin(options?: { switchAccount?: boolean }): void {
   const clientId = import.meta.env.VITE_PCO_CLIENT_ID as string
   if (!clientId) {
     console.error('VITE_PCO_CLIENT_ID is not set')
@@ -65,9 +72,16 @@ export function initiatePCOLogin(): void {
     client_id:     clientId,
     redirect_uri:  getRedirectUri(),
     response_type: 'code',
-    scope:         PCO_SCOPES,
+    // `openid` is only needed to unlock the `prompt` parameter on the switch path.
+    scope:         options?.switchAccount ? `openid ${PCO_SCOPES}` : PCO_SCOPES,
     state,
   })
+
+  // Force the PCO account chooser so a different user can sign in even when a
+  // PCO session is already active on this device.
+  if (options?.switchAccount) {
+    params.set('prompt', 'select_account')
+  }
 
   window.location.href = `${PCO_AUTHORIZE_URL}?${params}`
 }

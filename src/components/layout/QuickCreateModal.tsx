@@ -104,7 +104,7 @@ function PcoPlanPicker({
           <div className="px-5 py-5 text-center">
             <p className="text-sm font-medium text-red-600">{error}</p>
             {reauthRequired && (
-              <button type="button" onClick={initiatePCOLogin}
+              <button type="button" onClick={() => initiatePCOLogin()}
                 className="mt-3 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
                 Sign in again with Planning Center
               </button>

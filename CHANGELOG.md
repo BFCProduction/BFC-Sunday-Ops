@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-24
+
+### Summary
+
+Two field-reported fixes: manual service data is now saved on Enter, and users can sign in as a different person on a shared device.
+
+### Completed
+
+- **Service data saves on Enter/Return** — On Runtimes, Attendance, and Loudness, pressing Enter in any manual-entry field now saves immediately (and blurs the field for a visible "Saved" confirmation). Previously data typed without clicking Save was lost on navigation. Reported after a Stage Flip time entered without Save disappeared. Files: `src/screens/ServiceData/Runtimes.tsx`, `Attendance.tsx`, `LoudnessLog.tsx`.
+- **PCO "Log in as someone else"** — Added an account-switch path so a different user can sign in when a Planning Center session is already active on the device. Default login stays the fast one-tap path; a new button on the login screen calls PCO with the `openid` scope and `prompt=select_account` to force the account chooser. Root cause was that the standard login sent no `prompt`, so PCO silently re-approved the device's active account. Frontend-only (`src/lib/pcoAuth.ts`, `src/context/AuthContext.tsx`, `src/context/authState.ts`, `src/App.tsx`, `src/components/auth/LoginScreen.tsx`); the pco-auth edge function ignores the extra id_token, so no redeploy is required. Two pre-existing reauth buttons (`QuickCreateModal.tsx`, `Dashboard.tsx`) were wrapped to keep the fast path.
+
+### Notes
+
+- `prompt=select_account` behavior should be verified against a real PCO login on a device with an active session before relying on it.
+- The default log-out → log-in path still uses the active PCO account by design; switching requires the new button.
+
+### Next
+
+- Consider save-on-blur or an unsaved-changes warning on service data screens — Enter-to-save only helps if the operator presses Enter; the original loss was from navigating away.
+
+---
+
 ## 2026-05-25 (Session 22) — reconstructed 2026-07-24
 
 ### Summary

@@ -10,6 +10,28 @@ export const changelogUrl = 'https://github.com/bfcproduction/BFC-Sunday-Ops/blo
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    date: 'Jul 24, 2026',
+    label: 'Sign-in & Data Entry',
+    title: 'Switch accounts + save service data on Enter',
+    summary: 'Two field-requested fixes for shared-device sign-in and faster, safer service-data entry.',
+    points: [
+      'New "Log in as someone else" button lets a different person sign in when Planning Center is already active on the device.',
+      'On Runtimes, Attendance, and Loudness, pressing Enter now saves the value immediately.',
+      'Entered data is no longer lost by leaving the page before clicking Save.',
+    ],
+  },
+  {
+    date: 'May 25, 2026',
+    label: 'Workbooks',
+    title: 'Multi-event scheduling',
+    summary: 'A new Workbooks layer coordinates multi-event, multi-day productions above the individual event level.',
+    points: [
+      'Group events, rooms/locations, and schedule items (calls, rehearsals, meals, transitions, and more).',
+      'Assign crew to schedule items and publish an immutable, versioned schedule.',
+      'Export a printable schedule for the whole production.',
+    ],
+  },
+  {
     date: 'Apr 26, 2026',
     label: 'Evaluation',
     title: 'Admin response review moved into the app',

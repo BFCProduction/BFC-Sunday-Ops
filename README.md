@@ -84,6 +84,8 @@ Live now:
 - Post-service evaluations now surface Supabase errors on submit instead of silently showing a false success screen.
 - Settings page sections: **App Settings** (Timezone), **Reporting** (event report export), **Checklist Templates**, and **People & Access** (admin user management).
 - Planning Center auth failures surface as reauth-required states in the plan picker and Dashboard instead of looking like empty schedule data.
+- The login screen has a **"Log in as someone else"** button for shared devices. Normal login is the fast one-tap path (reuses the device's active Planning Center session); the switch-account button calls PCO with the `openid` scope and `prompt=select_account` to force the account chooser so a different user can sign in.
+- Manual service-data entry (Runtimes, Attendance, Loudness) **saves on Enter/Return** — pressing Enter in a field saves immediately and blurs the field for a visible confirmation, so values aren't lost by navigating away without clicking Save.
 - ProPresenter relay supports a `countdown_target` on any runtime field. When set, the relay reads ProPresenter's timer `state` (`overran` / `complete` / `stopped`) and computes the true elapsed time rather than storing the raw overrun value. Useful for message timers configured as countdown-with-overrun. Set once in the runtime field admin UI.
 - New `--dump-timers` flag on the relay prints the full raw JSON for every timer on every connected ProPresenter host (useful for debugging and field setup).
 

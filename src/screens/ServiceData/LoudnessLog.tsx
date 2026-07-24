@@ -69,11 +69,12 @@ interface NumFieldProps {
   label: string
   value: string
   onChange: (v: string) => void
+  onEnter?: () => void
   goal?: number
   accent: string
 }
 
-function NumField({ label, value, onChange, goal, accent }: NumFieldProps) {
+function NumField({ label, value, onChange, onEnter, goal, accent }: NumFieldProps) {
   const over = goal != null && value !== '' && parseFloat(value) > goal
   return (
     <div>
@@ -84,6 +85,13 @@ function NumField({ label, value, onChange, goal, accent }: NumFieldProps) {
       <input
         type="number" step="0.1" placeholder="e.g. 85.8" value={value}
         onChange={e => onChange(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            e.currentTarget.blur()
+            onEnter?.()
+          }
+        }}
         className={`w-full rounded-lg px-3 py-2.5 text-sm font-mono border focus:outline-none transition-colors ${
           over
             ? 'bg-red-50 border-red-300 text-red-700 focus:border-red-400'
@@ -301,10 +309,10 @@ export function LoudnessLog() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <NumField label="Max dB A Slow" value={maxA} onChange={setMaxA} accent={serviceTypeColor} />
-            <NumField label="LAeq 15"        value={laeq} onChange={setLaeq} goal={laeqGoal} accent={serviceTypeColor} />
-            <NumField label="Max dB C Slow"  value={maxC} onChange={setMaxC} accent={serviceTypeColor} />
-            <NumField label="LCeq 15"        value={lceq} onChange={setLceq} accent={serviceTypeColor} />
+            <NumField label="Max dB A Slow" value={maxA} onChange={setMaxA} onEnter={submit} accent={serviceTypeColor} />
+            <NumField label="LAeq 15"        value={laeq} onChange={setLaeq} onEnter={submit} goal={laeqGoal} accent={serviceTypeColor} />
+            <NumField label="Max dB C Slow"  value={maxC} onChange={setMaxC} onEnter={submit} accent={serviceTypeColor} />
+            <NumField label="LCeq 15"        value={lceq} onChange={setLceq} onEnter={submit} accent={serviceTypeColor} />
           </div>
 
           {laeqOver && (

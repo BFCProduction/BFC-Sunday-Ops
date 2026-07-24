@@ -52,6 +52,10 @@ export function AuthProvider({ children }: Props) {
     initiatePCOLogin()
   }
 
+  function switchAccount() {
+    initiatePCOLogin({ switchAccount: true })
+  }
+
   function logout() {
     clearSession()
     setUser(null)
@@ -65,6 +69,7 @@ export function AuthProvider({ children }: Props) {
       isLoading,
       sessionToken,
       login,
+      switchAccount,
       logout,
     }}>
       {children}

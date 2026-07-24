@@ -402,7 +402,7 @@ export function Dashboard({ setScreen }: DashboardProps) {
                 <p className="text-xs text-gray-500 mt-1 leading-relaxed">{pcoAuthError}</p>
                 <button
                   type="button"
-                  onClick={initiatePCOLogin}
+                  onClick={() => initiatePCOLogin()}
                   className="mt-3 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
                 >
                   Sign in again with Planning Center

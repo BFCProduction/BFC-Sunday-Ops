@@ -37,7 +37,7 @@ export default function App() {
 
 // ── Auth gate ─────────────────────────────────────────────────────────────────
 function AppShell() {
-  const { user, isLoading: authLoading, login } = useAuth()
+  const { user, isLoading: authLoading, login, switchAccount } = useAuth()
 
   if (authLoading) {
     return (
@@ -50,7 +50,7 @@ function AppShell() {
     )
   }
 
-  if (!user) return <LoginScreen onLogin={login} />
+  if (!user) return <LoginScreen onLogin={login} onSwitchAccount={switchAccount} />
   return <AppMain />
 }
 

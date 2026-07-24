@@ -6,7 +6,8 @@ export interface AuthContextType {
   isAdmin:      boolean           // true when user.is_admin === true
   isLoading:    boolean           // true while restoring session or exchanging OAuth code
   sessionToken: string | null     // passed to protected edge functions
-  login:        () => void        // starts PCO OAuth flow (redirect)
+  login:        () => void        // starts PCO OAuth flow (redirect, fast path)
+  switchAccount: () => void       // starts PCO OAuth flow forcing the account chooser
   logout:       () => void
 }
 
@@ -15,8 +16,9 @@ export const AuthContext = createContext<AuthContextType>({
   isAdmin:      false,
   isLoading:    true,
   sessionToken: null,
-  login:        () => {},
-  logout:       () => {},
+  login:         () => {},
+  switchAccount: () => {},
+  logout:        () => {},
 })
 
 export function useAuth() {

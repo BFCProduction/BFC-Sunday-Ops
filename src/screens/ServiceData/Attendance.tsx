@@ -106,6 +106,13 @@ export function Attendance() {
             placeholder="e.g. 312"
             value={count}
             onChange={e => setCount(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                e.currentTarget.blur()
+                submit()
+              }
+            }}
             className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500"
           />
         </div>

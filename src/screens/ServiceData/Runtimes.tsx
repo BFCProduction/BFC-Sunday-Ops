@@ -34,6 +34,7 @@ interface RuntimeValueRowProps {
   capturedAt?: string
   isAdmin: boolean
   onValueChange: (value: string) => void
+  onSave?: () => void
   onEdit: (f: RuntimeField) => void
   onDelete: (f: RuntimeField) => void
   dragHandle?: ReactNode
@@ -48,6 +49,7 @@ function RuntimeValueRow({
   capturedAt,
   isAdmin,
   onValueChange,
+  onSave,
   onEdit,
   onDelete,
   dragHandle,
@@ -94,6 +96,13 @@ function RuntimeValueRow({
           placeholder="H:MM:SS"
           value={value}
           onChange={e => onValueChange(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+              onSave?.()
+            }
+          }}
           className="w-28 max-sm:flex-1 max-sm:min-w-[120px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm font-mono placeholder-gray-400 focus:outline-none focus:border-blue-500 text-center"
         />
         {isAdmin && (
@@ -393,6 +402,7 @@ export function Runtimes() {
                   capturedAt={captured[field.id]}
                   isAdmin={isAdmin}
                   onValueChange={value => setValues(p => ({ ...p, [field.id]: value }))}
+                  onSave={save}
                   onEdit={openEditRuntime}
                   onDelete={setConfirmDelete}
                 />
@@ -410,6 +420,7 @@ export function Runtimes() {
               capturedAt={captured[field.id]}
               isAdmin={isAdmin}
               onValueChange={value => setValues(p => ({ ...p, [field.id]: value }))}
+              onSave={save}
               onEdit={openEditRuntime}
               onDelete={setConfirmDelete}
             />

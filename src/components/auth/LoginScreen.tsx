@@ -4,10 +4,11 @@ import { changelogUrl, releaseNotes } from '../../lib/releaseNotes'
 
 interface Props {
   onLogin: () => void
+  onSwitchAccount?: () => void
   error?:  string | null
 }
 
-export function LoginScreen({ onLogin, error }: Props) {
+export function LoginScreen({ onLogin, onSwitchAccount, error }: Props) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6"
       style={{ background: '#111827' }}>
@@ -51,6 +52,20 @@ export function LoginScreen({ onLogin, error }: Props) {
             </svg>
             Sign in with Planning Center
           </button>
+
+          {onSwitchAccount && (
+            <button
+              onClick={onSwitchAccount}
+              className="w-full mt-3 px-4 py-2.5 text-gray-500 hover:text-gray-800
+                         text-sm font-medium rounded-xl transition-colors
+                         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300"
+            >
+              Log in as someone else
+            </button>
+          )}
+          <p className="mt-3 text-xs text-gray-400 leading-relaxed text-center">
+            Already signed into Planning Center on this device? The button above lets you pick or switch accounts.
+          </p>
         </div>
 
         <div className="px-8 py-4 bg-gray-50 border-t border-gray-100">
