@@ -30,6 +30,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **PCO sync** — updates existing manually-created events with PCO plan metadata (name, date); no longer auto-creates Sunday Ops events
 - **Mobile floating pill nav** — bottom navigation on mobile is a dark floating pill (80% width, centered) with white active state and a blue dot indicator
 - **Production Docs** — per-event stage plots, input lists, run sheets, and other files; Google Drive auto-sync via a service account + filename convention; manual upload (PDF) or Drive/Sheets link via admin UI; horizontal tab bar, full-width inline viewer on desktop, Google Docs Viewer on mobile for pinch-to-zoom
+- **Workbooks** — a scheduling layer above events for multi-event / multi-day productions (conferences, assemblies). A workbook groups events, locations/rooms, and typed schedule items (call, rehearsal, meal, meeting, programming, transition, load-in, strike, task) with crew assignments; schedules can be published as immutable numbered versions and exported as a printable HTML schedule. Events can be attached to a workbook + location and given an end time. Reachable from the sidebar, mobile nav, and Home; writes are admin-gated.
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -202,9 +203,18 @@ Completed (previously listed as pending):
 - `special_events` — legacy bridge table retained for older standalone/non-Sunday events; new standalone event creation writes directly to `events`
 - `event_checklist_items` — per-event checklist items (snapshotted from Sunday blueprints or standalone event templates)
 - `event_checklist_completions` — completions for event checklist items
+- `workbooks` — top-level container for multi-event / multi-day productions (name, date range, venue, status, published version)
+- `workbook_locations` — rooms/locations within a workbook
+- `workbook_schedule_items` — typed schedule rows (call, rehearsal, meal, meeting, programming, transition, load-in, strike, task) with date, start/end time, notes, departments, and tags; optionally linked to an `events` row
+- `workbook_schedule_assignments` — per-schedule-item crew assignments (real user or open/named slot, role, department)
+- `workbook_schedule_versions` — immutable JSON snapshots produced by publishing a workbook schedule
+- `events` also carries `workbook_id`, `workbook_location_id`, and `event_end_time` columns for workbook attachment
+
+Functions:
+- `publish_workbook_schedule(workbook_id, published_by, snapshot)` — snapshots the current schedule as the next numbered version and marks the workbook published
 
 Views:
-- `analytics_records` — view over `service_records` that remaps legacy service-type values, exposes event identity/time/labels, and powers Analytics screens
+- `analytics_records` — view over `service_records` that remaps legacy service-type values, exposes event identity/time/labels, and powers Analytics screens. As of migration `043`, it filters to events with `include_in_analytics = true` plus legacy `service_records` rows that have no `event_id` (pre-events historical data).
 
 Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/001_initial_schema.sql`
@@ -249,6 +259,9 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/040_import_runs.sql`
 - `supabase/migrations/041_event_native_weather_config.sql`
 - `supabase/migrations/042_event_checklist_snapshots_for_sundays.sql`
+- `supabase/migrations/20260503005015_043_include_in_analytics.sql`
+- `supabase/migrations/20260503013350_044_service_types_pco_unique.sql`
+- `supabase/migrations/20260525233648_workbook_scheduler_foundation.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-05-25 (Session 22) — reconstructed 2026-07-24
+
+### Summary
+
+Documents three changes that shipped to `main` on 2026-05-25 after the Session 21 writeup and were never recorded at the time. Reconstructed from git history on 2026-07-24. All are live in production.
+
+### Completed
+
+- **Analytics opt-in (`043_include_in_analytics`, commit `e950805`)** — Added `events.include_in_analytics`. Sunday services default to `true`; all other event types default to `false` and opt in at creation. Rebuilt the `analytics_records` view to include only opted-in events plus legacy `service_records` rows with no `event_id` (pre-events historical data). Shipped alongside PCO-first event creation and Data Explorer changes.
+- **Service-type PCO uniqueness (`044_service_types_pco_unique`)** — Partial unique index on `service_types.pco_service_type_id` (where not null) to prevent linking the same PCO service type twice while still allowing multiple unlinked rows.
+- **Workbooks foundation (`workbook_scheduler_foundation`, commit `f89317d`)** — First working version of a scheduling layer above events for multi-event / multi-day productions. New tables `workbooks`, `workbook_locations`, `workbook_schedule_items`, `workbook_schedule_assignments`, `workbook_schedule_versions`, plus the `publish_workbook_schedule()` RPC and `events.workbook_id` / `workbook_location_id` / `event_end_time` columns. Frontend: `src/screens/Workbooks.tsx` (~1,025 lines), `src/lib/workbooks.ts`, `src/lib/generateWorkbookScheduleHtml.ts`, new types, and sidebar/mobile/Home wiring. Typed schedule items, crew assignments, publish/versioning, and printable HTML export. Admin-gated writes.
+
+### Next
+
+- Exercise Workbooks against a real production; capture gaps and next increment.
+- Workbook sub-tools (stage plot, input list, crew-hours math, intercom grid, camera plot, LED builder, content checklist) remain unbuilt.
+
+---
+
 ## 2026-05-25 (Session 21)
 
 ### Summary
