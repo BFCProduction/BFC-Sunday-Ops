@@ -64,6 +64,18 @@ function avatar(name: string, isOpen: boolean) {
   )
 }
 
+const GRID_NUMBER_WIDTH = 48
+const GRID_CREW_WIDTH = 192
+const GRID_ROLE_WIDTH = 192
+const GRID_PACK_WIDTH = 128
+const GRID_CHANNEL_MIN_WIDTH = 112
+const GRID_TOTAL_WIDTH = 96
+const GRID_FIXED_WIDTH = GRID_NUMBER_WIDTH
+  + GRID_CREW_WIDTH
+  + GRID_ROLE_WIDTH
+  + GRID_PACK_WIDTH
+  + GRID_TOTAL_WIDTH
+
 export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: IntercomGridProps) {
   const sortedEvents = useMemo(
     () => [...linkedEvents].sort((a, b) => a.date.localeCompare(b.date) || (a.eventTime ?? '').localeCompare(b.eventTime ?? '')),
@@ -286,7 +298,24 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm" style={{ minWidth: 590 + data.channels.length * 112 }}>
+            <table
+              className="w-full table-fixed border-collapse text-sm"
+              style={{ minWidth: GRID_FIXED_WIDTH + data.channels.length * GRID_CHANNEL_MIN_WIDTH }}>
+              <colgroup>
+                <col style={{ width: GRID_NUMBER_WIDTH }} />
+                <col style={{ width: GRID_CREW_WIDTH }} />
+                <col style={{ width: GRID_ROLE_WIDTH }} />
+                <col style={{ width: GRID_PACK_WIDTH }} />
+                {data.channels.map(channel => (
+                  <col
+                    key={channel.id}
+                    style={{
+                      width: `max(${GRID_CHANNEL_MIN_WIDTH}px, calc((100% - ${GRID_FIXED_WIDTH}px) / ${data.channels.length}))`,
+                    }}
+                  />
+                ))}
+                <col style={{ width: GRID_TOTAL_WIDTH }} />
+              </colgroup>
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-100 text-[11px] font-bold uppercase tracking-wide text-gray-500">
                   <th className="sticky left-0 z-20 w-12 border-r border-gray-200 bg-gray-100 px-2 py-3 text-center">#</th>
@@ -295,18 +324,18 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
                   <th className="sticky left-[27rem] z-20 w-32 border-r border-gray-200 bg-gray-100 px-3 py-3 text-left">Com pack</th>
                   {data.channels.map(channel => (
                     <th key={channel.id} className="min-w-28 border-r border-gray-200 px-2 py-2 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <span className="normal-case tracking-normal text-gray-700">{channel.name}</span>
+                      <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden">
+                        <span className="min-w-0 truncate normal-case tracking-normal text-gray-700">{channel.name}</span>
                         {confirmDelete === channel.id ? (
                           <button
                             onClick={() => void removeChannel(channel.id)}
-                            className="rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                            className="flex-shrink-0 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
                             Remove?
                           </button>
                         ) : (
                           <button
                             onClick={() => setConfirmDelete(channel.id)}
-                            className="rounded p-0.5 text-gray-300 hover:bg-red-50 hover:text-red-500"
+                            className="flex-shrink-0 rounded p-0.5 text-gray-300 hover:bg-red-50 hover:text-red-500"
                             aria-label={`Remove ${channel.name} from this event`}>
                             <Trash2 className="h-3 w-3" />
                           </button>
