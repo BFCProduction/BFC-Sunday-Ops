@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
-import { fetchAppUsers, fetchPcoPlanItems, type AppUser, type PcoPlanItemResult } from '../lib/adminApi'
+import { fetchAppUsers, fetchPcoPlanTimes, type AppUser, type PcoPlanTimeResult } from '../lib/adminApi'
 import { generateWorkbookScheduleHtml, type WorkbookScheduleExportRow } from '../lib/generateWorkbookScheduleHtml'
 import { loadAllSessions, supabase } from '../lib/supabase'
 import {
@@ -612,7 +612,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [departmentOptions, setDepartmentOptions] = useState<Department[]>([])
   const [scheduleTypes, setScheduleTypes] = useState<ScheduleItemType[]>([])
   const [items, setItems] = useState<WorkbookScheduleItem[]>([])
-  const [pcoItemsByEvent, setPcoItemsByEvent] = useState<Record<string, PcoPlanItemResult[]>>({})
+  const [pcoTimesByEvent, setPcoTimesByEvent] = useState<Record<string, PcoPlanTimeResult[]>>({})
   const [users, setUsers] = useState<AppUser[]>([])
   const [tab, setTab] = useState<'schedule' | 'events'>('schedule')
   const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
@@ -671,23 +671,24 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       .catch(() => setUsers([]))
   }, [isAdmin, sessionToken])
 
-  // Pull each linked event's PCO plan times as read-only, always-fresh rows.
+  // Pull each linked event's PCO plan times (service, rehearsal, etc.) as
+  // read-only, always-fresh rows — the scheduled blocks, not the run-of-show.
   const linkedEventIdsKey = linkedEvents.map(event => event.id).join(',')
   useEffect(() => {
     if (!sessionToken || linkedEvents.length === 0) {
-      setPcoItemsByEvent({})
+      setPcoTimesByEvent({})
       return
     }
     let active = true
     void (async () => {
       const entries = await Promise.all(linkedEvents.map(async event => {
         try {
-          return [event.id, await fetchPcoPlanItems(sessionToken, event.id)] as const
+          return [event.id, await fetchPcoPlanTimes(sessionToken, event.id)] as const
         } catch {
-          return [event.id, [] as PcoPlanItemResult[]] as const
+          return [event.id, [] as PcoPlanTimeResult[]] as const
         }
       }))
-      if (active) setPcoItemsByEvent(Object.fromEntries(entries))
+      if (active) setPcoTimesByEvent(Object.fromEntries(entries))
     })()
     return () => { active = false }
     // linkedEvents captured via linkedEventIdsKey to avoid refetch loops.
@@ -733,27 +734,30 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   )
 
   const rows = useMemo<DisplayRow[]>(() => {
-    // PCO plan items → read-only rows (converted to church-local time).
+    // PCO plan times → read-only rows (the scheduled service/rehearsal blocks,
+    // converted to church-local time). Not the run-of-show items.
     const pcoRows = linkedEvents.flatMap(event => {
-      const planItems = pcoItemsByEvent[event.id] ?? []
-      return planItems.flatMap(planItem => {
-        if (!planItem.computed_starts_at || planItem.item_type === 'header') return []
-        const startTime = localTimeOfDay(planItem.computed_starts_at, timezone)
+      const planTimes = pcoTimesByEvent[event.id] ?? []
+      return planTimes.flatMap(planTime => {
+        const startTime = localTimeOfDay(planTime.starts_at, timezone)
         if (!startTime) return []
-        const endTime = planItem.length
-          ? localTimeOfDay(new Date(Date.parse(planItem.computed_starts_at) + planItem.length * 1000).toISOString(), timezone)
-          : null
+        const endTime = planTime.ends_at ? localTimeOfDay(planTime.ends_at, timezone) : null
+        const title = planTime.name?.trim()
+          ? planTime.name.trim()
+          : planTime.time_type === 'service' ? event.name
+          : planTime.time_type === 'rehearsal' ? 'Rehearsal'
+          : 'Scheduled time'
         return [{
-          id: `pco-${event.id}-${planItem.id}`,
+          id: `pco-${event.id}-${planTime.id}`,
           kind: 'event' as const,
           date: event.date,
           startTime,
           endTime,
-          title: planItem.title,
+          title,
           location: event.workbookLocationId ? locationMap[event.workbookLocationId] ?? null : null,
           relatedEvent: event.name,
           assignments: [],
-          notes: planItem.description,
+          notes: null,
           eventId: event.id,
           locationId: event.workbookLocationId,
           item: null,
@@ -804,7 +808,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       || (a.kind === 'event' ? -1 : 1)
       || a.title.localeCompare(b.title)
     )
-  }, [items, linkedEvents, locationMap, pcoItemsByEvent, timezone])
+  }, [items, linkedEvents, locationMap, pcoTimesByEvent, timezone])
 
   const days = [...new Set(rows.map(row => row.date))]
   const departments = [...new Set(items.flatMap(item => [
