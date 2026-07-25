@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Check, Loader2, MapPin, Pencil, Plus, Tag, Trash2, Users, X } from 'lucide-react'
+import { Check, Loader2, MapPin, Pencil, Plus, RadioTower, Save, Tag, Trash2, Users, X } from 'lucide-react'
 import { Card } from '../ui/Card'
-import type { Department, Location, CrewRole, ScheduleItemType } from '../../types'
+import type {
+  CrewRole,
+  Department,
+  IntercomButtonMode,
+  IntercomPackTypeKey,
+  Location,
+  ScheduleItemType,
+} from '../../types'
 import {
   loadLocations, createLocation, renameLocation, deleteLocation,
   loadDepartments, createDepartment, renameDepartment, deleteDepartment,
@@ -9,6 +16,15 @@ import {
   loadRoles, createRole, updateRole, deleteRole,
   type RoleInput,
 } from '../../lib/productionConfig'
+import {
+  createIntercomChannel,
+  deleteIntercomChannel,
+  loadIntercomConfig,
+  renameIntercomChannel,
+  saveRoleIntercomDefault,
+  updateIntercomPackCapacity,
+  type IntercomConfig,
+} from '../../lib/intercom'
 
 interface NamedRow { id: string; name: string }
 
@@ -207,6 +223,226 @@ function RolesManager({ roles, departments, reload }: { roles: CrewRole[]; depar
   )
 }
 
+function nextChannelMode(mode: IntercomButtonMode | null): IntercomButtonMode | null {
+  if (!mode) return 'momentary'
+  if (mode === 'momentary') return 'latch'
+  return null
+}
+
+function modeLabel(mode: IntercomButtonMode | null) {
+  if (mode === 'momentary') return 'M'
+  if (mode === 'latch') return 'L'
+  return '—'
+}
+
+function IntercomConfigManager({ roles }: { roles: CrewRole[] }) {
+  const [config, setConfig] = useState<IntercomConfig | null>(null)
+  const [selectedRoleId, setSelectedRoleId] = useState('')
+  const [packType, setPackType] = useState<IntercomPackTypeKey | null>(null)
+  const [channelModes, setChannelModes] = useState<Record<string, IntercomButtonMode>>({})
+  const [capacityDrafts, setCapacityDrafts] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+
+  async function reload() {
+    const next = await loadIntercomConfig()
+    setConfig(next)
+    setCapacityDrafts(Object.fromEntries(next.packTypes.map(pack => [pack.key, String(pack.available_count)])))
+    return next
+  }
+
+  useEffect(() => {
+    let active = true
+    loadIntercomConfig()
+      .then(next => {
+        if (!active) return
+        setConfig(next)
+        setCapacityDrafts(Object.fromEntries(next.packTypes.map(pack => [pack.key, String(pack.available_count)])))
+        setSelectedRoleId(previous => previous || roles[0]?.id || '')
+      })
+      .catch(err => { if (active) setError(err instanceof Error ? err.message : 'Unable to load Intercom settings.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [roles])
+
+  useEffect(() => {
+    if (!config || !selectedRoleId) {
+      setPackType(null)
+      setChannelModes({})
+      return
+    }
+    const roleDefault = config.roleDefaults.find(item => item.role_id === selectedRoleId)
+    setPackType(roleDefault?.pack_type ?? null)
+    setChannelModes(roleDefault?.channel_modes ?? {})
+    setNotice('')
+  }, [config, selectedRoleId])
+
+  async function saveCapacity(key: IntercomPackTypeKey) {
+    const count = Math.max(0, Math.floor(Number(capacityDrafts[key]) || 0))
+    setSaving(true); setError(''); setNotice('')
+    try {
+      await updateIntercomPackCapacity(key, count)
+      await reload()
+      setNotice('Pack availability saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save pack availability.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveDefaults() {
+    if (!selectedRoleId) return
+    setSaving(true); setError(''); setNotice('')
+    try {
+      await saveRoleIntercomDefault(selectedRoleId, packType, channelModes)
+      await reload()
+      setNotice('Role defaults saved. Existing event grids were not changed.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save role defaults.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card className="mb-3 flex items-center gap-2 p-5 text-sm text-gray-400">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading Intercom settings…
+      </Card>
+    )
+  }
+  if (!config) {
+    return <Card className="mb-3 p-5 text-sm text-red-600">{error || 'Intercom settings are unavailable.'}</Card>
+  }
+
+  return (
+    <Card className="mb-3 p-5">
+      <p className="mb-1 flex items-center gap-2 text-sm font-semibold text-gray-900">
+        <RadioTower className="h-4 w-4 text-blue-600" /> Intercom
+      </p>
+      <p className="mb-5 text-xs leading-relaxed text-gray-400">
+        Set available pack counts, the reusable master channel list, and role starting defaults.
+        Defaults are copied only when a role first appears in an event grid.
+      </p>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Pack availability</p>
+          <div className="grid grid-cols-2 gap-2">
+            {config.packTypes.map(pack => (
+              <label key={pack.key} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                <span className="block text-xs font-semibold text-gray-600">{pack.label} packs</span>
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    value={capacityDrafts[pack.key] ?? '0'}
+                    onChange={event => setCapacityDrafts(current => ({ ...current, [pack.key]: event.target.value }))}
+                    onKeyDown={event => { if (event.key === 'Enter') void saveCapacity(pack.key) }}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => void saveCapacity(pack.key)}
+                    disabled={saving}
+                    className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:text-blue-600 disabled:opacity-40"
+                    aria-label={`Save ${pack.label} pack availability`}>
+                    <Save className="h-4 w-4" />
+                  </button>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Master channels</p>
+          <ListManager
+            title="Channels"
+            description="These become the starting columns for new event grids. Removing one here does not erase an existing event column."
+            icon={<RadioTower className="h-4 w-4 text-blue-600" />}
+            addPlaceholder="Add a channel, e.g. Security"
+            rows={config.masterChannels}
+            onAdd={async name => { await createIntercomChannel(name, config.masterChannels.length); await reload() }}
+            onRename={async (id, name) => { await renameIntercomChannel(id, name); await reload() }}
+            onDelete={async id => { await deleteIntercomChannel(id); await reload() }}
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 border-t border-gray-100 pt-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Role defaults</label>
+            <select
+              value={selectedRoleId}
+              onChange={event => setSelectedRoleId(event.target.value)}
+              className="w-full max-w-sm rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+              <option value="">Choose a role</option>
+              {roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
+            </select>
+          </div>
+          <div className="w-full sm:w-48">
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Default pack</label>
+            <select
+              value={packType ?? ''}
+              onChange={event => setPackType((event.target.value || null) as IntercomPackTypeKey | null)}
+              disabled={!selectedRoleId}
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-50">
+              <option value="">No intercom</option>
+              {config.packTypes.map(pack => <option key={pack.key} value={pack.key}>{pack.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {config.masterChannels.map(channel => {
+            const mode = channelModes[channel.id] ?? null
+            return (
+              <button
+                key={channel.id}
+                type="button"
+                disabled={!selectedRoleId || !packType}
+                onClick={() => {
+                  const next = nextChannelMode(mode)
+                  setChannelModes(current => {
+                    const updated = { ...current }
+                    if (next) updated[channel.id] = next
+                    else delete updated[channel.id]
+                    return updated
+                  })
+                }}
+                className={`rounded-lg border px-3 py-2 text-left disabled:opacity-40 ${
+                  mode === 'momentary' ? 'border-blue-300 bg-blue-50 text-blue-800'
+                    : mode === 'latch' ? 'border-violet-300 bg-violet-50 text-violet-800'
+                      : 'border-gray-200 bg-white text-gray-500'
+                }`}>
+                <span className="block text-xs font-semibold">{channel.name}</span>
+                <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide">
+                  {mode ? (mode === 'momentary' ? 'M · Momentary' : 'L · Latch') : modeLabel(null)}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => void saveDefaults()}
+            disabled={saving || !selectedRoleId}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save defaults
+          </button>
+          <span className="text-xs text-gray-400">Click a channel to cycle Off → Momentary → Latch.</span>
+          {notice && <span className="text-xs font-medium text-emerald-700">{notice}</span>}
+          {error && <span className="text-xs font-medium text-red-600">{error}</span>}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 export function ProductionConfig() {
   const [locations, setLocations] = useState<Location[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
@@ -274,6 +510,7 @@ export function ProductionConfig() {
         onDelete={async id => { await deleteScheduleItemType(id); await reloadTypes() }}
       />
       <RolesManager roles={roles} departments={departments} reload={reloadRoles} />
+      <IntercomConfigManager roles={roles} />
     </div>
   )
 }

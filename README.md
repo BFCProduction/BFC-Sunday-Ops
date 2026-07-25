@@ -37,8 +37,9 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
   - **Crew roster** (admin only) — people (PCO user / manual guest / open TBD) with roles, call/release times, and paid/volunteer flags; shared call times cluster onto the schedule. The crew list is a per-event table (Name, Role, Call, Release, Paid/Volunteer, Hours, Pay).
   - **Call sheets** — printable per-person schedule (per-day call/release, role, event), with crew avatars.
   - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), shown per row and totaled per person across the workbook, with a printable business-office pay report. Served/computed for verified admins via the `workbook-pay` Edge Function pattern.
+  - **Intercom Grid** (admin only) — event-scoped assignments pulled from the workbook crew roster. Duplicate rows for the same person collapse; whole-day crew appear on each event that day. Each person gets a wired/wireless/no-intercom assignment and per-channel **Momentary / Latch / Off** settings. Production Config owns global pack capacities, the reusable master channel list, and per-role starting defaults; an event can add or remove its own channel columns without changing the master list. Over-capacity pack counts are flagged.
   - **Send Update** — snapshots the schedule, diffs it against the last sent version, and produces a copyable change summary for occasional crew.
-  - Printable HTML schedule export. Events attach to a workbook + location with an end time.
+  - **Workbook print packet** — one Print / PDF control with selectable pages for the detail schedule, event Intercom Grids, per-person call sheets, and the admin-only business-office pay report. Events attach to a workbook + location with an end time.
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -169,6 +170,8 @@ Still pending:
 - Any downstream reporting beyond manual report export
 - Harden evaluation response privacy at the Supabase/RLS or Edge Function layer if response visibility needs to be enforced beyond the current admin-only UI path.
 - Stream analytics section in Evaluation still reads from the legacy `stream_analytics` table via `sunday_id`.
+- Workbook follow-ups: verify crew pay against a real paid production; add payroll review/finalize/lock; confirm the safe no-notify PCO assignment write path; and design the Workbook-wide mobile experience.
+- Intercom-specific follow-up: attach assignments to individually tracked packs after the future equipment/assets layer exists. Current assignments intentionally stop at wired vs wireless.
 
 Completed (previously listed as pending):
 - Attendance, runtimes, and loudness all sync to `service_records` via the shared `syncToServiceRecords` utility.
@@ -223,6 +226,12 @@ Completed (previously listed as pending):
 - `workbook_schedule_assignments` — per-schedule-item crew assignments (real user or open/named slot, role, department)
 - `workbook_pco_time_meta` — room + department annotation for a read-only PCO plan time, keyed by (`event_id`, `pco_time_id`) (migration `046`)
 - `workbook_crew` — crew roster: person (PCO user / manual guest / open TBD), role, day (+ optional event), call/release times, paid flag (migration `047`)
+- **Intercom configuration + event grids (migration `050`):**
+  - `intercom_pack_types` — account-level wired/wireless availability counts (future specific equipment can attach without replacing the pack type)
+  - `intercom_channels` — reusable master channel list
+  - `role_intercom_defaults` / `role_intercom_default_channels` — per-role starting pack and Momentary/Latch channel settings
+  - `workbook_intercom_channels` — event-scoped channel columns, linked to a master channel or created for one event only
+  - `workbook_intercom_assignments` / `workbook_intercom_channel_assignments` — event-scoped crew pack and channel-button assignments
 - `workbook_schedule_versions` — immutable JSON snapshots produced by "Send Update" (versioned change checkpoints)
 - `events` also carries `workbook_id`, `workbook_location_id` (now → account `locations`), and `event_end_time` columns for workbook attachment
 
@@ -285,6 +294,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260725025843_046_workbook_pco_time_meta.sql`
 - `supabase/migrations/20260725031614_047_workbook_crew.sql`
 - `supabase/migrations/20260725203121_049_roles_department.sql`
+- `supabase/migrations/20260725211500_050_workbook_intercom.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

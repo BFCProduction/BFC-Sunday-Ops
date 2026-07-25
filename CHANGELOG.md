@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-25 — Workbook Intercom Grid + unified print packet
+
+### Intercom Grid
+
+- Added an admin-only, event-scoped **Intercom** tab to Workbooks. It pulls the selected event's crew plus whole-day crew, collapses duplicate roster rows for the same person, and keeps open/TBD positions distinct.
+- Each crew assignment supports **No intercom**, **Wired**, or **Wireless** plus a three-state channel cell: Off → **Momentary** → **Latch**.
+- Added account-level wired/wireless availability counts with over-capacity warnings.
+- Added a reusable master channel list plus event-only channel columns. Removing a column from an event does not delete it from the master list.
+- Added per-role starting defaults in Settings → Production Config. Defaults are copied when a role first appears in an event grid; later changes do not overwrite an event's assignments.
+- Added migration `050_workbook_intercom` for the configuration, event-column, assignment, and channel-mode tables. The schema intentionally leaves a future attachment point for individually tracked equipment.
+
+### Workbook printing
+
+- Replaced separate schedule/call-sheet/pay print entry points with one workbook-level **Print / PDF** packet builder.
+- The packet lets an admin choose Detail Schedule, Intercom Grids, Crew Call Sheets, and Business-Office Pay Report pages. Non-admins retain schedule printing without financial pages.
+- Intercom pages print one landscape grid per event with pack usage, Momentary/Latch legend, channel totals, and capacity warnings.
+
+### Verification
+
+- Touched-file ESLint passed.
+- TypeScript no-emit check passed.
+- Production build passed (existing large-chunk warning only).
+- The generated landscape packet was visually reviewed with representative schedule, Intercom, call-sheet, and pay data.
+
 ## 2026-07-26 — Crew pay per event + role departments
 
 ### Changed

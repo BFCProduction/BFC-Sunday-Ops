@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   AlertTriangle, BookOpen, CalendarDays, Check, Columns3, Copy, Filter, History,
-  LayoutGrid, Link2, List, MapPin, Pencil, Plus, Printer, Save, Send,
+  LayoutGrid, Link2, List, MapPin, Pencil, Plus, Printer, RadioTower, Save, Send,
   Trash2, Users, X,
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
 import { fetchAppUsers, fetchPcoPlanTimes, type AppUser, type PcoPlanTimeResult } from '../lib/adminApi'
-import { generateWorkbookScheduleHtml, type WorkbookScheduleExportRow } from '../lib/generateWorkbookScheduleHtml'
+import type { WorkbookScheduleExportRow } from '../lib/generateWorkbookScheduleHtml'
+import {
+  generateWorkbookPacketHtml,
+  type IntercomPrintEvent,
+  type WorkbookPrintSection,
+} from '../lib/generateWorkbookPacketHtml'
+import { buildWorkbookCallSheetPeople, buildWorkbookPayLines } from '../lib/workbookCrewUtils'
+import {
+  buildIntercomCrewIdentities,
+  loadIntercomConfig,
+  prepareWorkbookIntercomEvent,
+} from '../lib/intercom'
 import { loadAllSessions, supabase } from '../lib/supabase'
 import {
   attachEventToWorkbook,
@@ -39,6 +50,8 @@ import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import { ScheduleTimeGrid, type TimeGridColumn, type TimeGridItem } from '../components/workbook/ScheduleTimeGrid'
 import { CrewTab } from '../components/workbook/CrewTab'
+import { IntercomGrid } from '../components/workbook/IntercomGrid'
+import { WorkbookPrintModal } from '../components/workbook/WorkbookPrintModal'
 import { workbookScheduleDiff, type DiffScheduleItem, type DiffEvent } from '../lib/workbookDiff'
 import type {
   CrewRole,
@@ -908,7 +921,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [pcoMeta, setPcoMeta] = useState<Record<string, PcoTimeMeta>>({})
   const [assigningPcoRow, setAssigningPcoRow] = useState<DisplayRow | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
-  const [tab, setTab] = useState<'schedule' | 'events' | 'crew'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'events' | 'crew' | 'intercom'>('schedule')
   const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
   const [loading, setLoading] = useState(true)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
@@ -923,6 +936,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [departmentFilter, setDepartmentFilter] = useState('all')
   const [personFilter, setPersonFilter] = useState('all')
   const [showSendUpdate, setShowSendUpdate] = useState(false)
+  const [showPrintPacket, setShowPrintPacket] = useState(false)
 
   const activeWorkbook = workbooks.find(workbook => workbook.id === activeWorkbookId) ?? null
   const linkedEvents = allSessions.filter(session => session.workbookId === activeWorkbookId)
@@ -1261,15 +1275,73 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     await refreshWorkspace()
   }
 
-  function exportSchedule() {
+  async function exportWorkbookPacket(sections: WorkbookPrintSection[]) {
     if (!activeWorkbook) return
-    const html = generateWorkbookScheduleHtml(activeWorkbook, rows)
     const win = window.open('', '_blank')
-    if (!win) return
+    if (!win) throw new Error('Pop-up was blocked. Please allow pop-ups and try again.')
     win.document.open()
-    win.document.write(html)
+    win.document.write('<!doctype html><title>Building workbook packet…</title><body style="font-family:system-ui;padding:40px;color:#64748b">Building workbook packet…</body>')
     win.document.close()
-    setTimeout(() => win.print(), 500)
+
+    try {
+      const callSheetPeople = sections.includes('callSheets')
+        ? buildWorkbookCallSheetPeople(crew, linkedEvents, users, crewRoles)
+        : []
+      const pay = sections.includes('crewPay')
+        ? buildWorkbookPayLines(crew, users, crewRoles)
+        : { lines: [], totalHours: 0, totalPay: 0 }
+
+      let intercomEvents: IntercomPrintEvent[] = []
+      if (sections.includes('intercom')) {
+        const config = await loadIntercomConfig()
+        const sorted = [...linkedEvents].sort((a, b) => a.date.localeCompare(b.date) || (a.eventTime ?? '').localeCompare(b.eventTime ?? ''))
+        intercomEvents = await Promise.all(sorted.map(async event => {
+          const identities = buildIntercomCrewIdentities(crew, event, users, crewRoles)
+          const eventData = await prepareWorkbookIntercomEvent(activeWorkbook.id, event.id, identities, config)
+          const assignmentByCrew = new Map(eventData.assignments.map(assignment => [assignment.crew_key, assignment]))
+          return {
+            eventName: event.name,
+            eventDate: event.date,
+            channels: eventData.channels,
+            rows: identities.map(identity => {
+              const assignment = assignmentByCrew.get(identity.key)
+              const packLabel = assignment?.pack_type
+                ? config.packTypes.find(pack => pack.key === assignment.pack_type)?.label ?? assignment.pack_type
+                : null
+              return {
+                name: identity.name,
+                roles: identity.roleNames,
+                packType: packLabel,
+                channelModes: assignment?.channel_modes ?? {},
+              }
+            }),
+            packUsage: config.packTypes.map(pack => ({
+              label: pack.label,
+              used: identities.filter(identity => assignmentByCrew.get(identity.key)?.pack_type === pack.key).length,
+              available: pack.available_count,
+            })),
+          }
+        }))
+      }
+
+      const html = generateWorkbookPacketHtml({
+        workbook: activeWorkbook,
+        sections,
+        scheduleRows: rows,
+        intercomEvents,
+        callSheetPeople,
+        payLines: pay.lines,
+        totalHours: pay.totalHours,
+        totalPay: pay.totalPay,
+      })
+      win.document.open()
+      win.document.write(html)
+      win.document.close()
+      setTimeout(() => win.print(), 500)
+    } catch (err) {
+      win.close()
+      throw err
+    }
   }
 
   const unassignedEvents = allSessions.filter(session => !session.workbookId)
@@ -1342,8 +1414,8 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={exportSchedule} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                    <Printer className="h-4 w-4" /> Export PDF
+                  <button onClick={() => setShowPrintPacket(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <Printer className="h-4 w-4" /> Print / PDF
                   </button>
                   {isAdmin && (
                     <button onClick={() => setShowSendUpdate(true)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
@@ -1362,9 +1434,14 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                   </button>
                 ))}
                 {isAdmin && (
-                  <button onClick={() => setTab('crew')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'crew' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
-                    <Users className="h-4 w-4" /> Crew
-                  </button>
+                  <>
+                    <button onClick={() => setTab('crew')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'crew' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
+                      <Users className="h-4 w-4" /> Crew
+                    </button>
+                    <button onClick={() => setTab('intercom')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'intercom' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
+                      <RadioTower className="h-4 w-4" /> Intercom
+                    </button>
+                  </>
                 )}
               </div>
             </Card>
@@ -1609,6 +1686,16 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 onChanged={reloadCrew}
               />
             )}
+
+            {tab === 'intercom' && isAdmin && (
+              <IntercomGrid
+                workbook={activeWorkbook}
+                linkedEvents={linkedEvents}
+                users={users}
+                roles={crewRoles}
+                crew={crew}
+              />
+            )}
           </section>
         )}
       </div>
@@ -1620,6 +1707,16 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
             setActiveWorkbookId(workbook.id)
           }}
           onClose={() => setShowCreate(false)}
+        />
+      )}
+
+      {showPrintPacket && activeWorkbook && (
+        <WorkbookPrintModal
+          canIncludeIntercom={isAdmin && linkedEvents.length > 0}
+          canIncludeCallSheets={isAdmin && crew.some(member => !member.is_open)}
+          canIncludeCrewPay={isAdmin && crew.some(member => member.is_paid && !member.is_open)}
+          onPrint={exportWorkbookPacket}
+          onClose={() => setShowPrintPacket(false)}
         />
       )}
 

@@ -304,6 +304,57 @@ export interface WorkbookCrewMember {
   updated_at: string
 }
 
+// -- Workbook intercom grid ----------------------------------------------------
+
+export type IntercomPackTypeKey = 'wired' | 'wireless'
+export type IntercomButtonMode = 'momentary' | 'latch'
+
+export interface IntercomPackType {
+  key: IntercomPackTypeKey
+  label: string
+  available_count: number
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface IntercomChannel {
+  id: string
+  name: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface RoleIntercomDefault {
+  role_id: string
+  pack_type: IntercomPackTypeKey | null
+  channel_modes: Record<string, IntercomButtonMode>
+}
+
+export interface WorkbookIntercomChannel {
+  id: string
+  workbook_id: string
+  event_id: string
+  master_channel_id: string | null
+  name: string
+  sort_order: number
+  created_at: string
+}
+
+export interface WorkbookIntercomAssignment {
+  id: string
+  workbook_id: string
+  event_id: string
+  crew_key: string
+  role_id: string | null
+  pack_type: IntercomPackTypeKey | null
+  channel_modes: Record<string, IntercomButtonMode>
+  created_at: string
+  updated_at: string
+}
+
 export interface WorkbookScheduleVersion {
   id: string
   workbook_id: string

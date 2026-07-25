@@ -1,34 +1,19 @@
 import { useState, type FormEvent } from 'react'
-import { DollarSign, FileText, Pencil, Trash2, UserPlus, X } from 'lucide-react'
+import { DollarSign, Pencil, Trash2, UserPlus, X } from 'lucide-react'
 import { Card } from '../ui/Card'
 import type { AppUser } from '../../lib/adminApi'
 import { createCrewMember, updateCrewMember, deleteCrewMember, type CrewMemberInput } from '../../lib/workbooks'
-import { generateCallSheetHtml, type CallSheetPerson } from '../../lib/generateCallSheetHtml'
-import { generatePayReportHtml, type PayLine } from '../../lib/generatePayReportHtml'
+import {
+  buildWorkbookPayLines,
+  workbookCrewMemberHours,
+  workbookCrewMemberPay,
+  workbookCrewPersonName,
+} from '../../lib/workbookCrewUtils'
 import type { CrewRole, Session, Workbook, WorkbookCrewMember } from '../../types'
 
 function money(value: number): string {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
-function toMinutes(time: string | null): number | null {
-  if (!time) return null
-  const [hour, minute] = time.slice(0, 5).split(':').map(Number)
-  if (Number.isNaN(hour) || Number.isNaN(minute)) return null
-  return hour * 60 + minute
-}
-// Per-event hours: this row's call → release, rounded to the nearest half hour.
-function memberHours(member: WorkbookCrewMember): number {
-  const call = toMinutes(member.call_time)
-  const release = toMinutes(member.release_time)
-  if (call === null || release === null || release <= call) return 0
-  return Math.round(((release - call) / 60) * 2) / 2
-}
-function memberPay(member: WorkbookCrewMember, roles: CrewRole[]): number {
-  if (!member.is_paid) return 0
-  const rate = member.role_id ? (roles.find(role => role.id === member.role_id)?.hourly_rate ?? 0) : 0
-  return Math.round(memberHours(member) * rate * 100) / 100
-}
-
 const FIELD = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500'
 
 function formatDay(date: string) {
@@ -41,12 +26,6 @@ function formatTime(time: string | null) {
   if (Number.isNaN(hour)) return time
   const suffix = hour >= 12 ? 'PM' : 'AM'
   return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${suffix}`
-}
-
-function personName(member: WorkbookCrewMember, users: AppUser[]): string {
-  if (member.is_open) return 'TBD'
-  if (member.user_id) return users.find(user => user.id === member.user_id)?.name ?? 'Unknown'
-  return member.person_name ?? 'Unknown'
 }
 
 interface CrewTabProps {
@@ -200,23 +179,9 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const roleName = (id: string | null) => (id ? roles.find(role => role.id === id)?.name ?? '—' : '—')
-  const eventName = (id: string | null) => (id ? linkedEvents.find(event => event.id === id)?.name ?? null : null)
 
   // Pay computed client-side (admin-only tab): per-event hours × role rate, summed per person.
-  const payLines: PayLine[] = (() => {
-    const map = new Map<string, PayLine>()
-    for (const member of crew) {
-      if (!member.is_paid || member.is_open) continue
-      const key = member.user_id ?? `name:${member.person_name}`
-      const line = map.get(key) ?? { name: personName(member, users), hours: 0, pay: 0 }
-      line.hours = Math.round((line.hours + memberHours(member)) * 2) / 2
-      line.pay = Math.round((line.pay + memberPay(member, roles)) * 100) / 100
-      map.set(key, line)
-    }
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
-  })()
-  const totalHours = Math.round(payLines.reduce((sum, line) => sum + line.hours, 0) * 2) / 2
-  const totalPay = Math.round(payLines.reduce((sum, line) => sum + line.pay, 0) * 100) / 100
+  const { lines: payLines, totalHours, totalPay } = buildWorkbookPayLines(crew, users, roles)
 
   // Crew grouped by event; crew with no event are grouped by day.
   const groups = (() => {
@@ -240,50 +205,6 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
     return [...map.values()].sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label))
   })()
 
-  function openPayReport() {
-    const range = workbookDays.length ? `${formatDay(workbookDays[0])} – ${formatDay(workbookDays[workbookDays.length - 1])}` : ''
-    const html = generatePayReportHtml(workbook.name, range, payLines, totalHours, totalPay)
-    const win = window.open('', '_blank')
-    if (!win) { alert('Pop-up was blocked. Please allow pop-ups and try again.'); return }
-    win.document.open()
-    win.document.write(html)
-    win.document.close()
-    setTimeout(() => win.print(), 500)
-  }
-
-  function openCallSheets() {
-    const byPerson = new Map<string, CallSheetPerson>()
-    for (const member of crew) {
-      if (member.is_open) continue
-      const key = member.user_id ?? `name:${member.person_name}`
-      const entry = byPerson.get(key) ?? { name: personName(member, users), shifts: [] }
-      entry.shifts.push({
-        date: member.scheduled_date,
-        event: eventName(member.event_id),
-        role: member.role_id ? roleName(member.role_id) : null,
-        call: member.call_time,
-        release: member.release_time,
-      })
-      byPerson.set(key, entry)
-    }
-    const people = [...byPerson.values()]
-      .map(person => ({
-        ...person,
-        shifts: [...person.shifts].sort((a, b) => a.date.localeCompare(b.date) || (a.call ?? '').localeCompare(b.call ?? '')),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-    const range = workbookDays.length
-      ? `${formatDay(workbookDays[0])} – ${formatDay(workbookDays[workbookDays.length - 1])}`
-      : ''
-    const html = generateCallSheetHtml(workbook.name, range, people)
-    const win = window.open('', '_blank')
-    if (!win) { alert('Pop-up was blocked. Please allow pop-ups and try again.'); return }
-    win.document.open()
-    win.document.write(html)
-    win.document.close()
-    setTimeout(() => win.print(), 500)
-  }
-
   async function remove(id: string) {
     await deleteCrewMember(id)
     setConfirmDelete(null)
@@ -302,18 +223,6 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
             </p>
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
-            <button
-              onClick={openCallSheets}
-              disabled={crew.length === 0}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              <FileText className="h-4 w-4" /> Call sheets
-            </button>
-            <button
-              onClick={openPayReport}
-              disabled={payLines.length === 0}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              <DollarSign className="h-4 w-4" /> Pay report
-            </button>
             <button
               onClick={() => { setEditing(null); setShowModal(true) }}
               disabled={workbookDays.length === 0}
@@ -350,7 +259,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                       <div className="flex items-center gap-2">
                         {avatarFor(member, users)}
                         <span className="font-semibold text-gray-900">
-                          {personName(member, users)}
+                          {workbookCrewPersonName(member, users)}
                           {member.is_open && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Open</span>}
                         </span>
                       </div>
@@ -363,8 +272,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                         {member.is_paid ? 'Paid' : 'Volunteer'}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-gray-700">{memberHours(member).toFixed(1)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-gray-900">{member.is_paid ? money(memberPay(member, roles)) : '—'}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gray-700">{workbookCrewMemberHours(member).toFixed(1)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-gray-900">{member.is_paid ? money(workbookCrewMemberPay(member, roles)) : '—'}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => { setEditing(member); setShowModal(true) }} className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600" aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></button>
