@@ -1600,7 +1600,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
             {tab === 'crew' && isAdmin && (
               <CrewTab
-                workbookId={activeWorkbook.id}
+                workbook={activeWorkbook}
                 workbookDays={workbookDays}
                 linkedEvents={linkedEvents}
                 users={users}

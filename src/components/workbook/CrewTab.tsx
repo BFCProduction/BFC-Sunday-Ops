@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import { Pencil, Trash2, UserPlus, X } from 'lucide-react'
+import { FileText, Pencil, Trash2, UserPlus, X } from 'lucide-react'
 import { Card } from '../ui/Card'
 import type { AppUser } from '../../lib/adminApi'
 import { createCrewMember, updateCrewMember, deleteCrewMember, type CrewMemberInput } from '../../lib/workbooks'
-import type { CrewRole, Session, WorkbookCrewMember } from '../../types'
+import { generateCallSheetHtml, type CallSheetPerson } from '../../lib/generateCallSheetHtml'
+import type { CrewRole, Session, Workbook, WorkbookCrewMember } from '../../types'
 
 const FIELD = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500'
 
@@ -26,13 +27,23 @@ function personName(member: WorkbookCrewMember, users: AppUser[]): string {
 }
 
 interface CrewTabProps {
-  workbookId: string
+  workbook: Workbook
   workbookDays: string[]
   linkedEvents: Session[]
   users: AppUser[]
   roles: CrewRole[]
   crew: WorkbookCrewMember[]
   onChanged: () => Promise<void>
+}
+
+function avatarFor(member: WorkbookCrewMember, users: AppUser[]) {
+  const user = member.user_id ? users.find(u => u.id === member.user_id) : undefined
+  const name = user?.name ?? member.person_name ?? 'TBD'
+  const initials = name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()
+  if (user?.avatar_url) {
+    return <img src={user.avatar_url} alt="" className="h-7 w-7 flex-shrink-0 rounded-full object-cover" />
+  }
+  return <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700">{initials}</span>
 }
 
 function CrewMemberModal({
@@ -164,7 +175,7 @@ function CrewMemberModal({
   )
 }
 
-export function CrewTab({ workbookId, workbookDays, linkedEvents, users, roles, crew, onChanged }: CrewTabProps) {
+export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, onChanged }: CrewTabProps) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<WorkbookCrewMember | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -173,6 +184,39 @@ export function CrewTab({ workbookId, workbookDays, linkedEvents, users, roles, 
   const eventName = (id: string | null) => (id ? linkedEvents.find(event => event.id === id)?.name ?? null : null)
 
   const days = [...new Set(crew.map(member => member.scheduled_date))].sort()
+
+  function openCallSheets() {
+    const byPerson = new Map<string, CallSheetPerson>()
+    for (const member of crew) {
+      if (member.is_open) continue
+      const key = member.user_id ?? `name:${member.person_name}`
+      const entry = byPerson.get(key) ?? { name: personName(member, users), shifts: [] }
+      entry.shifts.push({
+        date: member.scheduled_date,
+        event: eventName(member.event_id),
+        role: member.role_id ? roleName(member.role_id) : null,
+        call: member.call_time,
+        release: member.release_time,
+      })
+      byPerson.set(key, entry)
+    }
+    const people = [...byPerson.values()]
+      .map(person => ({
+        ...person,
+        shifts: [...person.shifts].sort((a, b) => a.date.localeCompare(b.date) || (a.call ?? '').localeCompare(b.call ?? '')),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    const range = workbookDays.length
+      ? `${formatDay(workbookDays[0])} – ${formatDay(workbookDays[workbookDays.length - 1])}`
+      : ''
+    const html = generateCallSheetHtml(workbook.name, range, people)
+    const win = window.open('', '_blank')
+    if (!win) { alert('Pop-up was blocked. Please allow pop-ups and try again.'); return }
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
+    setTimeout(() => win.print(), 500)
+  }
 
   async function remove(id: string) {
     await deleteCrewMember(id)
@@ -191,12 +235,20 @@ export function CrewTab({ workbookId, workbookDays, linkedEvents, users, roles, 
               Paid/volunteer is admin-only; pay totals arrive in a later phase.
             </p>
           </div>
-          <button
-            onClick={() => { setEditing(null); setShowModal(true) }}
-            disabled={workbookDays.length === 0}
-            className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-            <UserPlus className="h-4 w-4" /> Add crew
-          </button>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <button
+              onClick={openCallSheets}
+              disabled={crew.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              <FileText className="h-4 w-4" /> Call sheets
+            </button>
+            <button
+              onClick={() => { setEditing(null); setShowModal(true) }}
+              disabled={workbookDays.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+              <UserPlus className="h-4 w-4" /> Add crew
+            </button>
+          </div>
         </div>
       </Card>
 
@@ -208,10 +260,13 @@ export function CrewTab({ workbookId, workbookDays, linkedEvents, users, roles, 
           <div>
             {crew.filter(member => member.scheduled_date === day).map(member => (
               <div key={member.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-gray-100 px-4 py-3 last:border-0">
-                <p className="min-w-[130px] flex-1 text-sm font-semibold text-gray-900">
-                  {personName(member, users)}
-                  {member.is_open && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Open</span>}
-                </p>
+                <div className="flex min-w-[150px] flex-1 items-center gap-2">
+                  {avatarFor(member, users)}
+                  <p className="text-sm font-semibold text-gray-900">
+                    {personName(member, users)}
+                    {member.is_open && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Open</span>}
+                  </p>
+                </div>
                 <span className="min-w-[90px] text-sm text-gray-600">{roleName(member.role_id)}</span>
                 {eventName(member.event_id) && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{eventName(member.event_id)}</span>}
                 <span className="font-mono text-xs text-gray-500">Call {formatTime(member.call_time)} · Rel {formatTime(member.release_time)}</span>
@@ -234,7 +289,7 @@ export function CrewTab({ workbookId, workbookDays, linkedEvents, users, roles, 
 
       {showModal && (
         <CrewMemberModal
-          workbookId={workbookId}
+          workbookId={workbook.id}
           workbookDays={workbookDays}
           linkedEvents={linkedEvents}
           users={users}
