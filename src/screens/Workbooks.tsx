@@ -15,11 +15,14 @@ import {
   createWorkbook,
   deleteScheduleItem,
   detachEventFromWorkbook,
+  loadPcoTimeMeta,
   loadWorkbookScheduleItems,
   loadWorkbooks,
   publishWorkbookSchedule,
   updateScheduleItem,
   updateWorkbookEventSchedule,
+  upsertPcoTimeMeta,
+  type PcoTimeMeta,
   type ScheduleAssignmentInput,
   type ScheduleItemInput,
 } from '../lib/workbooks'
@@ -52,6 +55,8 @@ interface Props {
 interface DisplayRow extends WorkbookScheduleExportRow {
   eventId: string | null
   locationId: string | null
+  departments: string[]
+  pcoTimeId: string | null
   item: WorkbookScheduleItem | null
 }
 
@@ -131,7 +136,7 @@ function rowToGridItem(row: DisplayRow, axis: 'rooms' | 'departments'): TimeGrid
   const end = endRaw !== null && endRaw > start ? endRaw : start + 30
   const columnKeys = axis === 'rooms'
     ? [row.locationId ?? '__noloc__']
-    : (row.item && row.item.departments.length > 0 ? row.item.departments : ['__general__'])
+    : (row.departments.length > 0 ? row.departments : ['__general__'])
   return {
     id: row.id,
     start,
@@ -501,12 +506,113 @@ function ScheduleItemEditor({
   )
 }
 
+function PcoTimeMetaModal({
+  row,
+  workbookId,
+  locations,
+  departmentOptions,
+  onSaved,
+  onClose,
+}: {
+  row: DisplayRow
+  workbookId: string
+  locations: Location[]
+  departmentOptions: Department[]
+  onSaved: () => Promise<void>
+  onClose: () => void
+}) {
+  const [locationId, setLocationId] = useState(row.locationId ?? '')
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(row.departments)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save() {
+    if (!row.eventId || !row.pcoTimeId) return
+    setSaving(true)
+    setError('')
+    try {
+      await upsertPcoTimeMeta({
+        workbookId,
+        eventId: row.eventId,
+        pcoTimeId: row.pcoTimeId,
+        locationId: locationId || null,
+        departments: selectedDepartments,
+      })
+      await onSaved()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4">
+          <div>
+            <h2 className="text-base font-bold text-gray-900">Assign room &amp; departments</h2>
+            <p className="mt-0.5 text-xs text-gray-500">{row.title} · {timeRange(row.startTime, row.endTime)}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            This time comes from Planning Center and stays read-only. You&apos;re only setting where it happens and which departments own it in this workbook.
+          </p>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Room</label>
+            <select className={FIELD_CLASS} value={locationId} onChange={event => setLocationId(event.target.value)}>
+              <option value="">No room</option>
+              {locations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Departments</label>
+            {departmentOptions.length === 0 ? (
+              <p className="text-xs text-gray-400">Add departments in Settings → Production Config.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {departmentOptions.map(department => {
+                  const on = selectedDepartments.includes(department.name)
+                  return (
+                    <button
+                      type="button"
+                      key={department.id}
+                      onClick={() => setSelectedDepartments(current => on ? current.filter(name => name !== department.name) : [...current, department.name])}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium ${on ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}
+                    >
+                      {department.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
+          <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+            Cancel
+          </button>
+          <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+            <Save className="h-4 w-4" /> {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ScheduleRow({
   row,
   locationName,
   onOpenEvent,
   onEdit,
   onDelete,
+  onAssignPco,
   editable,
 }: {
   row: DisplayRow
@@ -514,6 +620,7 @@ function ScheduleRow({
   onOpenEvent: (eventId: string) => void
   onEdit: (item: WorkbookScheduleItem) => void
   onDelete: (itemId: string) => void
+  onAssignPco: (row: DisplayRow) => void
   editable: boolean
 }) {
   return (
@@ -526,6 +633,10 @@ function ScheduleRow({
         </div>
         <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
           {locationName && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{locationName}</span>}
+          {row.departments.map(department => <span key={department} className="rounded-full bg-teal-50 px-2 py-0.5 text-teal-700">{department}</span>)}
+          {row.pcoTimeId && !locationName && row.departments.length === 0 && (
+            <span className="italic text-gray-400">No room or department assigned</span>
+          )}
           {row.relatedEvent && row.kind !== 'event' && <span className="rounded-full bg-gray-100 px-2 py-0.5">{row.relatedEvent}</span>}
         </div>
         {row.assignments.length > 0 && (
@@ -534,7 +645,13 @@ function ScheduleRow({
       </div>
       <p className="text-sm text-gray-500">{row.notes || ''}</p>
       <div className="flex items-start justify-end gap-1">
-        {row.kind === 'event' && row.eventId && (
+        {editable && row.pcoTimeId && (
+          <button onClick={() => onAssignPco(row)} title="Assign room & departments"
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50">
+            <MapPin className="h-3.5 w-3.5" /> Assign
+          </button>
+        )}
+        {row.kind === 'event' && row.eventId && !row.pcoTimeId && (
           <button onClick={() => onOpenEvent(row.eventId!)} className="rounded-lg px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">
             Open
           </button>
@@ -613,6 +730,8 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [scheduleTypes, setScheduleTypes] = useState<ScheduleItemType[]>([])
   const [items, setItems] = useState<WorkbookScheduleItem[]>([])
   const [pcoTimesByEvent, setPcoTimesByEvent] = useState<Record<string, PcoPlanTimeResult[]>>({})
+  const [pcoMeta, setPcoMeta] = useState<Record<string, PcoTimeMeta>>({})
+  const [assigningPcoRow, setAssigningPcoRow] = useState<DisplayRow | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
   const [tab, setTab] = useState<'schedule' | 'events'>('schedule')
   const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
@@ -695,6 +814,15 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedEventIdsKey, sessionToken])
 
+  const refreshPcoMeta = useCallback(async () => {
+    const ids = linkedEvents.map(event => event.id)
+    setPcoMeta(ids.length ? await loadPcoTimeMeta(ids) : {})
+    // linkedEvents captured via linkedEventIdsKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedEventIdsKey])
+
+  useEffect(() => { void refreshPcoMeta() }, [refreshPcoMeta])
+
   const refreshWorkspace = useCallback(async () => {
     if (!activeWorkbookId) return
     setWorkspaceLoading(true)
@@ -747,6 +875,8 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
           : planTime.time_type === 'service' ? event.name
           : planTime.time_type === 'rehearsal' ? 'Rehearsal'
           : 'Scheduled time'
+        const meta = pcoMeta[`${event.id}:${planTime.id}`]
+        const locationId = meta?.location_id ?? event.workbookLocationId
         return [{
           id: `pco-${event.id}-${planTime.id}`,
           kind: 'event' as const,
@@ -754,12 +884,14 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
           startTime,
           endTime,
           title,
-          location: event.workbookLocationId ? locationMap[event.workbookLocationId] ?? null : null,
+          location: locationId ? locationMap[locationId] ?? null : null,
           relatedEvent: event.name,
           assignments: [],
           notes: null,
           eventId: event.id,
-          locationId: event.workbookLocationId,
+          locationId,
+          departments: meta?.departments ?? [],
+          pcoTimeId: planTime.id,
           item: null,
         }]
       })
@@ -782,6 +914,8 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         notes: null,
         eventId: event.id,
         locationId: event.workbookLocationId,
+        departments: [],
+        pcoTimeId: null,
         item: null,
       }))
     const itemRows = items.map(item => {
@@ -799,6 +933,8 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         notes: item.notes,
         eventId: item.event_id,
         locationId: item.location_id,
+        departments: item.departments,
+        pcoTimeId: null,
         item,
       }
     })
@@ -808,13 +944,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       || (a.kind === 'event' ? -1 : 1)
       || a.title.localeCompare(b.title)
     )
-  }, [items, linkedEvents, locationMap, pcoTimesByEvent, timezone])
+  }, [items, linkedEvents, locationMap, pcoTimesByEvent, pcoMeta, timezone])
 
   const days = [...new Set(rows.map(row => row.date))]
-  const departments = [...new Set(items.flatMap(item => [
-    ...item.departments,
-    ...item.assignments.map(assignment => assignment.department).filter((value): value is string => Boolean(value)),
-  ]))].sort()
+  const departments = [...new Set([
+    ...rows.flatMap(row => row.departments),
+    ...items.flatMap(item => item.assignments.map(assignment => assignment.department).filter((value): value is string => Boolean(value))),
+  ])].sort()
   const people = [...new Set(items.flatMap(item => item.assignments
     .filter(assignment => !assignment.is_open && assignment.person_name)
     .map(assignment => assignment.person_name as string)))].sort()
@@ -1110,6 +1246,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                             onOpenEvent={openEvent}
                             onEdit={item => { setEditingItem(item); setShowEditor(true) }}
                             onDelete={itemId => void removeItem(itemId)}
+                            onAssignPco={pcoRow => setAssigningPcoRow(pcoRow)}
                             editable={isAdmin}
                           />
                         ))}
@@ -1245,6 +1382,17 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
             setActiveWorkbookId(workbook.id)
           }}
           onClose={() => setShowCreate(false)}
+        />
+      )}
+
+      {assigningPcoRow && activeWorkbook && (
+        <PcoTimeMetaModal
+          row={assigningPcoRow}
+          workbookId={activeWorkbook.id}
+          locations={locations}
+          departmentOptions={departmentOptions}
+          onSaved={refreshPcoMeta}
+          onClose={() => setAssigningPcoRow(null)}
         />
       )}
     </div>

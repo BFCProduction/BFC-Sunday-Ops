@@ -151,6 +151,53 @@ export async function deleteScheduleItem(itemId: string): Promise<void> {
   if (error) throw error
 }
 
+// ── PCO plan-time room/department overlay ─────────────────────────────────────
+// PCO plan times are read-only (PCO owns the time); this stores the workbook's
+// room + department annotation for each, keyed by the stable PCO plan-time id.
+
+export interface PcoTimeMeta {
+  location_id: string | null
+  departments: string[]
+}
+
+/** Map keyed by `${event_id}:${pco_time_id}`. */
+export async function loadPcoTimeMeta(eventIds: string[]): Promise<Record<string, PcoTimeMeta>> {
+  if (eventIds.length === 0) return {}
+  const { data, error } = await supabase
+    .from('workbook_pco_time_meta')
+    .select('event_id, pco_time_id, location_id, departments')
+    .in('event_id', eventIds)
+  if (error) throw error
+  const map: Record<string, PcoTimeMeta> = {}
+  for (const row of (data ?? []) as Array<{ event_id: string; pco_time_id: string; location_id: string | null; departments: string[] | null }>) {
+    map[`${row.event_id}:${row.pco_time_id}`] = {
+      location_id: row.location_id ?? null,
+      departments: row.departments ?? [],
+    }
+  }
+  return map
+}
+
+export async function upsertPcoTimeMeta(input: {
+  workbookId: string
+  eventId: string
+  pcoTimeId: string
+  locationId: string | null
+  departments: string[]
+}): Promise<void> {
+  const { error } = await supabase
+    .from('workbook_pco_time_meta')
+    .upsert({
+      workbook_id: input.workbookId,
+      event_id: input.eventId,
+      pco_time_id: input.pcoTimeId,
+      location_id: input.locationId,
+      departments: input.departments,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'event_id,pco_time_id' })
+  if (error) throw error
+}
+
 export async function attachEventToWorkbook(eventId: string, workbookId: string): Promise<void> {
   const { error } = await supabase
     .from('events')

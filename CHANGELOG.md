@@ -20,6 +20,7 @@ Begins building out the Workbooks feature per the "Workbook v2" plan: an account
 - Overlapping items within a single column are lane-packed side by side and flagged as conflicts — the overlap is the visible clash.
 - Per-day grids with Day-N headers; PCO/event blocks render read-only (lock icon); untimed items are counted and excluded from the grid.
 - **PCO plan-time import:** each linked event's scheduled **plan times** (the service block, rehearsals, etc.) are pulled from PCO (via `fetchPcoPlanTimes`) and rendered as read-only rows across the Detail, By Room, and By Department views — converted to church-local time, positioned on the grid, and refetched on load so they stay in sync with PCO (never stored). A service shows as one block start-to-end; when an event has plan times they replace its single principal block. (Corrected from an initial pass that pulled the run-of-show *items* — every song/element — which was too granular for the schedule.)
+- **Room + department on PCO times** (migration `046_workbook_pco_time_meta`): PCO plan times stay read-only, but each can be assigned a room and departments via an "Assign" control on the row. The annotation is stored in an overlay table keyed by the stable PCO plan-time id (the time itself is never stored), so assigned times land in the correct room/department columns on the grid.
 - The "Send Update" change-summary flow remains for a later Phase 1 pass.
 
 ---
