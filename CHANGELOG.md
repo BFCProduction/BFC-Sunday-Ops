@@ -10,10 +10,12 @@ Starts the crew half of the Workbook: the crew roster and call/release clusterin
 
 - **Crew roster** (migration `047_workbook_crew`): a new admin-only Crew tab per workbook. Add crew as a real PCO user, a manually-entered guest, or an open/TBD slot — each with a role (from Production Config), a day (and optional event), call time, release time, and a paid/volunteer flag (defaults from the role; admin-only, no pay math yet). Grouped by day with edit/delete.
 - **Call/release clustering**: crew who share a call time on a day collapse into one "Crew call · N" row on the schedule (and likewise "Crew release · N"), listing each person and role. Shown on the Detail schedule; excluded from the room/department grids.
+- **Per-person call sheets**: a "Call sheets" button on the Crew tab opens a printable doc with one section per crew member — their per-day call/release, role, and event. Crew avatars (existing PCO `avatar_url`) now show on the roster.
 
-### Deferred (later Phase 2 / Phase 4)
+### Deferred
 
-- Per-person call sheet, PCO profile pull (pics/phone/address — PII, security-gated), PCO assignment push-back (no invites), and pay totals (Phase 4, behind the security hardening).
+- **PCO assignment push-back** (assign in Sunday Ops → write to PCO without invites): held pending verification of the exact Services API write endpoint and its notification behavior — it writes to production PCO and can't be tested blind without risking volunteer notifications.
+- **PCO phone/address pull** (PII) and **pay totals**: gated on the Phase 3 security hardening. Crew avatars are already covered (they're pulled at login).
 
 ## 2026-07-25 — Workbook v2 Phase 0 + Phase 1
 
