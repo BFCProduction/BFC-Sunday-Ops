@@ -34,7 +34,9 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
   - **Production Config** in Settings (admin-only): manage account-level Locations, Departments, Roles (+ hourly rate), and schedule-item Types.
   - **Schedule** — a chronological Detail view plus **By Room** and **By Department** views on a shared time-axis grid (time down the left, one column per room/department, items positioned by real start/end, same-column overlaps flagged as conflicts). Day-N labels (Day 1 = the workbook's earliest event).
   - **PCO plan times** pulled into the schedule read-only and kept in sync (never stored); each can be assigned a room + departments via an overlay.
-  - **Crew roster** — people (PCO user / manual guest / open TBD) with roles, call/release times, and paid/volunteer flags; shared call times cluster onto the schedule.
+  - **Crew roster** (admin only) — people (PCO user / manual guest / open TBD) with roles, call/release times, and paid/volunteer flags; shared call times cluster onto the schedule. The crew list is a per-event table (Name, Role, Call, Release, Paid/Volunteer, Hours, Pay).
+  - **Call sheets** — printable per-person schedule (per-day call/release, role, event), with crew avatars.
+  - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), shown per row and totaled per person across the workbook, with a printable business-office pay report. Served/computed for verified admins via the `workbook-pay` Edge Function pattern.
   - **Send Update** — snapshots the schedule, diffs it against the last sent version, and produces a copyable change summary for occasional crew.
   - Printable HTML schedule export. Events attach to a workbook + location with an end time.
 - GitHub Pages deployment
@@ -214,7 +216,7 @@ Completed (previously listed as pending):
 - **Production Config — account-level reference data managed in Settings (migration `045`):**
   - `locations` — rooms/venues, referenced by workbooks and events (replaces the per-workbook `workbook_locations`, which was dropped)
   - `departments` — production departments used to tag schedule items and crew
-  - `roles` — crew roles with `hourly_rate` + `is_paid_default` (rate is admin-only; pay math is deferred behind the security hardening)
+  - `roles` — crew roles with an `hourly_rate` and an optional `department_id` (migration `049`). Rate/pay are admin-only, computed for verified admins (see the `workbook-pay` Edge Function). Raw-rate anon lockdown is a pending follow-up.
   - `schedule_item_types` — managed, extensible list of schedule-item types (replaces the old fixed enum)
 - `workbooks` — top-level container for multi-event / multi-day productions (name, date range, venue, status, sent version)
 - `workbook_schedule_items` — typed schedule rows (type is a managed `schedule_item_types` key) with date, start/end time, notes, departments, tags; `location_id` references account `locations`; optionally linked to an `events` row
@@ -226,6 +228,9 @@ Completed (previously listed as pending):
 
 Functions:
 - `publish_workbook_schedule(workbook_id, published_by, snapshot)` — snapshots the current schedule as the next numbered version (used by "Send Update")
+
+Edge Functions (workbook):
+- `workbook-pay` — admin-only (verifies the PCO session token + `is_admin`); computes crew pay for a workbook and returns it only to verified admins. Deployed; wired in for the raw-rate lockdown (crew pay is currently computed client-side in the admin-only Crew tab).
 
 Views:
 - `analytics_records` — view over `service_records` that remaps legacy service-type values, exposes event identity/time/labels, and powers Analytics screens. As of migration `043`, it filters to events with `include_in_analytics = true` plus legacy `service_records` rows that have no `event_id` (pre-events historical data).
@@ -279,6 +284,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260725020516_045_production_config.sql`
 - `supabase/migrations/20260725025843_046_workbook_pco_time_meta.sql`
 - `supabase/migrations/20260725031614_047_workbook_crew.sql`
+- `supabase/migrations/20260725203121_049_roles_department.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
