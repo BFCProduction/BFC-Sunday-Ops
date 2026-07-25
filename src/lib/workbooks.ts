@@ -3,6 +3,7 @@ import type {
   Location,
   Session,
   Workbook,
+  WorkbookCrewMember,
   WorkbookScheduleAssignment,
   WorkbookScheduleItem,
   WorkbookScheduleItemType,
@@ -176,6 +177,64 @@ export async function loadPcoTimeMeta(eventIds: string[]): Promise<Record<string
     }
   }
   return map
+}
+
+// ── Workbook crew roster ──────────────────────────────────────────────────────
+
+export interface CrewMemberInput {
+  workbookId: string
+  eventId: string | null
+  scheduledDate: string
+  userId: string | null
+  personName: string | null
+  isOpen: boolean
+  roleId: string | null
+  callTime: string | null
+  releaseTime: string | null
+  isPaid: boolean
+}
+
+export async function loadWorkbookCrew(workbookId: string): Promise<WorkbookCrewMember[]> {
+  const { data, error } = await supabase
+    .from('workbook_crew')
+    .select('*')
+    .eq('workbook_id', workbookId)
+    .order('scheduled_date', { ascending: true })
+    .order('call_time', { ascending: true, nullsFirst: false })
+    .order('sort_order', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as WorkbookCrewMember[]
+}
+
+function crewPayload(input: CrewMemberInput) {
+  return {
+    workbook_id: input.workbookId,
+    event_id: input.eventId,
+    scheduled_date: input.scheduledDate,
+    user_id: input.userId,
+    person_name: input.personName,
+    is_open: input.isOpen,
+    role_id: input.roleId,
+    call_time: input.callTime,
+    release_time: input.releaseTime,
+    is_paid: input.isPaid,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+export async function createCrewMember(input: CrewMemberInput): Promise<void> {
+  const { error } = await supabase.from('workbook_crew').insert(crewPayload(input))
+  if (error) throw error
+}
+
+export async function updateCrewMember(id: string, input: CrewMemberInput): Promise<void> {
+  const { error } = await supabase.from('workbook_crew').update(crewPayload(input)).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteCrewMember(id: string): Promise<void> {
+  const { error } = await supabase.from('workbook_crew').delete().eq('id', id)
+  if (error) throw error
 }
 
 export async function upsertPcoTimeMeta(input: {

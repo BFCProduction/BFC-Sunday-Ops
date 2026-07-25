@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-25 — Workbook v2 Phase 2a (crew roster + call clustering)
+
+### Summary
+
+Starts the crew half of the Workbook: the crew roster and call/release clustering on the schedule. Pay math, PCO profile pull, PCO assignment push-back, and the per-person call sheet are deferred to later Phase 2 passes (some gated on the Phase 3 security work).
+
+### Completed
+
+- **Crew roster** (migration `047_workbook_crew`): a new admin-only Crew tab per workbook. Add crew as a real PCO user, a manually-entered guest, or an open/TBD slot — each with a role (from Production Config), a day (and optional event), call time, release time, and a paid/volunteer flag (defaults from the role; admin-only, no pay math yet). Grouped by day with edit/delete.
+- **Call/release clustering**: crew who share a call time on a day collapse into one "Crew call · N" row on the schedule (and likewise "Crew release · N"), listing each person and role. Shown on the Detail schedule; excluded from the room/department grids.
+
+### Deferred (later Phase 2 / Phase 4)
+
+- Per-person call sheet, PCO profile pull (pics/phone/address — PII, security-gated), PCO assignment push-back (no invites), and pay totals (Phase 4, behind the security hardening).
+
 ## 2026-07-25 — Workbook v2 Phase 0 + Phase 1
 
 ### Summary

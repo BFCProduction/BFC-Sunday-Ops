@@ -17,6 +17,7 @@ import {
   detachEventFromWorkbook,
   loadLatestWorkbookVersion,
   loadPcoTimeMeta,
+  loadWorkbookCrew,
   loadWorkbookScheduleItems,
   loadWorkbooks,
   publishWorkbookSchedule,
@@ -31,18 +32,22 @@ import {
   loadLocations,
   loadDepartments,
   loadScheduleItemTypes,
+  loadRoles,
   createScheduleItemType,
 } from '../lib/productionConfig'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import { ScheduleTimeGrid, type TimeGridColumn, type TimeGridItem } from '../components/workbook/ScheduleTimeGrid'
+import { CrewTab } from '../components/workbook/CrewTab'
 import { workbookScheduleDiff, type DiffScheduleItem, type DiffEvent } from '../lib/workbookDiff'
 import type {
+  CrewRole,
   Department,
   Location,
   ScheduleItemType,
   Session,
   Workbook,
+  WorkbookCrewMember,
   WorkbookScheduleItem,
 } from '../types'
 
@@ -79,6 +84,12 @@ function daysBetween(from: string, to: string) {
 function dayLabel(date: string, anchor: string | null) {
   if (!anchor) return null
   return daysBetween(anchor, date) + 1
+}
+function addDays(date: string, n: number) {
+  const [year, month, day] = date.split('-').map(Number)
+  const base = new Date(Date.UTC(year, month - 1, day))
+  base.setUTCDate(base.getUTCDate() + n)
+  return base.toISOString().slice(0, 10)
 }
 
 function formatDate(date: string) {
@@ -890,12 +901,14 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [locations, setLocations] = useState<Location[]>([])
   const [departmentOptions, setDepartmentOptions] = useState<Department[]>([])
   const [scheduleTypes, setScheduleTypes] = useState<ScheduleItemType[]>([])
+  const [crewRoles, setCrewRoles] = useState<CrewRole[]>([])
+  const [crew, setCrew] = useState<WorkbookCrewMember[]>([])
   const [items, setItems] = useState<WorkbookScheduleItem[]>([])
   const [pcoTimesByEvent, setPcoTimesByEvent] = useState<Record<string, PcoPlanTimeResult[]>>({})
   const [pcoMeta, setPcoMeta] = useState<Record<string, PcoTimeMeta>>({})
   const [assigningPcoRow, setAssigningPcoRow] = useState<DisplayRow | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
-  const [tab, setTab] = useState<'schedule' | 'events'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'events' | 'crew'>('schedule')
   const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
   const [loading, setLoading] = useState(true)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
@@ -926,11 +939,12 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
   // Account-level reference data (Production Config), shared across all workbooks.
   useEffect(() => {
-    Promise.all([loadLocations(), loadDepartments(), loadScheduleItemTypes()])
-      .then(([loc, dep, typ]) => {
+    Promise.all([loadLocations(), loadDepartments(), loadScheduleItemTypes(), loadRoles()])
+      .then(([loc, dep, typ, rol]) => {
         setLocations(loc)
         setDepartmentOptions(dep)
         setScheduleTypes(typ)
+        setCrewRoles(rol)
       })
       .catch(() => { /* reference data is optional to first paint */ })
   }, [])
@@ -989,7 +1003,12 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     if (!activeWorkbookId) return
     setWorkspaceLoading(true)
     try {
-      setItems(await loadWorkbookScheduleItems(activeWorkbookId))
+      const [freshItems, freshCrew] = await Promise.all([
+        loadWorkbookScheduleItems(activeWorkbookId),
+        loadWorkbookCrew(activeWorkbookId),
+      ])
+      setItems(freshItems)
+      setCrew(freshCrew)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load workbook schedule.')
     } finally {
@@ -997,9 +1016,14 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     }
   }, [activeWorkbookId])
 
+  const reloadCrew = useCallback(async () => {
+    if (activeWorkbookId) setCrew(await loadWorkbookCrew(activeWorkbookId))
+  }, [activeWorkbookId])
+
   useEffect(() => {
     if (!activeWorkbookId) {
       setItems([])
+      setCrew([])
       return
     }
     void refreshWorkspace()
@@ -1014,9 +1038,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         { event: '*', schema: 'public', table: 'workbook_schedule_assignments' },
         () => { void refreshWorkspace() },
       )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'workbook_crew', filter: `workbook_id=eq.${activeWorkbookId}` },
+        () => { void reloadCrew() },
+      )
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
-  }, [activeWorkbookId, refreshWorkspace])
+  }, [activeWorkbookId, refreshWorkspace, reloadCrew])
 
   const locationMap = useMemo(
     () => Object.fromEntries(locations.map(location => [location.id, location.name])),
@@ -1100,13 +1128,47 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         item,
       }
     })
-    return [...eventRows, ...pcoRows, ...itemRows].sort((a, b) =>
+    // Crew call/release clusters → read-only schedule rows (id prefix `crew-`).
+    const crewClusters = new Map<string, { date: string; time: string; kind: 'call' | 'release'; members: WorkbookCrewMember[] }>()
+    for (const member of crew) {
+      const entries: Array<[string | null, 'call' | 'release']> = [[member.call_time, 'call'], [member.release_time, 'release']]
+      for (const [time, kind] of entries) {
+        if (!time) continue
+        const key = `${member.scheduled_date}|${time}|${kind}`
+        const bucket = crewClusters.get(key) ?? { date: member.scheduled_date, time, kind, members: [] }
+        bucket.members.push(member)
+        crewClusters.set(key, bucket)
+      }
+    }
+    const crewRows: DisplayRow[] = [...crewClusters.values()].map(bucket => ({
+      id: `crew-${bucket.kind}-${bucket.date}-${bucket.time}`,
+      kind: 'item' as const,
+      date: bucket.date,
+      startTime: bucket.time,
+      endTime: null,
+      title: `Crew ${bucket.kind} · ${bucket.members.length}`,
+      location: null,
+      relatedEvent: null,
+      assignments: bucket.members.map(member => {
+        const name = member.is_open ? 'TBD' : (member.user_id ? (users.find(u => u.id === member.user_id)?.name ?? 'Unknown') : (member.person_name ?? 'Unknown'))
+        const roleName = member.role_id ? (crewRoles.find(role => role.id === member.role_id)?.name ?? '') : ''
+        return roleName ? `${name} (${roleName})` : name
+      }),
+      notes: null,
+      eventId: null,
+      locationId: null,
+      departments: [],
+      pcoTimeId: null,
+      item: null,
+    }))
+
+    return [...eventRows, ...pcoRows, ...crewRows, ...itemRows].sort((a, b) =>
       a.date.localeCompare(b.date)
       || (a.startTime ?? '23:59:59').localeCompare(b.startTime ?? '23:59:59')
       || (a.kind === 'event' ? -1 : 1)
       || a.title.localeCompare(b.title)
     )
-  }, [items, linkedEvents, locationMap, pcoTimesByEvent, pcoMeta, timezone])
+  }, [items, crew, crewRoles, users, linkedEvents, locationMap, pcoTimesByEvent, pcoMeta, timezone])
 
   const days = [...new Set(rows.map(row => row.date))]
   const departments = [...new Set([
@@ -1128,6 +1190,19 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     () => new Set(rows.map(row => row.locationId).filter((id): id is string => Boolean(id))),
     [rows],
   )
+
+  const workbookDays = useMemo(() => {
+    if (!activeWorkbook) return []
+    const out: string[] = []
+    let cursor = activeWorkbook.start_date
+    let guard = 0
+    while (cursor <= activeWorkbook.end_date && guard < 400) {
+      out.push(cursor)
+      cursor = addDays(cursor, 1)
+      guard++
+    }
+    return out
+  }, [activeWorkbook])
 
   const filteredRows = rows.filter(row => {
     const item = row.item
@@ -1286,6 +1361,11 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     <Icon className="h-4 w-4" /> {label}
                   </button>
                 ))}
+                {isAdmin && (
+                  <button onClick={() => setTab('crew')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'crew' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
+                    <Users className="h-4 w-4" /> Crew
+                  </button>
+                )}
               </div>
             </Card>
 
@@ -1401,7 +1481,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                   </Card>
                 ) : (() => {
                   const axis: 'rooms' | 'departments' = view === 'departments' ? 'departments' : 'rooms'
-                  const gridDates = [...new Set(filteredRows.filter(row => row.startTime).map(row => row.date))].sort()
+                  const gridDates = [...new Set(filteredRows.filter(row => row.startTime && !row.id.startsWith('crew-')).map(row => row.date))].sort()
                   const untimedCount = filteredRows.filter(row => row.item && !row.startTime).length
                   if (gridDates.length === 0) {
                     return (
@@ -1422,7 +1502,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                       </div>
                       {gridDates.map(date => {
                         const gridItems = filteredRows
-                          .filter(row => row.date === date && row.startTime)
+                          .filter(row => row.date === date && row.startTime && !row.id.startsWith('crew-'))
                           .map(row => rowToGridItem(row, axis))
                           .filter((item): item is TimeGridItem => item !== null)
                         const usedKeys = new Set(gridItems.flatMap(item => item.columnKeys))
@@ -1516,6 +1596,18 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                   </div>
                 </div>
               </div>
+            )}
+
+            {tab === 'crew' && isAdmin && (
+              <CrewTab
+                workbookId={activeWorkbook.id}
+                workbookDays={workbookDays}
+                linkedEvents={linkedEvents}
+                users={users}
+                roles={crewRoles}
+                crew={crew}
+                onChanged={reloadCrew}
+              />
             )}
           </section>
         )}

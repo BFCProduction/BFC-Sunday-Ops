@@ -287,6 +287,23 @@ export interface WorkbookScheduleItem {
   assignments: WorkbookScheduleAssignment[]
 }
 
+export interface WorkbookCrewMember {
+  id: string
+  workbook_id: string
+  event_id: string | null
+  scheduled_date: string
+  user_id: string | null
+  person_name: string | null
+  is_open: boolean
+  role_id: string | null
+  call_time: string | null
+  release_time: string | null
+  is_paid: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
 export interface WorkbookScheduleVersion {
   id: string
   workbook_id: string
