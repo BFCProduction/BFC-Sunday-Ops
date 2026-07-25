@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-26 — Crew pay per event + role departments
+
+### Changed
+
+- Crew pay is now billed **per event** (each crew row's call→release × role rate) and embedded directly in the crew list, which is now a **table grouped by event** with columns: Name, Role, Call, Release, Paid/Volunteer, Hours, Pay.
+- Added a **Total pay** section at the bottom of the Crew tab: every crew member across the whole workbook with summed hours and pay, plus a grand total. The business-office report matches this per-person payroll list.
+- Pay is computed client-side in the admin-only Crew tab; the `workbook-pay` Edge Function stays deployed for when raw role rates are locked down (per-event gap-pay is now handled by entering a single crew row that spans the gap).
+
+### Settings
+
+- Each **role** can now be assigned a **department** (Settings → Production Config, migration `049_roles_department`).
+- Removed the "paid by default" option from roles — paid/volunteer is set per crew assignment.
+
 ## 2026-07-25 — Workbook crew pay (admin-only) + business-office report
 
 ### Summary

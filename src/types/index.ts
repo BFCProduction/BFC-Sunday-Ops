@@ -238,7 +238,7 @@ export interface CrewRole {
   id: string
   name: string
   hourly_rate: number
-  is_paid_default: boolean
+  department_id: string | null
   sort_order: number
   created_at: string
 }

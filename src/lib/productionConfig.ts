@@ -75,7 +75,7 @@ export async function deleteDepartment(id: string): Promise<void> {
 export interface RoleInput {
   name: string
   hourlyRate: number
-  isPaidDefault: boolean
+  departmentId: string | null
 }
 
 export async function loadRoles(): Promise<CrewRole[]> {
@@ -94,7 +94,7 @@ export async function createRole(input: RoleInput, sortOrder: number): Promise<C
     .insert({
       name: input.name.trim(),
       hourly_rate: input.hourlyRate,
-      is_paid_default: input.isPaidDefault,
+      department_id: input.departmentId,
       sort_order: sortOrder,
     })
     .select('*')
@@ -109,7 +109,7 @@ export async function updateRole(id: string, input: RoleInput): Promise<void> {
     .update({
       name: input.name.trim(),
       hourly_rate: input.hourlyRate,
-      is_paid_default: input.isPaidDefault,
+      department_id: input.departmentId,
     })
     .eq('id', id)
   if (error) throw error

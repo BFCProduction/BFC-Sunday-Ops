@@ -1,14 +1,32 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { DollarSign, FileText, Loader2, Pencil, Trash2, UserPlus, X } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
+import { DollarSign, FileText, Pencil, Trash2, UserPlus, X } from 'lucide-react'
 import { Card } from '../ui/Card'
-import { fetchWorkbookPay, type AppUser, type WorkbookPay } from '../../lib/adminApi'
+import type { AppUser } from '../../lib/adminApi'
 import { createCrewMember, updateCrewMember, deleteCrewMember, type CrewMemberInput } from '../../lib/workbooks'
 import { generateCallSheetHtml, type CallSheetPerson } from '../../lib/generateCallSheetHtml'
-import { generatePayReportHtml } from '../../lib/generatePayReportHtml'
+import { generatePayReportHtml, type PayLine } from '../../lib/generatePayReportHtml'
 import type { CrewRole, Session, Workbook, WorkbookCrewMember } from '../../types'
 
 function money(value: number): string {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+}
+function toMinutes(time: string | null): number | null {
+  if (!time) return null
+  const [hour, minute] = time.slice(0, 5).split(':').map(Number)
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null
+  return hour * 60 + minute
+}
+// Per-event hours: this row's call → release, rounded to the nearest half hour.
+function memberHours(member: WorkbookCrewMember): number {
+  const call = toMinutes(member.call_time)
+  const release = toMinutes(member.release_time)
+  if (call === null || release === null || release <= call) return 0
+  return Math.round(((release - call) / 60) * 2) / 2
+}
+function memberPay(member: WorkbookCrewMember, roles: CrewRole[]): number {
+  if (!member.is_paid) return 0
+  const rate = member.role_id ? (roles.find(role => role.id === member.role_id)?.hourly_rate ?? 0) : 0
+  return Math.round(memberHours(member) * rate * 100) / 100
 }
 
 const FIELD = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -38,7 +56,6 @@ interface CrewTabProps {
   users: AppUser[]
   roles: CrewRole[]
   crew: WorkbookCrewMember[]
-  sessionToken: string | null
   onChanged: () => Promise<void>
 }
 
@@ -79,10 +96,6 @@ function CrewMemberModal({
 
   function pickRole(nextRoleId: string) {
     setRoleId(nextRoleId)
-    if (!existing) {
-      const role = roles.find(r => r.id === nextRoleId)
-      if (role) setIsPaid(role.is_paid_default)
-    }
   }
 
   const eventsForDay = linkedEvents.filter(event => event.date === date)
@@ -181,38 +194,55 @@ function CrewMemberModal({
   )
 }
 
-export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, sessionToken, onChanged }: CrewTabProps) {
+export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, onChanged }: CrewTabProps) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<WorkbookCrewMember | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [pay, setPay] = useState<WorkbookPay | null>(null)
-  const [payLoading, setPayLoading] = useState(false)
-  const [payError, setPayError] = useState('')
 
-  const crewPaySignature = crew.map(member => `${member.id}:${member.is_paid}:${member.call_time}:${member.release_time}:${member.role_id}`).join('|')
-  useEffect(() => {
-    if (!sessionToken) return
-    let active = true
-    void (async () => {
-      setPayLoading(true)
-      setPayError('')
-      try {
-        const data = await fetchWorkbookPay(sessionToken, workbook.id)
-        if (active) setPay(data)
-      } catch (err) {
-        if (active) setPayError(err instanceof Error ? err.message : 'Unable to load pay.')
-      } finally {
-        if (active) setPayLoading(false)
+  const roleName = (id: string | null) => (id ? roles.find(role => role.id === id)?.name ?? '—' : '—')
+  const eventName = (id: string | null) => (id ? linkedEvents.find(event => event.id === id)?.name ?? null : null)
+
+  // Pay computed client-side (admin-only tab): per-event hours × role rate, summed per person.
+  const payLines: PayLine[] = (() => {
+    const map = new Map<string, PayLine>()
+    for (const member of crew) {
+      if (!member.is_paid || member.is_open) continue
+      const key = member.user_id ?? `name:${member.person_name}`
+      const line = map.get(key) ?? { name: personName(member, users), hours: 0, pay: 0 }
+      line.hours = Math.round((line.hours + memberHours(member)) * 2) / 2
+      line.pay = Math.round((line.pay + memberPay(member, roles)) * 100) / 100
+      map.set(key, line)
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+  })()
+  const totalHours = Math.round(payLines.reduce((sum, line) => sum + line.hours, 0) * 2) / 2
+  const totalPay = Math.round(payLines.reduce((sum, line) => sum + line.pay, 0) * 100) / 100
+
+  // Crew grouped by event; crew with no event are grouped by day.
+  const groups = (() => {
+    const map = new Map<string, { key: string; label: string; date: string; members: WorkbookCrewMember[] }>()
+    for (const member of crew) {
+      let key: string, label: string, date: string
+      if (member.event_id) {
+        const event = linkedEvents.find(item => item.id === member.event_id)
+        date = event?.date ?? member.scheduled_date
+        key = `event:${member.event_id}`
+        label = `${formatDay(date)} · ${event?.name ?? 'Event'}`
+      } else {
+        date = member.scheduled_date
+        key = `day:${member.scheduled_date}`
+        label = `${formatDay(date)} · Whole day`
       }
-    })()
-    return () => { active = false }
-    // recompute when paid/time/role fields change (crewPaySignature)
-  }, [workbook.id, sessionToken, crewPaySignature])
+      const group = map.get(key) ?? { key, label, date, members: [] }
+      group.members.push(member)
+      map.set(key, group)
+    }
+    return [...map.values()].sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label))
+  })()
 
   function openPayReport() {
-    if (!pay) return
     const range = workbookDays.length ? `${formatDay(workbookDays[0])} – ${formatDay(workbookDays[workbookDays.length - 1])}` : ''
-    const html = generatePayReportHtml(workbook.name, range, pay)
+    const html = generatePayReportHtml(workbook.name, range, payLines, totalHours, totalPay)
     const win = window.open('', '_blank')
     if (!win) { alert('Pop-up was blocked. Please allow pop-ups and try again.'); return }
     win.document.open()
@@ -220,11 +250,6 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
     win.document.close()
     setTimeout(() => win.print(), 500)
   }
-
-  const roleName = (id: string | null) => (id ? roles.find(role => role.id === id)?.name ?? '—' : '—')
-  const eventName = (id: string | null) => (id ? linkedEvents.find(event => event.id === id)?.name ?? null : null)
-
-  const days = [...new Set(crew.map(member => member.scheduled_date))].sort()
 
   function openCallSheets() {
     const byPerson = new Map<string, CallSheetPerson>()
@@ -272,8 +297,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
           <div>
             <p className="text-sm font-bold text-gray-900">Crew</p>
             <p className="mt-0.5 text-xs text-gray-500">
-              Who&apos;s working, their role, and call / release times. Call times cluster onto the schedule.
-              Paid/volunteer is admin-only; pay totals arrive in a later phase.
+              Who&apos;s working, their role, call / release times, and pay per event. Call times cluster onto the schedule.
+              Pay is admin-only and never shown to volunteers.
             </p>
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
@@ -282,6 +307,12 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
               disabled={crew.length === 0}
               className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
               <FileText className="h-4 w-4" /> Call sheets
+            </button>
+            <button
+              onClick={openPayReport}
+              disabled={payLines.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              <DollarSign className="h-4 w-4" /> Pay report
             </button>
             <button
               onClick={() => { setEditing(null); setShowModal(true) }}
@@ -293,82 +324,100 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
         </div>
       </Card>
 
-      {sessionToken && (
-        <Card className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2">
-              <DollarSign className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600" />
-              <div>
-                <p className="text-sm font-bold text-gray-900">
-                  Crew pay <span className="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase text-gray-500">admin only</span>
-                </p>
-                <p className="mt-0.5 text-xs text-gray-500">Paid crew, on-clock span per day × role rate. Never shown to volunteers.</p>
-              </div>
-            </div>
-            <button
-              onClick={openPayReport}
-              disabled={!pay || pay.people.length === 0}
-              className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              <FileText className="h-4 w-4" /> Business office report
-            </button>
-          </div>
-          {payLoading ? (
-            <div className="mt-3 flex items-center gap-2 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Calculating…</div>
-          ) : payError ? (
-            <p className="mt-3 text-sm text-red-600">{payError}</p>
-          ) : pay && pay.people.length > 0 ? (
-            <div className="mt-3 space-y-1.5">
-              {pay.people.map(person => (
-                <div key={person.name} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">{person.name} <span className="text-gray-400">· {person.hours.toFixed(1)} hrs</span></span>
-                  <span className="font-mono font-semibold text-gray-900">{money(person.pay)}</span>
-                </div>
-              ))}
-              <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2 text-sm font-bold text-gray-900">
-                <span>Total · {pay.total_hours.toFixed(1)} hrs</span>
-                <span className="font-mono">{money(pay.total_pay)}</span>
-              </div>
-            </div>
-          ) : (
-            <p className="mt-3 text-xs text-gray-400">No paid crew hours yet. Mark crew as Paid and set both call and release times.</p>
-          )}
-        </Card>
-      )}
-
       {crew.length === 0 ? (
         <Card className="p-8 text-center text-sm text-gray-400">No crew added yet. Use “Add crew” to build the roster.</Card>
-      ) : days.map(day => (
-        <Card key={day} className="overflow-hidden">
-          <div className="bg-gray-800 px-4 py-2 text-sm font-semibold text-white">{formatDay(day)}</div>
-          <div>
-            {crew.filter(member => member.scheduled_date === day).map(member => (
-              <div key={member.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-gray-100 px-4 py-3 last:border-0">
-                <div className="flex min-w-[150px] flex-1 items-center gap-2">
-                  {avatarFor(member, users)}
-                  <p className="text-sm font-semibold text-gray-900">
-                    {personName(member, users)}
-                    {member.is_open && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Open</span>}
-                  </p>
-                </div>
-                <span className="min-w-[90px] text-sm text-gray-600">{roleName(member.role_id)}</span>
-                {eventName(member.event_id) && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{eventName(member.event_id)}</span>}
-                <span className="font-mono text-xs text-gray-500">Call {formatTime(member.call_time)} · Rel {formatTime(member.release_time)}</span>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${member.is_paid ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
-                  {member.is_paid ? 'Paid' : 'Volunteer'}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => { setEditing(member); setShowModal(true) }} className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600" aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></button>
-                  {confirmDelete === member.id ? (
-                    <button onClick={() => void remove(member.id)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700">Sure?</button>
-                  ) : (
-                    <button onClick={() => setConfirmDelete(member.id)} className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
-                  )}
-                </div>
-              </div>
-            ))}
+      ) : groups.map(group => (
+        <Card key={group.key} className="overflow-hidden">
+          <div className="bg-gray-800 px-4 py-2 text-sm font-semibold text-white">{group.label}</div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-3 py-2">Role</th>
+                  <th className="px-3 py-2">Call</th>
+                  <th className="px-3 py-2">Release</th>
+                  <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2 text-right">Hours</th>
+                  <th className="px-3 py-2 text-right">Pay</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {group.members.map(member => (
+                  <tr key={member.id} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        {avatarFor(member, users)}
+                        <span className="font-semibold text-gray-900">
+                          {personName(member, users)}
+                          {member.is_open && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Open</span>}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-gray-600">{roleName(member.role_id)}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{formatTime(member.call_time)}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{formatTime(member.release_time)}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${member.is_paid ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {member.is_paid ? 'Paid' : 'Volunteer'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gray-700">{memberHours(member).toFixed(1)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-gray-900">{member.is_paid ? money(memberPay(member, roles)) : '—'}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => { setEditing(member); setShowModal(true) }} className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600" aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></button>
+                        {confirmDelete === member.id ? (
+                          <button onClick={() => void remove(member.id)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700">Sure?</button>
+                        ) : (
+                          <button onClick={() => setConfirmDelete(member.id)} className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </Card>
       ))}
+
+      {payLines.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">
+            <DollarSign className="h-4 w-4" /> Total pay — all crew across the workbook
+            <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase">admin only</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  <th className="px-4 py-2">Crew member</th>
+                  <th className="px-3 py-2 text-right">Hours</th>
+                  <th className="px-3 py-2 text-right">Pay</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payLines.map(line => (
+                  <tr key={line.name} className="border-b border-gray-50">
+                    <td className="px-4 py-2.5 text-gray-800">{line.name}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gray-600">{line.hours.toFixed(1)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-gray-900">{money(line.pay)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 font-bold text-gray-900">
+                  <td className="px-4 py-2.5">Total</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{totalHours.toFixed(1)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{money(totalPay)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {showModal && (
         <CrewMemberModal

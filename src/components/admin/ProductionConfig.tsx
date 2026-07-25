@@ -103,10 +103,10 @@ function ListManager({ title, description, icon, addPlaceholder, rows, onAdd, on
   )
 }
 
-interface RoleDraft { name: string; hourlyRate: string; isPaidDefault: boolean }
-const emptyRole: RoleDraft = { name: '', hourlyRate: '0', isPaidDefault: false }
+interface RoleDraft { name: string; hourlyRate: string; departmentId: string }
+const emptyRole: RoleDraft = { name: '', hourlyRate: '0', departmentId: '' }
 
-function RolesManager({ roles, reload }: { roles: CrewRole[]; reload: () => Promise<void> }) {
+function RolesManager({ roles, departments, reload }: { roles: CrewRole[]; departments: Department[]; reload: () => Promise<void> }) {
   const [draft, setDraft] = useState<RoleDraft>(emptyRole)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<RoleDraft>(emptyRole)
@@ -123,15 +123,15 @@ function RolesManager({ roles, reload }: { roles: CrewRole[]; reload: () => Prom
   const toInput = (d: RoleDraft): RoleInput => ({
     name: d.name,
     hourlyRate: Math.round((parseFloat(d.hourlyRate) || 0) * 100) / 100,
-    isPaidDefault: d.isPaidDefault,
+    departmentId: d.departmentId || null,
   })
+  const departmentName = (id: string | null) => (id ? departments.find(dep => dep.id === id)?.name ?? null : null)
 
   return (
     <Card className="p-5 mb-3">
       <p className="text-gray-900 text-sm font-semibold flex items-center gap-2 mb-1"><Users className="w-4 h-4 text-blue-600" />Roles</p>
       <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-        Crew roles and their hourly rate. "Paid by default" pre-selects paid when this role is assigned; it can still be
-        overridden per person. Rates and pay are admin-only and are not shown to volunteers.
+        Crew roles, their department, and their hourly rate. Rates and pay are admin-only and are not shown to volunteers.
       </p>
 
       <div className="space-y-2">
@@ -141,16 +141,17 @@ function RolesManager({ roles, reload }: { roles: CrewRole[]; reload: () => Prom
               <>
                 <input value={editDraft.name} onChange={e => setEditDraft({ ...editDraft, name: e.target.value })}
                   className="flex-1 min-w-[120px] bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500" placeholder="Role name" />
+                <select value={editDraft.departmentId} onChange={e => setEditDraft({ ...editDraft, departmentId: e.target.value })}
+                  className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500">
+                  <option value="">No department</option>
+                  {departments.map(dep => <option key={dep.id} value={dep.id}>{dep.name}</option>)}
+                </select>
                 <div className="flex items-center gap-1">
                   <span className="text-gray-400 text-sm">$</span>
                   <input type="number" step="0.01" min="0" value={editDraft.hourlyRate} onChange={e => setEditDraft({ ...editDraft, hourlyRate: e.target.value })}
                     className="w-20 bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500" />
                   <span className="text-gray-400 text-xs">/hr</span>
                 </div>
-                <label className="flex items-center gap-1.5 text-xs text-gray-600">
-                  <input type="checkbox" checked={editDraft.isPaidDefault} onChange={e => setEditDraft({ ...editDraft, isPaidDefault: e.target.checked })} />
-                  Paid by default
-                </label>
                 <button onClick={() => void run(async () => { await updateRole(role.id, toInput(editDraft)); setEditingId(null) })}
                   disabled={busy || !editDraft.name.trim()} className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40" aria-label="Save">
                   <Check className="w-4 h-4" />
@@ -162,11 +163,11 @@ function RolesManager({ roles, reload }: { roles: CrewRole[]; reload: () => Prom
             ) : (
               <>
                 <span className="flex-1 min-w-[120px] text-sm text-gray-800">{role.name}</span>
-                <span className="text-sm font-mono text-gray-600">${role.hourly_rate.toFixed(2)}/hr</span>
-                {role.is_paid_default && (
-                  <span className="text-[11px] bg-amber-50 text-amber-700 rounded-full px-2 py-0.5">Paid default</span>
+                {departmentName(role.department_id) && (
+                  <span className="text-[11px] bg-blue-50 text-blue-700 rounded-full px-2 py-0.5">{departmentName(role.department_id)}</span>
                 )}
-                <button onClick={() => { setEditingId(role.id); setEditDraft({ name: role.name, hourlyRate: String(role.hourly_rate), isPaidDefault: role.is_paid_default }) }}
+                <span className="text-sm font-mono text-gray-600">${role.hourly_rate.toFixed(2)}/hr</span>
+                <button onClick={() => { setEditingId(role.id); setEditDraft({ name: role.name, hourlyRate: String(role.hourly_rate), departmentId: role.department_id ?? '' }) }}
                   className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50" aria-label={`Edit ${role.name}`}>
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
@@ -184,16 +185,17 @@ function RolesManager({ roles, reload }: { roles: CrewRole[]; reload: () => Prom
       <div className="flex gap-2 mt-3 flex-wrap items-center">
         <input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Role name, e.g. A1"
           className="flex-1 min-w-[140px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500" />
+        <select value={draft.departmentId} onChange={e => setDraft({ ...draft, departmentId: e.target.value })}
+          className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-blue-500">
+          <option value="">No department</option>
+          {departments.map(dep => <option key={dep.id} value={dep.id}>{dep.name}</option>)}
+        </select>
         <div className="flex items-center gap-1">
           <span className="text-gray-400 text-sm">$</span>
           <input type="number" step="0.01" min="0" value={draft.hourlyRate} onChange={e => setDraft({ ...draft, hourlyRate: e.target.value })}
             className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm font-mono focus:outline-none focus:border-blue-500" />
           <span className="text-gray-400 text-xs">/hr</span>
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-gray-600">
-          <input type="checkbox" checked={draft.isPaidDefault} onChange={e => setDraft({ ...draft, isPaidDefault: e.target.checked })} />
-          Paid by default
-        </label>
         <button onClick={() => void run(async () => { await createRole(toInput(draft), roles.length); setDraft(emptyRole) })}
           disabled={busy || !draft.name.trim()}
           className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
@@ -271,7 +273,7 @@ export function ProductionConfig() {
         onRename={async (id, label) => { await renameScheduleItemType(id, label); await reloadTypes() }}
         onDelete={async id => { await deleteScheduleItemType(id); await reloadTypes() }}
       />
-      <RolesManager roles={roles} reload={reloadRoles} />
+      <RolesManager roles={roles} departments={departments} reload={reloadRoles} />
     </div>
   )
 }

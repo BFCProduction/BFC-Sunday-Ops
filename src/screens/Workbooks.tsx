@@ -1606,7 +1606,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 users={users}
                 roles={crewRoles}
                 crew={crew}
-                sessionToken={sessionToken}
                 onChanged={reloadCrew}
               />
             )}
