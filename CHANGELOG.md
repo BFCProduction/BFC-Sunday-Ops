@@ -19,7 +19,8 @@ Begins building out the Workbooks feature per the "Workbook v2" plan: an account
 - New `ScheduleTimeGrid` component: the **By Room** and **By Department** views now render on a shared vertical time axis (time down the left, one column per room/department, items positioned by actual start/end), replacing the previous independent-list layout.
 - Overlapping items within a single column are lane-packed side by side and flagged as conflicts — the overlap is the visible clash.
 - Per-day grids with Day-N headers; PCO/event blocks render read-only (lock icon); untimed items are counted and excluded from the grid.
-- Linked-event PCO times continue to appear read-only. Richer PCO plan-time import and the "Send Update" change-summary flow remain for a later Phase 1 pass.
+- **PCO plan-time import:** each linked event's full run-of-show is pulled from PCO (via the existing `fetchPcoPlanItems`) and rendered as read-only rows across the Detail, By Room, and By Department views — converted to church-local time, positioned on the grid, and refetched on load so they stay in sync with PCO (never stored). Header items and untimed items are skipped; when an event has granular PCO items they replace its single principal time block.
+- The "Send Update" change-summary flow remains for a later Phase 1 pass.
 
 ---
 
