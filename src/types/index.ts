@@ -218,24 +218,44 @@ export interface Workbook {
   updated_at: string
 }
 
-export interface WorkbookLocation {
+// -- Production Config (account-level reference data, managed in Settings) ------
+
+export interface Location {
   id: string
-  workbook_id: string
   name: string
   sort_order: number
   created_at: string
 }
 
-export type WorkbookScheduleItemType =
-  | 'call'
-  | 'rehearsal'
-  | 'meal'
-  | 'meeting'
-  | 'programming'
-  | 'transition'
-  | 'load_in'
-  | 'strike'
-  | 'task'
+export interface Department {
+  id: string
+  name: string
+  sort_order: number
+  created_at: string
+}
+
+export interface CrewRole {
+  id: string
+  name: string
+  hourly_rate: number
+  is_paid_default: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface ScheduleItemType {
+  id: string
+  key: string
+  label: string
+  icon: string | null
+  color: string | null
+  sort_order: number
+  created_at: string
+}
+
+// The schedule item type is now a managed, extensible list (see
+// schedule_item_types); stored as the type's `key` string.
+export type WorkbookScheduleItemType = string
 
 export interface WorkbookScheduleAssignment {
   id: string

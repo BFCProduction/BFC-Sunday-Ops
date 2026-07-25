@@ -1,8 +1,8 @@
 import { supabase } from './supabase'
 import type {
+  Location,
   Session,
   Workbook,
-  WorkbookLocation,
   WorkbookScheduleAssignment,
   WorkbookScheduleItem,
   WorkbookScheduleItemType,
@@ -41,7 +41,7 @@ export interface ScheduleItemInput {
 
 export interface WorkbookPublicationSnapshot {
   workbook: Workbook
-  locations: WorkbookLocation[]
+  locations: Location[]
   events: Session[]
   scheduleItems: WorkbookScheduleItem[]
 }
@@ -70,27 +70,6 @@ export async function createWorkbook(input: CreateWorkbookInput): Promise<Workbo
     .single()
   if (error) throw error
   return data as Workbook
-}
-
-export async function loadWorkbookLocations(workbookId: string): Promise<WorkbookLocation[]> {
-  const { data, error } = await supabase
-    .from('workbook_locations')
-    .select('*')
-    .eq('workbook_id', workbookId)
-    .order('sort_order', { ascending: true })
-    .order('name', { ascending: true })
-  if (error) throw error
-  return (data ?? []) as WorkbookLocation[]
-}
-
-export async function createWorkbookLocation(workbookId: string, name: string): Promise<WorkbookLocation> {
-  const { data, error } = await supabase
-    .from('workbook_locations')
-    .insert({ workbook_id: workbookId, name: name.trim() })
-    .select('*')
-    .single()
-  if (error) throw error
-  return data as WorkbookLocation
 }
 
 export async function loadWorkbookScheduleItems(workbookId: string): Promise<WorkbookScheduleItem[]> {

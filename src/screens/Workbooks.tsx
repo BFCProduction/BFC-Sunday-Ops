@@ -13,10 +13,8 @@ import {
   attachEventToWorkbook,
   createScheduleItem,
   createWorkbook,
-  createWorkbookLocation,
   deleteScheduleItem,
   detachEventFromWorkbook,
-  loadWorkbookLocations,
   loadWorkbookScheduleItems,
   loadWorkbooks,
   publishWorkbookSchedule,
@@ -25,14 +23,21 @@ import {
   type ScheduleAssignmentInput,
   type ScheduleItemInput,
 } from '../lib/workbooks'
+import {
+  loadLocations,
+  loadDepartments,
+  loadScheduleItemTypes,
+  createScheduleItemType,
+} from '../lib/productionConfig'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import type {
+  Department,
+  Location,
+  ScheduleItemType,
   Session,
   Workbook,
-  WorkbookLocation,
   WorkbookScheduleItem,
-  WorkbookScheduleItemType,
 } from '../types'
 
 type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs' | 'workbooks'
@@ -55,19 +60,18 @@ interface AssignmentDraft {
   department: string
 }
 
-const ITEM_TYPES: Array<{ id: WorkbookScheduleItemType; label: string }> = [
-  { id: 'call', label: 'Call Time' },
-  { id: 'rehearsal', label: 'Rehearsal' },
-  { id: 'meal', label: 'Crew Meal' },
-  { id: 'meeting', label: 'Production Meeting' },
-  { id: 'programming', label: 'Programming' },
-  { id: 'transition', label: 'Stage Transition' },
-  { id: 'load_in', label: 'Load-In' },
-  { id: 'strike', label: 'Strike' },
-  { id: 'task', label: 'Task' },
-]
-
 const FIELD_CLASS = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500'
+
+/** Day-N label: Day 1 = the workbook's earliest event date; the day before is Day 0, then Day -1. */
+function daysBetween(from: string, to: string) {
+  const a = new Date(`${from}T12:00:00`).getTime()
+  const b = new Date(`${to}T12:00:00`).getTime()
+  return Math.round((b - a) / 86400000)
+}
+function dayLabel(date: string, anchor: string | null) {
+  if (!anchor) return null
+  return daysBetween(anchor, date) + 1
+}
 
 function formatDate(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', {
@@ -204,6 +208,9 @@ function CreateWorkbookModal({
 function ScheduleItemEditor({
   workbook,
   locations,
+  departmentOptions,
+  scheduleTypes,
+  onCreateType,
   linkedEvents,
   users,
   existing,
@@ -211,7 +218,10 @@ function ScheduleItemEditor({
   onCancel,
 }: {
   workbook: Workbook
-  locations: WorkbookLocation[]
+  locations: Location[]
+  departmentOptions: Department[]
+  scheduleTypes: ScheduleItemType[]
+  onCreateType: (label: string) => Promise<ScheduleItemType>
   linkedEvents: Session[]
   users: AppUser[]
   existing: WorkbookScheduleItem | null
@@ -224,8 +234,10 @@ function ScheduleItemEditor({
   const [endTime, setEndTime] = useState(existing?.end_time?.slice(0, 5) ?? '')
   const [locationId, setLocationId] = useState(existing?.location_id ?? '')
   const [eventId, setEventId] = useState(existing?.event_id ?? '')
-  const [itemType, setItemType] = useState<WorkbookScheduleItemType>(existing?.item_type ?? 'task')
-  const [departments, setDepartments] = useState((existing?.departments ?? []).join(', '))
+  const [itemType, setItemType] = useState<string>(existing?.item_type ?? 'task')
+  const [addingType, setAddingType] = useState(false)
+  const [newTypeLabel, setNewTypeLabel] = useState('')
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(existing?.departments ?? [])
   const [tags, setTags] = useState((existing?.tags ?? []).join(', '))
   const [notes, setNotes] = useState(existing?.notes ?? '')
   const [assignments, setAssignments] = useState<AssignmentDraft[]>(
@@ -242,6 +254,24 @@ function ScheduleItemEditor({
     setAssignments(current => current.map((assignment, assignmentIndex) =>
       assignmentIndex === index ? { ...assignment, [key]: value } : assignment
     ))
+  }
+
+  async function handleAddType() {
+    const label = newTypeLabel.trim()
+    if (!label) return
+    try {
+      const created = await onCreateType(label)
+      setItemType(created.key)
+      setAddingType(false)
+      setNewTypeLabel('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to add type.')
+    }
+  }
+
+  function toggleDepartment(name: string) {
+    setSelectedDepartments(current =>
+      current.includes(name) ? current.filter(entry => entry !== name) : [...current, name])
   }
 
   async function submit(event: FormEvent) {
@@ -276,7 +306,7 @@ function ScheduleItemEditor({
       startTime,
       endTime: endTime || null,
       notes: notes.trim() || null,
-      departments: stringList(departments),
+      departments: selectedDepartments,
       tags: stringList(tags),
       assignments: normalizedAssignments,
     }
@@ -310,15 +340,18 @@ function ScheduleItemEditor({
           <input className={FIELD_CLASS} type="time" value={startTime} onChange={event => setStartTime(event.target.value)} aria-label="Start time" />
         </div>
         <input className={FIELD_CLASS} value={title} onChange={event => setTitle(event.target.value)} placeholder="Activity title" />
-        <select className={FIELD_CLASS} value={locationId} onChange={event => setLocationId(event.target.value)}>
+        <select aria-label="Location" className={FIELD_CLASS} value={locationId} onChange={event => setLocationId(event.target.value)}>
           <option value="">No location</option>
           {locations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
         </select>
-        <select className={FIELD_CLASS} value={eventId} onChange={event => setEventId(event.target.value)}>
-          <option value="">Workbook-level item</option>
+        <select aria-label="Belongs to" className={FIELD_CLASS} value={eventId} onChange={event => setEventId(event.target.value)}>
+          <option value="">Whole production</option>
           {linkedEvents.map(linkedEvent => <option key={linkedEvent.id} value={linkedEvent.id}>{linkedEvent.name}</option>)}
         </select>
       </div>
+      <p className="mt-2 text-[11px] text-gray-400">
+        <span className="font-semibold text-gray-500">Belongs to:</span> leave as <span className="font-medium">Whole production</span> for load-in, meals, and general crew calls; pick a specific event for that event&apos;s calls, rehearsals, and soundchecks.
+      </p>
       <div className="mt-3 grid gap-3 lg:grid-cols-4">
         <div>
           <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-gray-500">End Time</label>
@@ -326,13 +359,51 @@ function ScheduleItemEditor({
         </div>
         <div>
           <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-gray-500">Type</label>
-          <select className={FIELD_CLASS} value={itemType} onChange={event => setItemType(event.target.value as WorkbookScheduleItemType)}>
-            {ITEM_TYPES.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}
-          </select>
+          {addingType ? (
+            <div className="flex gap-1">
+              <input
+                autoFocus
+                className={FIELD_CLASS}
+                value={newTypeLabel}
+                onChange={event => setNewTypeLabel(event.target.value)}
+                onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void handleAddType() } }}
+                placeholder="New type name"
+              />
+              <button type="button" onClick={() => void handleAddType()} className="rounded-lg bg-blue-600 px-2 text-white hover:bg-blue-700" aria-label="Save type"><Save className="h-4 w-4" /></button>
+              <button type="button" onClick={() => { setAddingType(false); setNewTypeLabel('') }} className="rounded-lg px-1 text-gray-400 hover:bg-gray-100" aria-label="Cancel"><X className="h-4 w-4" /></button>
+            </div>
+          ) : (
+            <select
+              className={FIELD_CLASS}
+              value={itemType}
+              onChange={event => { if (event.target.value === '__add__') { setAddingType(true) } else { setItemType(event.target.value) } }}
+            >
+              {scheduleTypes.map(type => <option key={type.id} value={type.key}>{type.label}</option>)}
+              <option value="__add__">+ Add new type…</option>
+            </select>
+          )}
         </div>
         <div>
           <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-gray-500">Departments</label>
-          <input className={FIELD_CLASS} value={departments} onChange={event => setDepartments(event.target.value)} placeholder="Audio, Video" />
+          {departmentOptions.length === 0 ? (
+            <p className="text-[11px] text-gray-400 pt-1.5">Add departments in Settings → Production Config.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {departmentOptions.map(department => {
+                const on = selectedDepartments.includes(department.name)
+                return (
+                  <button
+                    type="button"
+                    key={department.id}
+                    onClick={() => toggleDepartment(department.name)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${on ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}
+                  >
+                    {department.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
         <div>
           <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-gray-500">Tags</label>
@@ -451,7 +522,7 @@ function EventSetupRow({
   onDetach,
 }: {
   event: Session
-  locations: WorkbookLocation[]
+  locations: Location[]
   onSave: (eventId: string, endTime: string | null, locationId: string | null) => Promise<void>
   onOpen: (eventId: string) => void
   onDetach: (eventId: string) => Promise<void>
@@ -497,7 +568,9 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const { navigateToEvent } = useSunday()
   const [workbooks, setWorkbooks] = useState<Workbook[]>([])
   const [activeWorkbookId, setActiveWorkbookId] = useState('')
-  const [locations, setLocations] = useState<WorkbookLocation[]>([])
+  const [locations, setLocations] = useState<Location[]>([])
+  const [departmentOptions, setDepartmentOptions] = useState<Department[]>([])
+  const [scheduleTypes, setScheduleTypes] = useState<ScheduleItemType[]>([])
   const [items, setItems] = useState<WorkbookScheduleItem[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
   const [tab, setTab] = useState<'schedule' | 'events'>('schedule')
@@ -508,7 +581,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [showCreate, setShowCreate] = useState(false)
   const [showEditor, setShowEditor] = useState(false)
   const [editingItem, setEditingItem] = useState<WorkbookScheduleItem | null>(null)
-  const [newLocationName, setNewLocationName] = useState('')
   const [selectedEventToAttach, setSelectedEventToAttach] = useState('')
   const [dayFilter, setDayFilter] = useState('all')
   const [locationFilter, setLocationFilter] = useState('all')
@@ -530,6 +602,27 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       .finally(() => setLoading(false))
   }, [])
 
+  // Account-level reference data (Production Config), shared across all workbooks.
+  useEffect(() => {
+    Promise.all([loadLocations(), loadDepartments(), loadScheduleItemTypes()])
+      .then(([loc, dep, typ]) => {
+        setLocations(loc)
+        setDepartmentOptions(dep)
+        setScheduleTypes(typ)
+      })
+      .catch(() => { /* reference data is optional to first paint */ })
+  }, [])
+
+  const reloadScheduleTypes = useCallback(async () => {
+    setScheduleTypes(await loadScheduleItemTypes())
+  }, [])
+
+  async function handleCreateType(label: string): Promise<ScheduleItemType> {
+    const created = await createScheduleItemType(label, scheduleTypes.length)
+    await reloadScheduleTypes()
+    return created
+  }
+
   useEffect(() => {
     if (!isAdmin || !sessionToken) return
     fetchAppUsers(sessionToken)
@@ -541,12 +634,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     if (!activeWorkbookId) return
     setWorkspaceLoading(true)
     try {
-      const [freshLocations, freshItems] = await Promise.all([
-        loadWorkbookLocations(activeWorkbookId),
-        loadWorkbookScheduleItems(activeWorkbookId),
-      ])
-      setLocations(freshLocations)
-      setItems(freshItems)
+      setItems(await loadWorkbookScheduleItems(activeWorkbookId))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load workbook schedule.')
     } finally {
@@ -556,7 +644,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
   useEffect(() => {
     if (!activeWorkbookId) {
-      setLocations([])
       setItems([])
       return
     }
@@ -566,10 +653,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       .channel(`workbook-schedule-${activeWorkbookId}`)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'workbook_schedule_items', filter: `workbook_id=eq.${activeWorkbookId}` },
-        () => { void refreshWorkspace() },
-      )
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'workbook_locations', filter: `workbook_id=eq.${activeWorkbookId}` },
         () => { void refreshWorkspace() },
       )
       .on('postgres_changes',
@@ -636,6 +719,19 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     .filter(assignment => !assignment.is_open && assignment.person_name)
     .map(assignment => assignment.person_name as string)))].sort()
 
+  // Day 1 = the workbook's earliest event date (fallback: earliest scheduled row).
+  const anchorDate = useMemo(() => {
+    const eventDates = linkedEvents.map(event => event.date).filter(Boolean)
+    const pool = eventDates.length ? eventDates : rows.map(row => row.date)
+    return pool.length ? pool.reduce((min, date) => (date < min ? date : min)) : null
+  }, [linkedEvents, rows])
+
+  const usedLocationIds = useMemo(
+    () => new Set(rows.map(row => row.locationId).filter((id): id is string => Boolean(id))),
+    [rows],
+  )
+  const roomsInUse = locations.filter(location => usedLocationIds.has(location.id))
+
   const filteredRows = rows.filter(row => {
     const item = row.item
     const selectedPerson = view === 'mine' ? (user?.name ?? '') : personFilter
@@ -669,14 +765,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   function openEvent(eventId: string) {
     navigateToEvent(eventId)
     setScreen('dashboard')
-  }
-
-  async function addLocation(event: FormEvent) {
-    event.preventDefault()
-    if (!activeWorkbook || !newLocationName.trim()) return
-    await createWorkbookLocation(activeWorkbook.id, newLocationName)
-    setNewLocationName('')
-    await refreshWorkspace()
   }
 
   async function attachEvent() {
@@ -788,7 +876,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                   <p className="mt-1 text-sm text-gray-500">{rangeLabel(activeWorkbook)}{activeWorkbook.venue ? ` | ${activeWorkbook.venue}` : ''}</p>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{linkedEvents.length} event{linkedEvents.length === 1 ? '' : 's'}</span>
-                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{locations.length} room{locations.length === 1 ? '' : 's'}</span>
+                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{usedLocationIds.size} room{usedLocationIds.size === 1 ? '' : 's'}</span>
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{items.length} schedule item{items.length === 1 ? '' : 's'}</span>
                     {activeWorkbook.published_version > 0 && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
@@ -875,6 +963,9 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     key={editingItem?.id ?? 'new'}
                     workbook={activeWorkbook}
                     locations={locations}
+                    departmentOptions={departmentOptions}
+                    scheduleTypes={scheduleTypes}
+                    onCreateType={handleCreateType}
                     linkedEvents={linkedEvents}
                     users={users}
                     existing={editingItem}
@@ -903,7 +994,12 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                       <p className="p-8 text-center text-sm text-gray-400">No schedule items match these filters.</p>
                     ) : groupedRows.map(([date, dayRows]) => (
                       <div key={date}>
-                        <div className="bg-gray-800 px-4 py-2 text-sm font-semibold text-white">{formatLongDate(date)}</div>
+                        <div className="flex items-center gap-2.5 bg-gray-800 px-4 py-2 text-sm font-semibold text-white">
+                          {dayLabel(date, anchorDate) !== null && (
+                            <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-bold">Day {dayLabel(date, anchorDate)}</span>
+                          )}
+                          {formatLongDate(date)}
+                        </div>
                         {dayRows?.map(row => (
                           <ScheduleRow
                             key={row.id}
@@ -920,11 +1016,11 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                   </Card>
                 ) : (
                   <Card className="overflow-x-auto p-4">
-                    {locations.length === 0 ? (
-                      <p className="p-6 text-center text-sm text-gray-400">Add rooms from the Events tab to build a side-by-side view.</p>
+                    {roomsInUse.length === 0 ? (
+                      <p className="p-6 text-center text-sm text-gray-400">No rooms are used yet. Assign a location to a schedule item to build the side-by-side view. (Manage the list of rooms in Settings → Production Config.)</p>
                     ) : (
-                      <div className="grid min-w-[720px] gap-3" style={{ gridTemplateColumns: `repeat(${locations.length}, minmax(210px, 1fr))` }}>
-                        {locations.map(location => {
+                      <div className="grid min-w-[720px] gap-3" style={{ gridTemplateColumns: `repeat(${roomsInUse.length}, minmax(210px, 1fr))` }}>
+                        {roomsInUse.map(location => {
                           const roomRows = filteredRows.filter(row => row.locationId === location.id)
                           return (
                             <div key={location.id} className="rounded-lg border border-gray-200 bg-gray-50 p-2">
@@ -934,7 +1030,11 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                                   <p className="px-2 py-3 text-xs text-gray-400">No scheduled activity</p>
                                 ) : roomRows.map(row => (
                                   <div key={row.id} className={`rounded-lg border p-2.5 ${row.kind === 'event' ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-white'}`}>
-                                    {dayFilter === 'all' && <p className="text-[10px] font-bold uppercase text-gray-400">{formatDate(row.date)}</p>}
+                                    {dayFilter === 'all' && (
+                                      <p className="text-[10px] font-bold uppercase text-gray-400">
+                                        {dayLabel(row.date, anchorDate) !== null ? `Day ${dayLabel(row.date, anchorDate)} · ` : ''}{formatDate(row.date)}
+                                      </p>
+                                    )}
                                     <p className="mt-0.5 text-xs font-semibold text-gray-600">{timeRange(row.startTime, row.endTime)}</p>
                                     <p className={`mt-1 text-sm font-bold ${row.kind === 'event' ? 'text-blue-800' : 'text-gray-900'}`}>{row.title}</p>
                                   </div>
@@ -955,17 +1055,18 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 <Card className="p-4">
                   <SectionLabel>Rooms / Locations</SectionLabel>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {locations.map(location => (
+                    {locations.length === 0 ? (
+                      <span className="text-sm text-gray-400">No locations yet.</span>
+                    ) : locations.map(location => (
                       <span key={location.id} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700">
                         <MapPin className="h-3.5 w-3.5" /> {location.name}
                       </span>
                     ))}
                   </div>
                   {isAdmin && (
-                    <form onSubmit={addLocation} className="mt-3 flex max-w-md gap-2">
-                      <input value={newLocationName} onChange={event => setNewLocationName(event.target.value)} className={FIELD_CLASS} placeholder="Add room or location" />
-                      <button className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Add</button>
-                    </form>
+                    <p className="mt-3 text-xs text-gray-400">
+                      Locations are shared across all workbooks and managed in <span className="font-semibold text-gray-500">Settings → Production Config</span>.
+                    </p>
                   )}
                 </Card>
 

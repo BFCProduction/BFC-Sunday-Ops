@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, Globe, Loader2, Settings as SettingsIcon, Users } from 'lucide-react'
+import { FileDown, Globe, Loader2, Settings as SettingsIcon, SlidersHorizontal, Users } from 'lucide-react'
 import { Card } from '../components/ui/Card'
+import { ProductionConfig } from '../components/admin/ProductionConfig'
 import { useAdmin } from '../context/adminState'
 import { fetchAppUsers, setUserAdmin, type AppUser } from '../lib/adminApi'
 import { useSunday } from '../context/SundayContext'
@@ -311,6 +312,17 @@ export function Settings() {
           </Card>
 
         </div>
+
+        {/* ── Production Config ── */}
+        {isAdmin && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-500" />
+              Production Config
+            </p>
+            <ProductionConfig />
+          </div>
+        )}
 
         {/* ── People & Access ── */}
         {isAdmin && (
