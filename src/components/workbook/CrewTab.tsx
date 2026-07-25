@@ -1,10 +1,15 @@
-import { useState, type FormEvent } from 'react'
-import { FileText, Pencil, Trash2, UserPlus, X } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { DollarSign, FileText, Loader2, Pencil, Trash2, UserPlus, X } from 'lucide-react'
 import { Card } from '../ui/Card'
-import type { AppUser } from '../../lib/adminApi'
+import { fetchWorkbookPay, type AppUser, type WorkbookPay } from '../../lib/adminApi'
 import { createCrewMember, updateCrewMember, deleteCrewMember, type CrewMemberInput } from '../../lib/workbooks'
 import { generateCallSheetHtml, type CallSheetPerson } from '../../lib/generateCallSheetHtml'
+import { generatePayReportHtml } from '../../lib/generatePayReportHtml'
 import type { CrewRole, Session, Workbook, WorkbookCrewMember } from '../../types'
+
+function money(value: number): string {
+  return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+}
 
 const FIELD = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500'
 
@@ -33,6 +38,7 @@ interface CrewTabProps {
   users: AppUser[]
   roles: CrewRole[]
   crew: WorkbookCrewMember[]
+  sessionToken: string | null
   onChanged: () => Promise<void>
 }
 
@@ -175,10 +181,45 @@ function CrewMemberModal({
   )
 }
 
-export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, onChanged }: CrewTabProps) {
+export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, sessionToken, onChanged }: CrewTabProps) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<WorkbookCrewMember | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [pay, setPay] = useState<WorkbookPay | null>(null)
+  const [payLoading, setPayLoading] = useState(false)
+  const [payError, setPayError] = useState('')
+
+  const crewPaySignature = crew.map(member => `${member.id}:${member.is_paid}:${member.call_time}:${member.release_time}:${member.role_id}`).join('|')
+  useEffect(() => {
+    if (!sessionToken) return
+    let active = true
+    void (async () => {
+      setPayLoading(true)
+      setPayError('')
+      try {
+        const data = await fetchWorkbookPay(sessionToken, workbook.id)
+        if (active) setPay(data)
+      } catch (err) {
+        if (active) setPayError(err instanceof Error ? err.message : 'Unable to load pay.')
+      } finally {
+        if (active) setPayLoading(false)
+      }
+    })()
+    return () => { active = false }
+    // recompute when paid/time/role fields change (crewPaySignature)
+  }, [workbook.id, sessionToken, crewPaySignature])
+
+  function openPayReport() {
+    if (!pay) return
+    const range = workbookDays.length ? `${formatDay(workbookDays[0])} – ${formatDay(workbookDays[workbookDays.length - 1])}` : ''
+    const html = generatePayReportHtml(workbook.name, range, pay)
+    const win = window.open('', '_blank')
+    if (!win) { alert('Pop-up was blocked. Please allow pop-ups and try again.'); return }
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
+    setTimeout(() => win.print(), 500)
+  }
 
   const roleName = (id: string | null) => (id ? roles.find(role => role.id === id)?.name ?? '—' : '—')
   const eventName = (id: string | null) => (id ? linkedEvents.find(event => event.id === id)?.name ?? null : null)
@@ -251,6 +292,48 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
           </div>
         </div>
       </Card>
+
+      {sessionToken && (
+        <Card className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <DollarSign className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600" />
+              <div>
+                <p className="text-sm font-bold text-gray-900">
+                  Crew pay <span className="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase text-gray-500">admin only</span>
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">Paid crew, on-clock span per day × role rate. Never shown to volunteers.</p>
+              </div>
+            </div>
+            <button
+              onClick={openPayReport}
+              disabled={!pay || pay.people.length === 0}
+              className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              <FileText className="h-4 w-4" /> Business office report
+            </button>
+          </div>
+          {payLoading ? (
+            <div className="mt-3 flex items-center gap-2 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Calculating…</div>
+          ) : payError ? (
+            <p className="mt-3 text-sm text-red-600">{payError}</p>
+          ) : pay && pay.people.length > 0 ? (
+            <div className="mt-3 space-y-1.5">
+              {pay.people.map(person => (
+                <div key={person.name} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700">{person.name} <span className="text-gray-400">· {person.hours.toFixed(1)} hrs</span></span>
+                  <span className="font-mono font-semibold text-gray-900">{money(person.pay)}</span>
+                </div>
+              ))}
+              <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2 text-sm font-bold text-gray-900">
+                <span>Total · {pay.total_hours.toFixed(1)} hrs</span>
+                <span className="font-mono">{money(pay.total_pay)}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-gray-400">No paid crew hours yet. Mark crew as Paid and set both call and release times.</p>
+          )}
+        </Card>
+      )}
 
       {crew.length === 0 ? (
         <Card className="p-8 text-center text-sm text-gray-400">No crew added yet. Use “Add crew” to build the roster.</Card>

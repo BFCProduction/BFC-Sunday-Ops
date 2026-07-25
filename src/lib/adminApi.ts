@@ -168,6 +168,48 @@ export async function fetchPcoPlanItems(
   return (payload as { items: PcoPlanItemResult[] }).items ?? []
 }
 
+// ── Workbook Pay (admin only) ────────────────────────────────────────────────
+
+export interface PayDay {
+  date:    string
+  call:    string
+  release: string
+  hours:   number
+  rate:    number
+  pay:     number
+}
+
+export interface PayPerson {
+  name:  string
+  hours: number
+  pay:   number
+  days:  PayDay[]
+}
+
+export interface WorkbookPay {
+  people:      PayPerson[]
+  total_pay:   number
+  total_hours: number
+  currency:    string
+}
+
+export async function fetchWorkbookPay(sessionToken: string, workbookId: string): Promise<WorkbookPay> {
+  const response = await fetch(getFunctionUrl('workbook-pay'), {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
+    },
+    body: JSON.stringify({ workbook_id: workbookId }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw errorFromResponse(payload, `Pay fetch failed with ${response.status}`, response.status)
+  }
+  return payload as WorkbookPay
+}
+
 // ── User Admin ────────────────────────────────────────────────────────────────
 
 export interface AppUser {

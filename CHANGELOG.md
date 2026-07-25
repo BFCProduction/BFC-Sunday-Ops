@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-25 — Workbook crew pay (admin-only) + business-office report
+
+### Summary
+
+Crew pay computation and a printable business-office report, served through a new admin-verified Edge Function so per-person pay and totals are only ever returned to verified admins (non-admins get 401) — consistent with the app's existing admin-function pattern.
+
+### Completed
+
+- **`workbook-pay` Edge Function** (deployed): verifies the PCO session + `is_admin`, then computes pay for a workbook. Pay model — a person's on-clock span per day (first call → last release, gaps included), rounded to the nearest half hour, × the role's hourly rate; paid crew only; the higher rate is used when a person fills two roles in a day. Returns per-person day breakdowns and workbook totals.
+- **Crew tab pay summary** (admin-only): per-person totals + grand total, recomputed as crew, times, and rates change.
+- **Business-office report**: a printable per-person pay breakdown export.
+
+### Deferred
+
+- Revoking anon read of the raw `roles.hourly_rate` — the destructive part of the security hardening (cross-deploy ordering risk), left as a small deliberate follow-up. Per-person pay and totals are already admin-gated via the Edge Function; this would additionally hide the raw per-role rate from the anon key.
+- Verify the pay math against a real paid crew before trusting a payroll report — the Edge Function couldn't be runtime-tested.
+
 ## 2026-07-25 — Workbook v2 Phase 2a (crew roster + call clustering)
 
 ### Summary
