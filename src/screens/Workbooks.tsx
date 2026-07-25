@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  BookOpen, CalendarDays, Filter, History,
+  AlertTriangle, BookOpen, CalendarDays, Columns3, Filter, History,
   LayoutGrid, Link2, List, MapPin, Pencil, Plus, Printer, Save,
   Trash2, Users, X,
 } from 'lucide-react'
@@ -31,6 +31,7 @@ import {
 } from '../lib/productionConfig'
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
+import { ScheduleTimeGrid, type TimeGridColumn, type TimeGridItem } from '../components/workbook/ScheduleTimeGrid'
 import type {
   Department,
   Location,
@@ -101,6 +102,33 @@ function formatTime(time: string | null) {
 function timeRange(start: string | null, end: string | null) {
   if (!start) return 'Time TBD'
   return end ? `${formatTime(start)} - ${formatTime(end)}` : formatTime(start)
+}
+
+function toMinutes(time: string | null): number | null {
+  if (!time) return null
+  const [hour, minute] = time.slice(0, 5).split(':').map(Number)
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null
+  return hour * 60 + minute
+}
+
+/** Map a schedule row onto a time-grid item for the room or department axis. */
+function rowToGridItem(row: DisplayRow, axis: 'rooms' | 'departments'): TimeGridItem | null {
+  const start = toMinutes(row.startTime)
+  if (start === null) return null
+  const endRaw = toMinutes(row.endTime)
+  const end = endRaw !== null && endRaw > start ? endRaw : start + 30
+  const columnKeys = axis === 'rooms'
+    ? [row.locationId ?? '__noloc__']
+    : (row.item && row.item.departments.length > 0 ? row.item.departments : ['__general__'])
+  return {
+    id: row.id,
+    start,
+    end,
+    title: row.title,
+    timeLabel: timeRange(row.startTime, row.endTime),
+    kind: row.kind,
+    columnKeys,
+  }
 }
 
 function rangeLabel(workbook: Workbook) {
@@ -574,7 +602,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [items, setItems] = useState<WorkbookScheduleItem[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
   const [tab, setTab] = useState<'schedule' | 'events'>('schedule')
-  const [view, setView] = useState<'detail' | 'rooms' | 'mine'>(isAdmin ? 'detail' : 'mine')
+  const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
   const [loading, setLoading] = useState(true)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
   const [error, setError] = useState('')
@@ -730,7 +758,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     () => new Set(rows.map(row => row.locationId).filter((id): id is string => Boolean(id))),
     [rows],
   )
-  const roomsInUse = locations.filter(location => usedLocationIds.has(location.id))
 
   const filteredRows = rows.filter(row => {
     const item = row.item
@@ -919,7 +946,10 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                         <List className="h-4 w-4" /> Detail Schedule
                       </button>
                       <button onClick={() => setView('rooms')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${view === 'rooms' ? 'bg-gray-950 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                        <LayoutGrid className="h-4 w-4" /> Rooms
+                        <LayoutGrid className="h-4 w-4" /> By Room
+                      </button>
+                      <button onClick={() => setView('departments')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${view === 'departments' ? 'bg-gray-950 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                        <Columns3 className="h-4 w-4" /> By Department
                       </button>
                       <button onClick={() => setView('mine')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${view === 'mine' ? 'bg-gray-950 text-white' : 'bg-gray-100 text-gray-600'}`}>
                         <Users className="h-4 w-4" /> My Schedule
@@ -1014,39 +1044,63 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                       </div>
                     ))}
                   </Card>
-                ) : (
-                  <Card className="overflow-x-auto p-4">
-                    {roomsInUse.length === 0 ? (
-                      <p className="p-6 text-center text-sm text-gray-400">No rooms are used yet. Assign a location to a schedule item to build the side-by-side view. (Manage the list of rooms in Settings → Production Config.)</p>
-                    ) : (
-                      <div className="grid min-w-[720px] gap-3" style={{ gridTemplateColumns: `repeat(${roomsInUse.length}, minmax(210px, 1fr))` }}>
-                        {roomsInUse.map(location => {
-                          const roomRows = filteredRows.filter(row => row.locationId === location.id)
-                          return (
-                            <div key={location.id} className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                              <div className="mb-2 rounded-md bg-gray-800 px-3 py-2 text-sm font-bold text-white">{location.name}</div>
-                              <div className="space-y-2">
-                                {roomRows.length === 0 ? (
-                                  <p className="px-2 py-3 text-xs text-gray-400">No scheduled activity</p>
-                                ) : roomRows.map(row => (
-                                  <div key={row.id} className={`rounded-lg border p-2.5 ${row.kind === 'event' ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-white'}`}>
-                                    {dayFilter === 'all' && (
-                                      <p className="text-[10px] font-bold uppercase text-gray-400">
-                                        {dayLabel(row.date, anchorDate) !== null ? `Day ${dayLabel(row.date, anchorDate)} · ` : ''}{formatDate(row.date)}
-                                      </p>
-                                    )}
-                                    <p className="mt-0.5 text-xs font-semibold text-gray-600">{timeRange(row.startTime, row.endTime)}</p>
-                                    <p className={`mt-1 text-sm font-bold ${row.kind === 'event' ? 'text-blue-800' : 'text-gray-900'}`}>{row.title}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        })}
+                ) : (() => {
+                  const axis: 'rooms' | 'departments' = view === 'departments' ? 'departments' : 'rooms'
+                  const gridDates = [...new Set(filteredRows.filter(row => row.startTime).map(row => row.date))].sort()
+                  const untimedCount = filteredRows.filter(row => row.item && !row.startTime).length
+                  if (gridDates.length === 0) {
+                    return (
+                      <Card className="p-8 text-center text-sm text-gray-400">
+                        {axis === 'rooms'
+                          ? 'No timed items yet. Give a schedule item a start time and a location to build the room grid.'
+                          : 'No timed items yet. Give a schedule item a start time and a department to build the department grid.'}
+                      </Card>
+                    )
+                  }
+                  return (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-400">
+                        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-blue-300 bg-blue-50" /> PCO event (read-only)</span>
+                        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-teal-300 bg-teal-50" /> Workbook item</span>
+                        <span className="inline-flex items-center gap-1 text-red-500"><AlertTriangle className="h-3 w-3" /> Overlap in a column = conflict</span>
+                        {untimedCount > 0 && <span>{untimedCount} untimed item{untimedCount === 1 ? '' : 's'} not shown</span>}
                       </div>
-                    )}
-                  </Card>
-                )}
+                      {gridDates.map(date => {
+                        const gridItems = filteredRows
+                          .filter(row => row.date === date && row.startTime)
+                          .map(row => rowToGridItem(row, axis))
+                          .filter((item): item is TimeGridItem => item !== null)
+                        const usedKeys = new Set(gridItems.flatMap(item => item.columnKeys))
+                        const columns: TimeGridColumn[] = axis === 'rooms'
+                          ? [
+                              ...locations.filter(location => usedKeys.has(location.id)).map(location => ({ key: location.id, label: location.name })),
+                              ...(usedKeys.has('__noloc__') ? [{ key: '__noloc__', label: 'No location' }] : []),
+                            ]
+                          : (() => {
+                              const known = new Set(departmentOptions.map(department => department.name))
+                              const extras = [...usedKeys].filter(key => key !== '__general__' && !known.has(key))
+                              return [
+                                ...departmentOptions.filter(department => usedKeys.has(department.name)).map(department => ({ key: department.name, label: department.name })),
+                                ...extras.map(key => ({ key, label: key })),
+                                ...(usedKeys.has('__general__') ? [{ key: '__general__', label: 'General' }] : []),
+                              ]
+                            })()
+                        const dayNum = dayLabel(date, anchorDate)
+                        return (
+                          <Card key={date} className="overflow-hidden">
+                            <div className="flex items-center gap-2.5 bg-gray-800 px-4 py-2 text-sm font-semibold text-white">
+                              {dayNum !== null && <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-bold">Day {dayNum}</span>}
+                              {formatLongDate(date)}
+                            </div>
+                            <div className="p-3">
+                              <ScheduleTimeGrid columns={columns} items={gridItems} />
+                            </div>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
               </>
             )}
 

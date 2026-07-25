@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-25 — Workbook v2 Phase 0 + Phase 1
+
+### Summary
+
+Begins building out the Workbooks feature per the "Workbook v2" plan: an account-level reference-data layer managed in Settings, a rebuilt schedule-item modal, and side-by-side schedule views on a shared time axis.
+
+### Phase 0 — Production Config reference data (migration `045_production_config`)
+
+- New account-level tables `locations`, `departments`, `roles` (name + hourly_rate + is_paid_default), and `schedule_item_types` (managed, extensible; seeded from the old enum).
+- Unified location references onto the account `locations` table: dropped per-workbook `workbook_locations`, repointed the schedule-item and event location FKs, updated the link-validation triggers, and dropped the `item_type` CHECK so types are extensible.
+- New `Settings → Production Config` (admin only) manages all four lists; roles include rate + paid-default (admin-only, not shown to volunteers).
+- Rebuilt the Add Schedule Item modal: location picker, managed Type dropdown with inline "add new", department toggle-chips, and "Workbook-level item" relabeled to "Belongs to: Whole production / [event]".
+- Day-N headers (Day 1 = the workbook's earliest event date) on the schedule views.
+
+### Phase 1 — Schedule time-grid views
+
+- New `ScheduleTimeGrid` component: the **By Room** and **By Department** views now render on a shared vertical time axis (time down the left, one column per room/department, items positioned by actual start/end), replacing the previous independent-list layout.
+- Overlapping items within a single column are lane-packed side by side and flagged as conflicts — the overlap is the visible clash.
+- Per-day grids with Day-N headers; PCO/event blocks render read-only (lock icon); untimed items are counted and excluded from the grid.
+- Linked-event PCO times continue to appear read-only. Richer PCO plan-time import and the "Send Update" change-summary flow remain for a later Phase 1 pass.
+
+---
+
 ## 2026-07-24
 
 ### Summary
