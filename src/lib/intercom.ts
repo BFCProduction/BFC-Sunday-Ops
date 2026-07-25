@@ -144,7 +144,14 @@ function normalizedPersonKey(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-/** Crew for the selected event plus whole-day crew on that event's date. */
+/**
+ * Crew explicitly assigned to the selected event plus workbook-wide crew.
+ *
+ * Eventless crew rows represent the workbook's shared roster. Their scheduled
+ * date controls call-sheet timing, but should not hide them from an attached
+ * event's Intercom Grid (especially when events are attached after the roster
+ * was created).
+ */
 export function buildIntercomCrewIdentities(
   crew: WorkbookCrewMember[],
   event: Session,
@@ -152,7 +159,7 @@ export function buildIntercomCrewIdentities(
   roles: CrewRole[],
 ): IntercomCrewIdentity[] {
   const relevant = crew
-    .filter(member => member.event_id === event.id || (!member.event_id && member.scheduled_date === event.date))
+    .filter(member => member.event_id === event.id || !member.event_id)
     .sort((a, b) => {
       const aSpecific = a.event_id === event.id ? 0 : 1
       const bSpecific = b.event_id === event.id ? 0 : 1

@@ -282,7 +282,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
           </div>
         ) : identities.length === 0 ? (
           <div className="p-10 text-center text-sm text-gray-400">
-            No crew are assigned to this event or its day yet. Add them in the Crew tab first.
+            No workbook-wide crew or crew assigned to this event yet. Add them in the Crew tab first.
           </div>
         ) : (
           <div className="overflow-x-auto">
