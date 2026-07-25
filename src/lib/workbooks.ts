@@ -229,6 +229,25 @@ export async function updateWorkbookEventSchedule(
   if (error) throw error
 }
 
+export interface WorkbookVersionRow {
+  version_number: number
+  published_at: string
+  snapshot: unknown
+}
+
+/** The most recently published/sent version, or null if none yet. */
+export async function loadLatestWorkbookVersion(workbookId: string): Promise<WorkbookVersionRow | null> {
+  const { data, error } = await supabase
+    .from('workbook_schedule_versions')
+    .select('version_number, published_at, snapshot')
+    .eq('workbook_id', workbookId)
+    .order('version_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return (data as WorkbookVersionRow | null) ?? null
+}
+
 export async function publishWorkbookSchedule(
   workbook: Workbook,
   snapshot: WorkbookPublicationSnapshot,

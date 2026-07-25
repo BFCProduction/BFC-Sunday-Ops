@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  AlertTriangle, BookOpen, CalendarDays, Columns3, Filter, History,
-  LayoutGrid, Link2, List, MapPin, Pencil, Plus, Printer, Save,
+  AlertTriangle, BookOpen, CalendarDays, Check, Columns3, Copy, Filter, History,
+  LayoutGrid, Link2, List, MapPin, Pencil, Plus, Printer, Save, Send,
   Trash2, Users, X,
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
@@ -15,6 +15,7 @@ import {
   createWorkbook,
   deleteScheduleItem,
   detachEventFromWorkbook,
+  loadLatestWorkbookVersion,
   loadPcoTimeMeta,
   loadWorkbookScheduleItems,
   loadWorkbooks,
@@ -35,6 +36,7 @@ import {
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import { ScheduleTimeGrid, type TimeGridColumn, type TimeGridItem } from '../components/workbook/ScheduleTimeGrid'
+import { workbookScheduleDiff, type DiffScheduleItem, type DiffEvent } from '../lib/workbookDiff'
 import type {
   Department,
   Location,
@@ -606,6 +608,166 @@ function PcoTimeMetaModal({
   )
 }
 
+function toDiffItem(item: {
+  id: string; title: string; scheduled_date: string
+  start_time: string | null; end_time: string | null
+  location_id: string | null; departments?: string[] | null
+}): DiffScheduleItem {
+  return {
+    id: item.id,
+    title: item.title,
+    scheduled_date: item.scheduled_date,
+    start_time: item.start_time,
+    end_time: item.end_time,
+    location_id: item.location_id,
+    departments: item.departments ?? [],
+  }
+}
+
+function toDiffEvent(event: { id: string; name: string; eventTime: string | null; eventEndTime: string | null }): DiffEvent {
+  return { id: event.id, name: event.name, eventTime: event.eventTime, eventEndTime: event.eventEndTime }
+}
+
+function SendUpdateModal({
+  workbook,
+  items,
+  events,
+  locations,
+  locationName,
+  userId,
+  onClose,
+  onSent,
+}: {
+  workbook: Workbook
+  items: WorkbookScheduleItem[]
+  events: Session[]
+  locations: Location[]
+  locationName: (id: string | null) => string
+  userId: string | null
+  onClose: () => void
+  onSent: (updated: Workbook) => void
+}) {
+  const [loading, setLoading] = useState(true)
+  const [prevVersion, setPrevVersion] = useState<number | null>(null)
+  const [diffLines, setDiffLines] = useState<string[]>([])
+  const [sending, setSending] = useState(false)
+  const [sentVersion, setSentVersion] = useState<number | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    loadLatestWorkbookVersion(workbook.id)
+      .then(latest => {
+        if (!active) return
+        const currItems = items.map(toDiffItem)
+        const currEvents = events.map(toDiffEvent)
+        if (!latest) {
+          setPrevVersion(null)
+          setDiffLines([])
+        } else {
+          const snap = (latest.snapshot ?? {}) as { scheduleItems?: DiffScheduleItem[]; events?: DiffEvent[] }
+          const prevItems = (snap.scheduleItems ?? []).map(toDiffItem)
+          const prevEvents = (snap.events ?? []).map(toDiffEvent)
+          setPrevVersion(latest.version_number)
+          setDiffLines(workbookScheduleDiff(prevItems, currItems, prevEvents, currEvents, locationName))
+        }
+        setLoading(false)
+      })
+      .catch(err => { if (active) { setError(err instanceof Error ? err.message : 'Unable to load version history.'); setLoading(false) } })
+    return () => { active = false }
+    // items/events/locationName captured at open time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workbook.id])
+
+  const nextVersion = (prevVersion ?? 0) + 1
+
+  function summaryText() {
+    const header = `${workbook.name} — schedule update (v${nextVersion})`
+    if (diffLines.length === 0) return `${header}\n\nNo changes since v${prevVersion ?? 0}.`
+    return `${header}\n\n${diffLines.map(line => `• ${line}`).join('\n')}`
+  }
+
+  async function send() {
+    setSending(true)
+    setError('')
+    try {
+      const updated = await publishWorkbookSchedule(workbook, { workbook, locations, events, scheduleItems: items }, userId)
+      setSentVersion(updated.published_version)
+      onSent(updated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send update.')
+      setSending(false)
+    }
+  }
+
+  async function copySummary() {
+    try {
+      await navigator.clipboard.writeText(summaryText())
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* clipboard may be unavailable */ }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4">
+          <div>
+            <h2 className="text-base font-bold text-gray-900">{sentVersion !== null ? `Update sent — v${sentVersion}` : 'Send update'}</h2>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {sentVersion !== null
+                ? 'Copy the summary below to share with crew who don’t live in the workbook.'
+                : prevVersion === null
+                  ? 'This is the first snapshot. It becomes v1 and the baseline for future updates.'
+                  : `Changes since v${prevVersion}. The team already sees the live schedule; this is for occasional crew.`}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="max-h-80 overflow-y-auto p-5">
+          {loading ? (
+            <div className="flex h-24 items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>
+          ) : diffLines.length === 0 ? (
+            <p className="rounded-lg bg-gray-50 px-3 py-3 text-sm text-gray-500">
+              {prevVersion === null ? 'No prior version — sending will create the v1 baseline.' : `No changes since v${prevVersion}.`}
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {diffLines.map((line, index) => (
+                <li key={index} className="flex gap-2 text-sm text-gray-700">
+                  <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-blue-400" />
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
+          {sentVersion !== null ? (
+            <>
+              <button type="button" onClick={() => void copySummary()} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                {copied ? <><Check className="h-4 w-4 text-emerald-600" /> Copied</> : <><Copy className="h-4 w-4" /> Copy summary</>}
+              </button>
+              <button type="button" onClick={onClose} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Done</button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={() => void send()} disabled={sending || loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                <Send className="h-4 w-4" /> {sending ? 'Sending...' : `Send update (v${nextVersion})`}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ScheduleRow({
   row,
   locationName,
@@ -747,7 +909,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [eventFilter, setEventFilter] = useState('all')
   const [departmentFilter, setDepartmentFilter] = useState('all')
   const [personFilter, setPersonFilter] = useState('all')
-  const [publishing, setPublishing] = useState(false)
+  const [showSendUpdate, setShowSendUpdate] = useState(false)
 
   const activeWorkbook = workbooks.find(workbook => workbook.id === activeWorkbookId) ?? null
   const linkedEvents = allSessions.filter(session => session.workbookId === activeWorkbookId)
@@ -1024,22 +1186,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     await refreshWorkspace()
   }
 
-  async function publishSchedule() {
-    if (!activeWorkbook) return
-    setPublishing(true)
-    try {
-      const publishedWorkbook = await publishWorkbookSchedule(activeWorkbook, {
-        workbook: activeWorkbook,
-        locations,
-        events: linkedEvents,
-        scheduleItems: items,
-      }, user?.id ?? null)
-      setWorkbooks(current => current.map(workbook => workbook.id === publishedWorkbook.id ? publishedWorkbook : workbook))
-    } finally {
-      setPublishing(false)
-    }
-  }
-
   function exportSchedule() {
     if (!activeWorkbook) return
     const html = generateWorkbookScheduleHtml(activeWorkbook, rows)
@@ -1092,7 +1238,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
               <p className="truncate text-sm font-bold text-gray-950">{workbook.name}</p>
               <p className="mt-1 text-xs text-gray-500">{formatDate(workbook.start_date)} - {formatDate(workbook.end_date)}</p>
               <p className="mt-3 inline-flex rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold uppercase text-gray-600">
-                {workbook.status === 'published' ? `Published v${workbook.published_version}` : workbook.status}
+                {workbook.status === 'published' ? `Sent v${workbook.published_version}` : workbook.status}
               </p>
             </button>
           ))}
@@ -1115,7 +1261,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{items.length} schedule item{items.length === 1 ? '' : 's'}</span>
                     {activeWorkbook.published_version > 0 && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                        <History className="h-3 w-3" /> Published v{activeWorkbook.published_version}
+                        <History className="h-3 w-3" /> Last sent v{activeWorkbook.published_version}
                       </span>
                     )}
                   </div>
@@ -1125,8 +1271,8 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     <Printer className="h-4 w-4" /> Export PDF
                   </button>
                   {isAdmin && (
-                    <button onClick={() => void publishSchedule()} disabled={publishing} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                      <History className="h-4 w-4" /> {publishing ? 'Publishing...' : 'Publish Version'}
+                    <button onClick={() => setShowSendUpdate(true)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                      <Send className="h-4 w-4" /> Send Update
                     </button>
                   )}
                 </div>
@@ -1393,6 +1539,19 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
           departmentOptions={departmentOptions}
           onSaved={refreshPcoMeta}
           onClose={() => setAssigningPcoRow(null)}
+        />
+      )}
+
+      {showSendUpdate && activeWorkbook && (
+        <SendUpdateModal
+          workbook={activeWorkbook}
+          items={items}
+          events={linkedEvents}
+          locations={locations}
+          locationName={id => (id ? locationMap[id] ?? 'a room' : 'no room')}
+          userId={user?.id ?? null}
+          onClose={() => setShowSendUpdate(false)}
+          onSent={updated => setWorkbooks(current => current.map(workbook => workbook.id === updated.id ? updated : workbook))}
         />
       )}
     </div>
