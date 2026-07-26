@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  AlertTriangle, BookOpen, CalendarDays, Check, Columns3, Copy, Filter, History,
-  LayoutGrid, Link2, List, MapPin, Pencil, Plus, Printer, RadioTower, Save, Send,
-  ShoppingCart, Trash2, Users, X,
+  AlertTriangle, ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, Columns3,
+  Copy, Filter, History, LayoutGrid, Link2, List, MapPin, Pencil, Plus, Printer,
+  RadioTower, Save, Send, ShoppingCart, Trash2, Users, X,
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
@@ -949,7 +949,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     loadWorkbooks()
       .then(data => {
         setWorkbooks(data)
-        setActiveWorkbookId(previous => previous || data[0]?.id || '')
       })
       .catch(err => setError(err instanceof Error ? err.message : 'Unable to load workbooks.'))
       .finally(() => setLoading(false))
@@ -1363,56 +1362,141 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
   const unassignedEvents = allSessions.filter(session => !session.workbookId)
 
+  function openWorkbook(workbookId: string) {
+    setError('')
+    setActiveWorkbookId(workbookId)
+    setTab('schedule')
+    setView(isAdmin ? 'detail' : 'mine')
+    setDayFilter('all')
+    setLocationFilter('all')
+    setEventFilter('all')
+    setDepartmentFilter('all')
+    setPersonFilter('all')
+    setShowEditor(false)
+    setEditingItem(null)
+  }
+
+  function closeWorkbook() {
+    setError('')
+    setActiveWorkbookId('')
+    setShowEditor(false)
+    setEditingItem(null)
+    setShowSendUpdate(false)
+    setShowPrintPacket(false)
+  }
+
   if (loading) {
     return <div className="flex h-64 items-center justify-center"><div className="h-7 w-7 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>
   }
 
   return (
     <div className="fade-in min-h-full bg-gray-50">
-      <div className="border-b border-gray-200 bg-white px-4 py-5 md:px-6">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-xs font-bold uppercase tracking-widest text-teal-700">
-              <BookOpen className="h-3.5 w-3.5" /> Workbooks
+      {!activeWorkbook && (
+        <div className="border-b border-gray-200 bg-white px-4 py-5 md:px-6">
+          <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-xs font-bold uppercase tracking-widest text-teal-700">
+                <BookOpen className="h-3.5 w-3.5" /> Workbooks
+              </div>
+              <h1 className="mt-3 text-3xl font-bold text-gray-950">Production Workbooks</h1>
+              <p className="mt-1 text-sm text-gray-500">Open an existing production plan or create a new multi-event workbook.</p>
             </div>
-            <h1 className="mt-3 text-3xl font-bold text-gray-950">Production Workbooks</h1>
-            <p className="mt-1 text-sm text-gray-500">Build one detailed schedule for a multi-event production, then view it by room or assignment.</p>
+            {isAdmin && (
+              <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800">
+                <Plus className="h-4 w-4" /> New Workbook
+              </button>
+            )}
           </div>
-          {isAdmin && (
-            <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800">
-              <Plus className="h-4 w-4" /> New Workbook
-            </button>
+        </div>
+      )}
+
+      {!activeWorkbook ? (
+        <div className="mx-auto max-w-7xl p-4 md:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <SectionLabel>Workbook Library</SectionLabel>
+            <span className="text-xs font-medium text-gray-400">
+              {workbooks.length} workbook{workbooks.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+
+          {workbooks.length === 0 ? (
+            <Card className="flex min-h-72 flex-col items-center justify-center p-8 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
+                <BookOpen className="h-6 w-6" />
+              </div>
+              <h2 className="mt-4 text-lg font-bold text-gray-950">No workbooks yet</h2>
+              <p className="mt-1 max-w-md text-sm text-gray-500">
+                Workbooks coordinate schedules, events, crew, intercom, and supplies for larger productions.
+              </p>
+              {isAdmin && (
+                <button onClick={() => setShowCreate(true)} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800">
+                  <Plus className="h-4 w-4" /> Create the first workbook
+                </button>
+              )}
+            </Card>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {workbooks.map(workbook => {
+                const eventCount = allSessions.filter(session => session.workbookId === workbook.id).length
+                const statusLabel = workbook.status === 'published'
+                  ? `Sent v${workbook.published_version}`
+                  : workbook.status
+                const statusClass = workbook.status === 'published'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : workbook.status === 'archived'
+                    ? 'bg-gray-100 text-gray-500'
+                    : 'bg-amber-50 text-amber-700'
+
+                return (
+                  <button
+                    key={workbook.id}
+                    onClick={() => openWorkbook(workbook.id)}
+                    className="group flex min-h-64 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+                  >
+                    <div className="flex flex-1 flex-col p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                          <BookOpen className="h-5 w-5" />
+                        </span>
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusClass}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      <h2 className="mt-5 text-lg font-bold text-gray-950 group-hover:text-teal-800">{workbook.name}</h2>
+                      <p className="mt-1 text-sm font-medium text-gray-500">{rangeLabel(workbook)}</p>
+                      {workbook.venue && (
+                        <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-gray-500">
+                          <MapPin className="h-3.5 w-3.5 flex-shrink-0" /> {workbook.venue}
+                        </p>
+                      )}
+                      {workbook.description && (
+                        <p className="mt-3 line-clamp-2 text-sm leading-5 text-gray-500">{workbook.description}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3.5">
+                      <span className="text-xs font-semibold text-gray-500">
+                        {eventCount} event{eventCount === 1 ? '' : 's'}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 text-sm font-bold text-teal-700">
+                        Open Workbook <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
           )}
         </div>
-      </div>
-
-      <div className="mx-auto grid max-w-7xl gap-5 p-4 md:p-6 lg:grid-cols-[265px_minmax(0,1fr)]">
-        <aside className="space-y-2">
-          <SectionLabel>All Workbooks</SectionLabel>
-          {workbooks.length === 0 ? (
-            <Card className="p-4 text-sm text-gray-500">No workbooks have been created yet.</Card>
-          ) : workbooks.map(workbook => (
-            <button
-              key={workbook.id}
-              onClick={() => setActiveWorkbookId(workbook.id)}
-              className={`w-full rounded-xl border p-4 text-left transition-colors ${
-                workbook.id === activeWorkbookId ? 'border-blue-300 bg-blue-50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              <p className="truncate text-sm font-bold text-gray-950">{workbook.name}</p>
-              <p className="mt-1 text-xs text-gray-500">{formatDate(workbook.start_date)} - {formatDate(workbook.end_date)}</p>
-              <p className="mt-3 inline-flex rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold uppercase text-gray-600">
-                {workbook.status === 'published' ? `Sent v${workbook.published_version}` : workbook.status}
-              </p>
-            </button>
-          ))}
-        </aside>
-
-        {!activeWorkbook ? (
-          <Card className="flex min-h-64 items-center justify-center p-8 text-center text-gray-500">
-            Create a workbook to begin building a large-event schedule.
-          </Card>
-        ) : (
+      ) : (
+        <div className="mx-auto max-w-[1600px] p-4 md:p-6">
+          <button
+            onClick={closeWorkbook}
+            className="mb-4 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-gray-500 hover:bg-white hover:text-gray-900"
+          >
+            <ArrowLeft className="h-4 w-4" /> All Workbooks
+          </button>
           <section className="min-w-0 space-y-4">
             <Card className="overflow-hidden">
               <div className="flex flex-col gap-4 border-b border-gray-100 p-5 xl:flex-row xl:items-start xl:justify-between">
@@ -1727,14 +1811,14 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
               />
             )}
           </section>
-        )}
-      </div>
+        </div>
+      )}
 
       {showCreate && (
         <CreateWorkbookModal
           onCreate={workbook => {
             setWorkbooks(current => [workbook, ...current])
-            setActiveWorkbookId(workbook.id)
+            openWorkbook(workbook.id)
           }}
           onClose={() => setShowCreate(false)}
         />
