@@ -7,6 +7,7 @@ import type {
   WorkbookScheduleAssignment,
   WorkbookScheduleItem,
   WorkbookScheduleItemType,
+  WorkbookSupplyItem,
 } from '../types'
 
 export interface CreateWorkbookInput {
@@ -234,6 +235,57 @@ export async function updateCrewMember(id: string, input: CrewMemberInput): Prom
 
 export async function deleteCrewMember(id: string): Promise<void> {
   const { error } = await supabase.from('workbook_crew').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ── Workbook supplies ─────────────────────────────────────────────────────────
+
+export interface SupplyItemInput {
+  workbookId: string
+  departmentId: string | null
+  itemName: string
+  description: string | null
+  quantity: number
+  unitPrice: number
+  purchaseUrl: string | null
+}
+
+export async function loadWorkbookSupplies(workbookId: string): Promise<WorkbookSupplyItem[]> {
+  const { data, error } = await supabase
+    .from('workbook_supplies')
+    .select('*')
+    .eq('workbook_id', workbookId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as WorkbookSupplyItem[]
+}
+
+function supplyPayload(input: SupplyItemInput) {
+  return {
+    workbook_id: input.workbookId,
+    department_id: input.departmentId,
+    item_name: input.itemName.trim(),
+    description: input.description?.trim() || null,
+    quantity: Math.max(0, input.quantity),
+    unit_price: Math.max(0, input.unitPrice),
+    purchase_url: input.purchaseUrl,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+export async function createSupplyItem(input: SupplyItemInput): Promise<void> {
+  const { error } = await supabase.from('workbook_supplies').insert(supplyPayload(input))
+  if (error) throw error
+}
+
+export async function updateSupplyItem(id: string, input: SupplyItemInput): Promise<void> {
+  const { error } = await supabase.from('workbook_supplies').update(supplyPayload(input)).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteSupplyItem(id: string): Promise<void> {
+  const { error } = await supabase.from('workbook_supplies').delete().eq('id', id)
   if (error) throw error
 }
 

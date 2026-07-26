@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { FileText, Loader2, Printer, RadioTower, X } from 'lucide-react'
+import { FileText, Loader2, Printer, RadioTower, ShoppingCart, X } from 'lucide-react'
 import type { WorkbookPrintSection } from '../../lib/generateWorkbookPacketHtml'
 
 interface WorkbookPrintModalProps {
   canIncludeIntercom: boolean
+  canIncludeSupplies: boolean
   canIncludeCallSheets: boolean
   canIncludeCrewPay: boolean
   onPrint: (sections: WorkbookPrintSection[]) => Promise<void>
@@ -16,6 +17,7 @@ const OPTIONS: Array<{
   description: string
 }> = [
   { id: 'schedule', label: 'Detail schedule', description: 'The complete chronological workbook schedule.' },
+  { id: 'supplies', label: 'Supplies shopping list', description: 'Items, quantities, departments, purchase links, and estimated totals.' },
   { id: 'intercom', label: 'Intercom grids', description: 'One event-specific crew, pack, and channel grid per event.' },
   { id: 'callSheets', label: 'Crew call sheets', description: 'One printable call sheet per assigned crew member.' },
   { id: 'crewPay', label: 'Business-office pay report', description: 'Admin-only crew hours and pay totals.' },
@@ -23,6 +25,7 @@ const OPTIONS: Array<{
 
 export function WorkbookPrintModal({
   canIncludeIntercom,
+  canIncludeSupplies,
   canIncludeCallSheets,
   canIncludeCrewPay,
   onPrint,
@@ -30,6 +33,7 @@ export function WorkbookPrintModal({
 }: WorkbookPrintModalProps) {
   const [selected, setSelected] = useState<WorkbookPrintSection[]>([
     'schedule',
+    ...(canIncludeSupplies ? ['supplies' as const] : []),
     ...(canIncludeIntercom ? ['intercom' as const] : []),
   ])
   const [busy, setBusy] = useState(false)
@@ -37,6 +41,7 @@ export function WorkbookPrintModal({
 
   function available(id: WorkbookPrintSection) {
     if (id === 'intercom') return canIncludeIntercom
+    if (id === 'supplies') return canIncludeSupplies
     if (id === 'callSheets') return canIncludeCallSheets
     if (id === 'crewPay') return canIncludeCrewPay
     return true
@@ -72,7 +77,7 @@ export function WorkbookPrintModal({
           {OPTIONS.map(option => {
             const enabled = available(option.id)
             const checked = selected.includes(option.id)
-            const Icon = option.id === 'intercom' ? RadioTower : FileText
+            const Icon = option.id === 'intercom' ? RadioTower : option.id === 'supplies' ? ShoppingCart : FileText
             return (
               <label key={option.id} className={`flex gap-3 rounded-xl border p-3 ${
                 !enabled ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-50'
@@ -89,7 +94,13 @@ export function WorkbookPrintModal({
                 <span>
                   <span className="block text-sm font-semibold text-gray-900">{option.label}</span>
                   <span className="mt-0.5 block text-xs text-gray-500">
-                    {enabled ? option.description : option.id === 'intercom' ? 'Attach an event first.' : 'No matching crew data yet.'}
+                    {enabled
+                      ? option.description
+                      : option.id === 'intercom'
+                        ? 'Attach an event first.'
+                        : option.id === 'supplies'
+                          ? 'No supply items yet.'
+                          : 'No matching crew data yet.'}
                   </span>
                 </span>
               </label>

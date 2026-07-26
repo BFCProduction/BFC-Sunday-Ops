@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import {
   AlertTriangle, BookOpen, CalendarDays, Check, Columns3, Copy, Filter, History,
   LayoutGrid, Link2, List, MapPin, Pencil, Plus, Printer, RadioTower, Save, Send,
-  Trash2, Users, X,
+  ShoppingCart, Trash2, Users, X,
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
@@ -30,6 +30,7 @@ import {
   loadPcoTimeMeta,
   loadWorkbookCrew,
   loadWorkbookScheduleItems,
+  loadWorkbookSupplies,
   loadWorkbooks,
   publishWorkbookSchedule,
   updateScheduleItem,
@@ -51,6 +52,7 @@ import { SectionLabel } from '../components/ui/SectionLabel'
 import { ScheduleTimeGrid, type TimeGridColumn, type TimeGridItem } from '../components/workbook/ScheduleTimeGrid'
 import { CrewTab } from '../components/workbook/CrewTab'
 import { IntercomGrid } from '../components/workbook/IntercomGrid'
+import { SuppliesTab } from '../components/workbook/SuppliesTab'
 import { WorkbookPrintModal } from '../components/workbook/WorkbookPrintModal'
 import { workbookScheduleDiff, type DiffScheduleItem, type DiffEvent } from '../lib/workbookDiff'
 import type {
@@ -62,6 +64,7 @@ import type {
   Workbook,
   WorkbookCrewMember,
   WorkbookScheduleItem,
+  WorkbookSupplyItem,
 } from '../types'
 
 type Screen = 'home' | 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation' | 'analytics' | 'settings' | 'docs' | 'workbooks'
@@ -916,12 +919,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [scheduleTypes, setScheduleTypes] = useState<ScheduleItemType[]>([])
   const [crewRoles, setCrewRoles] = useState<CrewRole[]>([])
   const [crew, setCrew] = useState<WorkbookCrewMember[]>([])
+  const [supplies, setSupplies] = useState<WorkbookSupplyItem[]>([])
   const [items, setItems] = useState<WorkbookScheduleItem[]>([])
   const [pcoTimesByEvent, setPcoTimesByEvent] = useState<Record<string, PcoPlanTimeResult[]>>({})
   const [pcoMeta, setPcoMeta] = useState<Record<string, PcoTimeMeta>>({})
   const [assigningPcoRow, setAssigningPcoRow] = useState<DisplayRow | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
-  const [tab, setTab] = useState<'schedule' | 'events' | 'crew' | 'intercom'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'events' | 'crew' | 'intercom' | 'supplies'>('schedule')
   const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
   const [loading, setLoading] = useState(true)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
@@ -1017,12 +1021,14 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     if (!activeWorkbookId) return
     setWorkspaceLoading(true)
     try {
-      const [freshItems, freshCrew] = await Promise.all([
+      const [freshItems, freshCrew, freshSupplies] = await Promise.all([
         loadWorkbookScheduleItems(activeWorkbookId),
         loadWorkbookCrew(activeWorkbookId),
+        loadWorkbookSupplies(activeWorkbookId),
       ])
       setItems(freshItems)
       setCrew(freshCrew)
+      setSupplies(freshSupplies)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load workbook schedule.')
     } finally {
@@ -1034,10 +1040,15 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     if (activeWorkbookId) setCrew(await loadWorkbookCrew(activeWorkbookId))
   }, [activeWorkbookId])
 
+  const reloadSupplies = useCallback(async () => {
+    if (activeWorkbookId) setSupplies(await loadWorkbookSupplies(activeWorkbookId))
+  }, [activeWorkbookId])
+
   useEffect(() => {
     if (!activeWorkbookId) {
       setItems([])
       setCrew([])
+      setSupplies([])
       return
     }
     void refreshWorkspace()
@@ -1056,9 +1067,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         { event: '*', schema: 'public', table: 'workbook_crew', filter: `workbook_id=eq.${activeWorkbookId}` },
         () => { void reloadCrew() },
       )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'workbook_supplies', filter: `workbook_id=eq.${activeWorkbookId}` },
+        () => { void reloadSupplies() },
+      )
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
-  }, [activeWorkbookId, refreshWorkspace, reloadCrew])
+  }, [activeWorkbookId, refreshWorkspace, reloadCrew, reloadSupplies])
 
   const locationMap = useMemo(
     () => Object.fromEntries(locations.map(location => [location.id, location.name])),
@@ -1328,6 +1343,8 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         workbook: activeWorkbook,
         sections,
         scheduleRows: rows,
+        supplies,
+        departments: departmentOptions,
         intercomEvents,
         callSheetPeople,
         payLines: pay.lines,
@@ -1406,6 +1423,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{linkedEvents.length} event{linkedEvents.length === 1 ? '' : 's'}</span>
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{usedLocationIds.size} room{usedLocationIds.size === 1 ? '' : 's'}</span>
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{items.length} schedule item{items.length === 1 ? '' : 's'}</span>
+                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{supplies.length} suppl{supplies.length === 1 ? 'y' : 'ies'}</span>
                     {activeWorkbook.published_version > 0 && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                         <History className="h-3 w-3" /> Last sent v{activeWorkbook.published_version}
@@ -1424,7 +1442,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                   )}
                 </div>
               </div>
-              <div className="flex gap-1 px-5 pt-3">
+              <div className="flex gap-1 overflow-x-auto px-5 pt-3">
                 {([
                   ['schedule', 'Schedule', CalendarDays],
                   ['events', 'Events', Link2],
@@ -1440,6 +1458,9 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     </button>
                     <button onClick={() => setTab('intercom')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'intercom' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
                       <RadioTower className="h-4 w-4" /> Intercom
+                    </button>
+                    <button onClick={() => setTab('supplies')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'supplies' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
+                      <ShoppingCart className="h-4 w-4" /> Supplies
                     </button>
                   </>
                 )}
@@ -1696,6 +1717,15 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 crew={crew}
               />
             )}
+
+            {tab === 'supplies' && isAdmin && (
+              <SuppliesTab
+                workbook={activeWorkbook}
+                departments={departmentOptions}
+                supplies={supplies}
+                onChanged={reloadSupplies}
+              />
+            )}
           </section>
         )}
       </div>
@@ -1713,6 +1743,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       {showPrintPacket && activeWorkbook && (
         <WorkbookPrintModal
           canIncludeIntercom={isAdmin && linkedEvents.length > 0}
+          canIncludeSupplies={isAdmin && supplies.length > 0}
           canIncludeCallSheets={isAdmin && crew.some(member => !member.is_open)}
           canIncludeCrewPay={isAdmin && crew.some(member => member.is_paid && !member.is_open)}
           onPrint={exportWorkbookPacket}

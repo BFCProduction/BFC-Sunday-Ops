@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-25 — Workbook Supplies shopping list
+
+- Added an admin-only **Supplies** tab to Workbooks for bottled water, coffee, communion supplies, candles, flowers, décor, and any other event purchase.
+- Each item includes item name, description, quantity, unit price, optional department, and optional purchase link, with calculated line totals and a workbook estimated total.
+- Supply items update through the workbook's Realtime subscription and remain workbook-wide rather than tied to one event.
+- Added Supplies as a selectable page in the unified workbook Print / PDF packet.
+- Added migration `051_workbook_supplies`.
+
 ## 2026-07-25 — Workbook Intercom Grid + unified print packet
 
 ### Intercom Grid

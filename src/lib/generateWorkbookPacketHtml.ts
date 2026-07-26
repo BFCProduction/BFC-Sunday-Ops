@@ -1,9 +1,9 @@
 import type { CallSheetPerson } from './generateCallSheetHtml'
 import type { PayLine } from './generatePayReportHtml'
-import type { Workbook, WorkbookIntercomChannel } from '../types'
+import type { Department, Workbook, WorkbookIntercomChannel, WorkbookSupplyItem } from '../types'
 import type { WorkbookScheduleExportRow } from './generateWorkbookScheduleHtml'
 
-export type WorkbookPrintSection = 'schedule' | 'intercom' | 'callSheets' | 'crewPay'
+export type WorkbookPrintSection = 'schedule' | 'supplies' | 'intercom' | 'callSheets' | 'crewPay'
 
 export interface IntercomPrintRow {
   name: string
@@ -24,6 +24,8 @@ export interface WorkbookPacketInput {
   workbook: Workbook
   sections: WorkbookPrintSection[]
   scheduleRows: WorkbookScheduleExportRow[]
+  supplies: WorkbookSupplyItem[]
+  departments: Department[]
   intercomEvents: IntercomPrintEvent[]
   callSheetPeople: CallSheetPerson[]
   payLines: PayLine[]
@@ -57,6 +59,19 @@ function formatTime(value: string | null | undefined) {
 
 function money(value: number) {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+}
+
+function quantity(value: number) {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
+function printableLink(value: string | null) {
+  if (!value || !/^https?:\/\//i.test(value)) return null
+  try {
+    return { url: value, label: new URL(value).hostname.replace(/^www\./, '') }
+  } catch {
+    return null
+  }
 }
 
 function packetHeader(title: string, workbook: Workbook, subtitle?: string) {
@@ -144,6 +159,37 @@ function intercomSection(input: WorkbookPacketInput) {
   }).join('')
 }
 
+function suppliesSection(input: WorkbookPacketInput) {
+  const departmentById = new Map(input.departments.map(department => [department.id, department.name]))
+  const total = input.supplies.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
+  return `
+    <section class="packet-page">
+      ${packetHeader('Supplies Shopping List', input.workbook)}
+      ${input.supplies.length === 0 ? '<p class="empty">No supply items have been added.</p>' : `
+        <table class="supplies-table">
+          <thead>
+            <tr><th class="number-col">#</th><th>Item</th><th class="description-col">Description</th><th class="quantity-col numeric">Qty</th><th class="price-col numeric">Price</th><th class="department-col">Department</th><th class="link-col">Link</th><th class="price-col numeric">Total</th></tr>
+          </thead>
+          <tbody>
+            ${input.supplies.map((item, index) => {
+              const link = printableLink(item.purchase_url)
+              return `<tr>
+                <td class="center mono">${index + 1}</td>
+                <td><strong>${esc(item.item_name)}</strong></td>
+                <td>${item.description ? esc(item.description) : '<span class="muted">—</span>'}</td>
+                <td class="numeric mono">${quantity(item.quantity)}</td>
+                <td class="numeric mono">${money(item.unit_price)}</td>
+                <td>${item.department_id ? esc(departmentById.get(item.department_id) ?? 'Unknown') : '<span class="muted">—</span>'}</td>
+                <td>${link ? `<a href="${esc(link.url)}">${esc(link.label)}</a>` : '<span class="muted">—</span>'}</td>
+                <td class="numeric mono"><strong>${money(item.quantity * item.unit_price)}</strong></td>
+              </tr>`
+            }).join('')}
+          </tbody>
+          <tfoot><tr><td colspan="7"><strong>Estimated total</strong></td><td class="numeric mono"><strong>${money(total)}</strong></td></tr></tfoot>
+        </table>`}
+    </section>`
+}
+
 function callSheetSection(input: WorkbookPacketInput) {
   if (input.callSheetPeople.length === 0) {
     return `<section class="packet-page">${packetHeader('Call Sheets', input.workbook)}<p class="empty">No assigned crew to build call sheets from.</p></section>`
@@ -185,6 +231,7 @@ function paySection(input: WorkbookPacketInput) {
 export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   const sectionHtml = input.sections.map(section => {
     if (section === 'schedule') return scheduleSection(input)
+    if (section === 'supplies') return suppliesSection(input)
     if (section === 'intercom') return intercomSection(input)
     if (section === 'callSheets') return callSheetSection(input)
     return paySection(input)
@@ -231,6 +278,14 @@ export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   .intercom-table .role-col { width: 1.55in; text-align: left; }
   .intercom-table .pack-col { width: .8in; text-align: left; }
   .intercom-table .total-col { width: .45in; }
+  .supplies-table .number-col { width: .3in; }
+  .supplies-table .description-col { width: 2.2in; }
+  .supplies-table .quantity-col { width: .55in; }
+  .supplies-table .price-col { width: .75in; }
+  .supplies-table .department-col { width: 1.05in; }
+  .supplies-table .link-col { width: 1.05in; }
+  .supplies-table a { color: #2563eb; text-decoration: none; }
+  .supplies-table tfoot td { border-top: 2px solid #111827; font-size: 9.5px; }
   .mode-cell { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; font-size: 8px; font-weight: 900; }
   .mode-cell.momentary { background: #dbeafe; color: #1d4ed8; }
   .mode-cell.latch { background: #ede9fe; color: #6d28d9; }

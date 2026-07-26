@@ -304,6 +304,22 @@ export interface WorkbookCrewMember {
   updated_at: string
 }
 
+// -- Workbook supplies ---------------------------------------------------------
+
+export interface WorkbookSupplyItem {
+  id: string
+  workbook_id: string
+  department_id: string | null
+  item_name: string
+  description: string | null
+  quantity: number
+  unit_price: number
+  purchase_url: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
 // -- Workbook intercom grid ----------------------------------------------------
 
 export type IntercomPackTypeKey = 'wired' | 'wireless'
