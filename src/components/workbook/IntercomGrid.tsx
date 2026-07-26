@@ -142,6 +142,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
     ...pack,
     used: data.assignments.filter(assignment => assignment.pack_type === pack.key && identities.some(identity => identity.key === assignment.crew_key)).length,
   }))
+  const gridWidth = GRID_FIXED_WIDTH + data.channels.length * GRID_CHANNEL_MIN_WIDTH
 
   async function changePack(assignment: WorkbookIntercomAssignment, packType: IntercomPackTypeKey | null) {
     const key = `pack:${assignment.id}`
@@ -287,20 +288,21 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
         </div>
       </Card>
 
-      <Card className="overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 p-12 text-sm text-gray-400">
-            <Loader2 className="h-4 w-4 animate-spin" /> Preparing event grid…
-          </div>
-        ) : identities.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-400">
-            No workbook-wide crew or crew assigned to this event yet. Add them in the Crew tab first.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table
-              className="w-full table-fixed border-collapse text-sm"
-              style={{ minWidth: GRID_FIXED_WIDTH + data.channels.length * GRID_CHANNEL_MIN_WIDTH }}>
+      <div style={{ width: `min(100%, ${gridWidth}px)` }}>
+        <Card className="overflow-hidden">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 p-12 text-sm text-gray-400">
+              <Loader2 className="h-4 w-4 animate-spin" /> Preparing event grid…
+            </div>
+          ) : identities.length === 0 ? (
+            <div className="p-10 text-center text-sm text-gray-400">
+              No workbook-wide crew or crew assigned to this event yet. Add them in the Crew tab first.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table
+                className="table-fixed border-collapse text-sm"
+                style={{ width: gridWidth, minWidth: gridWidth }}>
               <colgroup>
                 <col style={{ width: GRID_NUMBER_WIDTH }} />
                 <col style={{ width: GRID_CREW_WIDTH }} />
@@ -309,9 +311,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
                 {data.channels.map(channel => (
                   <col
                     key={channel.id}
-                    style={{
-                      width: `max(${GRID_CHANNEL_MIN_WIDTH}px, calc((100% - ${GRID_FIXED_WIDTH}px) / ${data.channels.length}))`,
-                    }}
+                    style={{ width: GRID_CHANNEL_MIN_WIDTH }}
                   />
                 ))}
                 <col style={{ width: GRID_TOTAL_WIDTH }} />
@@ -400,10 +400,11 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
                   )
                 })}
               </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
 
       <Card className="p-4">
         <div className="grid gap-4 lg:grid-cols-2">
