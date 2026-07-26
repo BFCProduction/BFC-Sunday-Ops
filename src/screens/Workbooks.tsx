@@ -971,7 +971,10 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   }, [])
 
   async function handleCreateType(label: string): Promise<ScheduleItemType> {
-    const created = await createScheduleItemType(label, scheduleTypes.length)
+    const nextSortOrder = scheduleTypes.length > 0
+      ? Math.max(...scheduleTypes.map(type => type.sort_order)) + 1
+      : 0
+    const created = await createScheduleItemType(label, nextSortOrder)
     await reloadScheduleTypes()
     return created
   }
@@ -1199,10 +1202,17 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   }, [items, crew, crewRoles, users, linkedEvents, locationMap, pcoTimesByEvent, pcoMeta, timezone])
 
   const days = [...new Set(rows.map(row => row.date))]
-  const departments = [...new Set([
-    ...rows.flatMap(row => row.departments),
-    ...items.flatMap(item => item.assignments.map(assignment => assignment.department).filter((value): value is string => Boolean(value))),
-  ])].sort()
+  const departments = useMemo(() => {
+    const used = new Set([
+      ...rows.flatMap(row => row.departments),
+      ...items.flatMap(item => item.assignments.map(assignment => assignment.department).filter((value): value is string => Boolean(value))),
+    ])
+    const configuredNames = new Set(departmentOptions.map(department => department.name))
+    return [
+      ...departmentOptions.filter(department => used.has(department.name)).map(department => department.name),
+      ...[...used].filter(department => !configuredNames.has(department)).sort(),
+    ]
+  }, [rows, items, departmentOptions])
   const people = [...new Set(items.flatMap(item => item.assignments
     .filter(assignment => !assignment.is_open && assignment.person_name)
     .map(assignment => assignment.person_name as string)))].sort()

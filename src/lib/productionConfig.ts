@@ -9,6 +9,16 @@
 import { supabase } from './supabase'
 import type { Location, Department, CrewRole, ScheduleItemType } from '../types'
 
+type ProductionConfigTable = 'locations' | 'departments' | 'roles' | 'schedule_item_types'
+
+async function reorderRows(table: ProductionConfigTable, orderedIds: string[]): Promise<void> {
+  const results = await Promise.all(orderedIds.map((id, sortOrder) =>
+    supabase.from(table).update({ sort_order: sortOrder }).eq('id', id),
+  ))
+  const failed = results.find(result => result.error)
+  if (failed?.error) throw failed.error
+}
+
 // ── Locations ─────────────────────────────────────────────────────────────────
 export async function loadLocations(): Promise<Location[]> {
   const { data, error } = await supabase
@@ -40,6 +50,10 @@ export async function deleteLocation(id: string): Promise<void> {
   if (error) throw error
 }
 
+export async function reorderLocations(orderedIds: string[]): Promise<void> {
+  await reorderRows('locations', orderedIds)
+}
+
 // ── Departments ───────────────────────────────────────────────────────────────
 export async function loadDepartments(): Promise<Department[]> {
   const { data, error } = await supabase
@@ -69,6 +83,10 @@ export async function renameDepartment(id: string, name: string): Promise<void> 
 export async function deleteDepartment(id: string): Promise<void> {
   const { error } = await supabase.from('departments').delete().eq('id', id)
   if (error) throw error
+}
+
+export async function reorderDepartments(orderedIds: string[]): Promise<void> {
+  await reorderRows('departments', orderedIds)
 }
 
 // ── Roles ─────────────────────────────────────────────────────────────────────
@@ -120,6 +138,10 @@ export async function deleteRole(id: string): Promise<void> {
   if (error) throw error
 }
 
+export async function reorderRoles(orderedIds: string[]): Promise<void> {
+  await reorderRows('roles', orderedIds)
+}
+
 // ── Schedule item types ───────────────────────────────────────────────────────
 export async function loadScheduleItemTypes(): Promise<ScheduleItemType[]> {
   const { data, error } = await supabase
@@ -155,4 +177,8 @@ export async function renameScheduleItemType(id: string, label: string): Promise
 export async function deleteScheduleItemType(id: string): Promise<void> {
   const { error } = await supabase.from('schedule_item_types').delete().eq('id', id)
   if (error) throw error
+}
+
+export async function reorderScheduleItemTypes(orderedIds: string[]): Promise<void> {
+  await reorderRows('schedule_item_types', orderedIds)
 }
