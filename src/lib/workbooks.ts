@@ -317,6 +317,15 @@ export async function attachEventToWorkbook(eventId: string, workbookId: string)
   if (error) throw error
 }
 
+export async function attachEventsToWorkbook(eventIds: string[], workbookId: string): Promise<void> {
+  if (eventIds.length === 0) return
+  const { error } = await supabase
+    .from('events')
+    .update({ workbook_id: workbookId })
+    .in('id', eventIds)
+  if (error) throw error
+}
+
 export async function detachEventFromWorkbook(eventId: string): Promise<void> {
   const { error } = await supabase
     .from('events')

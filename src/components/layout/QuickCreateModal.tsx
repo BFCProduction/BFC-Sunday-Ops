@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  CalendarDays, Link2, Loader2, Search, X, BarChart2, ChevronRight, ChevronLeft,
+  BarChart2, CalendarDays, ChevronLeft, ChevronRight, Link2, Loader2, PenLine,
+  Search, X,
 } from 'lucide-react'
 import { createEvent, loadAllSessions, supabase } from '../../lib/supabase'
 import { ApiError, fetchPcoPlans, type PcoPlanResult, type PcoServiceTypePlans } from '../../lib/adminApi'
@@ -14,10 +15,19 @@ interface TemplateOption {
   name: string
 }
 
+interface ServiceTypeOption {
+  slug: string
+  name: string
+}
+
 interface Props {
   sessionToken: string | null
-  onCreated: (newEventId: string, freshSessions: Session[]) => void
+  onCreated: (newEventId: string, freshSessions: Session[]) => void | Promise<void>
   onClose: () => void
+  workbookId?: string
+  initialDate?: string
+  preferredDateRange?: { start: string; end: string }
+  contextLabel?: string
 }
 
 // ── PCO Plan Picker (inner modal) ─────────────────────────────────────────────
@@ -26,10 +36,12 @@ function PcoPlanPicker({
   sessionToken,
   onSelect,
   onClose,
+  preferredDateRange,
 }: {
   sessionToken: string
   onSelect: (plan: PcoPlanResult, group: PcoServiceTypePlans) => void
   onClose: () => void
+  preferredDateRange?: { start: string; end: string }
 }) {
   const [loading,        setLoading]        = useState(true)
   const [error,          setError]          = useState('')
@@ -54,22 +66,27 @@ function PcoPlanPicker({
   }, [activeGroup])
 
   const q = query.toLowerCase()
-  const visiblePlans = (activeGroup?.plans ?? []).filter(p =>
-    !q ||
-    p.display_date.toLowerCase().includes(q) ||
-    (p.display_time?.toLowerCase().includes(q) ?? false) ||
-    (p.title?.toLowerCase().includes(q) ?? false) ||
-    (p.series_title?.toLowerCase().includes(q) ?? false),
-  ).sort((a, b) =>
-    a.event_date.localeCompare(b.event_date) ||
-    (a.event_time ?? '').localeCompare(b.event_time ?? ''),
-  )
+  const visiblePlans = (activeGroup?.plans ?? [])
+    .filter(p =>
+      !q ||
+      p.display_date.toLowerCase().includes(q) ||
+      (p.display_time?.toLowerCase().includes(q) ?? false) ||
+      (p.title?.toLowerCase().includes(q) ?? false) ||
+      (p.series_title?.toLowerCase().includes(q) ?? false),
+    )
+    .sort((a, b) => {
+      const aPreferred = preferredDateRange && a.event_date >= preferredDateRange.start && a.event_date <= preferredDateRange.end ? 0 : 1
+      const bPreferred = preferredDateRange && b.event_date >= preferredDateRange.start && b.event_date <= preferredDateRange.end ? 0 : 1
+      return aPreferred - bPreferred
+        || a.event_date.localeCompare(b.event_date)
+        || (a.event_time ?? '').localeCompare(b.event_time ?? '')
+    })
 
   const title = activeGroup ? activeGroup.name : 'Select a PCO Plan'
 
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh]">
@@ -135,6 +152,11 @@ function PcoPlanPicker({
         {!loading && !error && activeGroup && (
           <>
             <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
+              {preferredDateRange && (
+                <p className="mb-2 text-[11px] font-medium text-blue-600">
+                  Plans from {preferredDateRange.start} through {preferredDateRange.end} appear first.
+                </p>
+              )}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
@@ -183,35 +205,52 @@ function PcoPlanPicker({
 
 // ── Main modal ────────────────────────────────────────────────────────────────
 
-export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
-  // PCO plan selection (required)
+export function QuickCreateModal({
+  sessionToken,
+  onCreated,
+  onClose,
+  workbookId,
+  initialDate = '',
+  preferredDateRange,
+  contextLabel,
+}: Props) {
+  // Event source: linked Planning Center plan or manual entry.
   const [pcoPlanId,            setPcoPlanId]            = useState<string | null>(null)
   const [pcoPlanLabel,         setPcoPlanLabel]         = useState('')
   const [pcoServiceTypeSlug,   setPcoServiceTypeSlug]   = useState<string | null>(null)
   const [pcoServiceTypeName,   setPcoServiceTypeName]   = useState<string | null>(null)
+  const [manualMode,           setManualMode]           = useState(false)
 
   // Form fields (pre-filled from PCO, editable)
   const [name,        setName]        = useState('')
-  const [date,        setDate]        = useState('')
+  const [date,        setDate]        = useState(initialDate)
   const [time,        setTime]        = useState('')
   const [notes,       setNotes]       = useState('')
   const [templateId,  setTemplateId]  = useState('')
   const [includeInAnalytics, setIncludeInAnalytics] = useState(false)
 
   const [templates,       setTemplates]       = useState<TemplateOption[]>([])
+  const [serviceTypes,     setServiceTypes]     = useState<ServiceTypeOption[]>([])
   const [showPcoPicker,   setShowPcoPicker]   = useState(false)
   const [saving,          setSaving]          = useState(false)
   const [error,           setError]           = useState('')
 
   useEffect(() => {
-    supabase.from('event_templates').select('id, name').order('name')
-      .then(({ data }) => setTemplates((data || []) as TemplateOption[]))
+    Promise.all([
+      supabase.from('event_templates').select('id, name').order('name'),
+      supabase.from('service_types').select('slug, name').order('sort_order'),
+    ]).then(([templateResult, serviceTypeResult]) => {
+      setTemplates((templateResult.data || []) as TemplateOption[])
+      setServiceTypes((serviceTypeResult.data || []) as ServiceTypeOption[])
+    })
   }, [])
 
   const isSundayService = pcoServiceTypeSlug === 'sunday-9am' || pcoServiceTypeSlug === 'sunday-11am'
   const showTemplates = !isSundayService && templates.length > 0
+  const hasEventSource = manualMode || Boolean(pcoPlanId)
 
   function handlePcoPlanSelect(plan: PcoPlanResult, group: PcoServiceTypePlans) {
+    setManualMode(false)
     setPcoPlanId(plan.id)
     setPcoServiceTypeSlug(group.slug)
     setPcoServiceTypeName(group.name)
@@ -239,13 +278,45 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
     setPcoServiceTypeSlug(null)
     setPcoServiceTypeName(null)
     setName('')
-    setDate('')
+    setDate(initialDate)
     setTime('')
     setIncludeInAnalytics(false)
   }
 
+  function startManualEntry() {
+    const preferredType = serviceTypes.find(type => type.slug === 'special') ?? serviceTypes[0]
+    setManualMode(true)
+    setPcoPlanId(null)
+    setPcoPlanLabel('')
+    setPcoServiceTypeSlug(preferredType?.slug ?? 'special')
+    setPcoServiceTypeName(preferredType?.name ?? 'Special Event')
+    setDate(initialDate)
+    setTime('')
+    setName('')
+    setIncludeInAnalytics(false)
+    setError('')
+  }
+
+  function leaveManualEntry() {
+    setManualMode(false)
+    setPcoServiceTypeSlug(null)
+    setPcoServiceTypeName(null)
+    setDate(initialDate)
+    setTime('')
+    setName('')
+    setIncludeInAnalytics(false)
+    setError('')
+  }
+
+  function changeManualServiceType(slug: string) {
+    const selected = serviceTypes.find(type => type.slug === slug)
+    setPcoServiceTypeSlug(slug)
+    setPcoServiceTypeName(selected?.name ?? null)
+    setIncludeInAnalytics(slug === 'sunday-9am' || slug === 'sunday-11am')
+  }
+
   async function handleSave() {
-    if (!pcoPlanId || !pcoServiceTypeSlug) { setError('Select a PCO plan to continue'); return }
+    if (!hasEventSource || !pcoServiceTypeSlug) { setError('Choose a PCO plan or enter the event manually'); return }
     const trimmedName = name.trim()
     if (!trimmedName) { setError('Event name is required'); return }
     if (!date) { setError('Date is required'); return }
@@ -261,9 +332,10 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
         templateId:         showTemplates ? (templateId || null) : null,
         pco_plan_id:        pcoPlanId,
         includeInAnalytics,
+        workbookId:         workbookId ?? null,
       })
       const fresh = await loadAllSessions()
-      onCreated(newId, fresh)
+      await onCreated(newId, fresh)
       onClose()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create event')
@@ -272,32 +344,35 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
     }
   }
 
-  const canSave = !saving && !!pcoPlanId && !!name.trim() && !!date
+  const canSave = !saving && hasEventSource && !!pcoServiceTypeSlug && !!name.trim() && !!date
 
   return (
     <>
       <div
-        className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+        className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4"
         onClick={e => { if (e.target === e.currentTarget) onClose() }}
       >
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="flex max-h-[90vh] w-full max-w-sm flex-col rounded-2xl bg-white shadow-2xl">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-shrink-0 items-start justify-between border-b border-gray-100 px-5 py-4">
+            <div className="flex items-start gap-2">
               <CalendarDays className="w-4 h-4 text-blue-500" />
-              <h2 className="text-sm font-semibold text-gray-900">New Event</h2>
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">{workbookId ? 'New Workbook Event' : 'New Event'}</h2>
+                {contextLabel && <p className="mt-0.5 text-[11px] text-gray-400">{contextLabel}</p>}
+              </div>
             </div>
             <button onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="px-5 py-4 space-y-4">
+          <div className="space-y-4 overflow-y-auto px-5 py-4">
 
-            {/* PCO Plan — required, shown first */}
+            {/* Event source */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                PCO Plan <span className="text-red-500">*</span>
+                Event source
               </label>
               {pcoPlanId ? (
                 <div className="flex items-center gap-2 border border-blue-200 bg-blue-50 rounded-lg px-3 py-2.5">
@@ -316,20 +391,62 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
+              ) : manualMode ? (
+                <div className="flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5">
+                  <PenLine className="h-3.5 w-3.5 flex-shrink-0 text-teal-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-teal-800">Manual event</p>
+                    <p className="mt-0.5 text-[10px] text-teal-600">Enter the event details below.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={leaveManualEntry}
+                    className="rounded p-0.5 text-teal-500 hover:bg-teal-100 hover:text-teal-700"
+                    title="Change source"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               ) : (
-                <button
-                  onClick={() => sessionToken ? setShowPcoPicker(true) : setError('No PCO session — please log out and back in')}
-                  className="w-full flex items-center justify-center gap-2 border border-blue-300 border-dashed rounded-lg px-3 py-3 text-sm text-blue-600 hover:border-blue-500 hover:bg-blue-50 transition-colors font-medium"
-                >
-                  <Link2 className="w-3.5 h-3.5" />
-                  Choose a PCO Plan
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => sessionToken ? setShowPcoPicker(true) : setError('No PCO session — please log out and back in')}
+                    className="flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-lg border border-blue-300 border-dashed px-3 py-3 text-sm font-medium text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-50"
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Choose PCO Plan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startManualEntry}
+                    className="flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-lg border border-teal-300 border-dashed px-3 py-3 text-sm font-medium text-teal-700 transition-colors hover:border-teal-500 hover:bg-teal-50"
+                  >
+                    <PenLine className="h-4 w-4" />
+                    Enter Manually
+                  </button>
+                </div>
               )}
             </div>
 
-            {/* Fields that appear after plan is selected */}
-            {pcoPlanId && (
+            {/* Fields that appear after a source is selected */}
+            {hasEventSource && (
               <>
+                {manualMode && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Event type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={pcoServiceTypeSlug ?? ''}
+                      onChange={event => changeManualServiceType(event.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {serviceTypes.map(type => <option key={type.slug} value={type.slug}>{type.name}</option>)}
+                    </select>
+                  </div>
+                )}
+
                 {/* Name */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
@@ -345,15 +462,20 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
                   />
                 </div>
 
-                {/* Date + Time (from PCO, shown read-only) */}
+                {/* Date + Time */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Date</label>
                     <input
                       type="date"
                       value={date}
-                      readOnly
-                      className="w-full border border-gray-100 bg-gray-50 rounded-lg px-3 py-2.5 text-sm text-gray-500 cursor-default"
+                      onChange={event => setDate(event.target.value)}
+                      readOnly={!manualMode}
+                      className={`w-full rounded-lg border px-3 py-2.5 text-sm ${
+                        manualMode
+                          ? 'border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                          : 'cursor-default border-gray-100 bg-gray-50 text-gray-500'
+                      }`}
                     />
                   </div>
                   <div>
@@ -361,8 +483,13 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
                     <input
                       type="time"
                       value={time}
-                      readOnly
-                      className="w-full border border-gray-100 bg-gray-50 rounded-lg px-3 py-2.5 text-sm text-gray-500 cursor-default"
+                      onChange={event => setTime(event.target.value)}
+                      readOnly={!manualMode}
+                      className={`w-full rounded-lg border px-3 py-2.5 text-sm ${
+                        manualMode
+                          ? 'border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                          : 'cursor-default border-gray-100 bg-gray-50 text-gray-500'
+                      }`}
                     />
                   </div>
                 </div>
@@ -429,7 +556,7 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-gray-100">
+          <div className="flex flex-shrink-0 items-center justify-end gap-3 border-t border-gray-100 px-5 py-4">
             <button
               onClick={onClose}
               disabled={saving}
@@ -453,6 +580,7 @@ export function QuickCreateModal({ sessionToken, onCreated, onClose }: Props) {
           sessionToken={sessionToken}
           onSelect={handlePcoPlanSelect}
           onClose={() => setShowPcoPicker(false)}
+          preferredDateRange={preferredDateRange}
         />
       )}
     </>

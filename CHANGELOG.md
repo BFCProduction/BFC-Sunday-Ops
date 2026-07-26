@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-07-26 — Workbook library, production ordering, and event manager
+
+### Workbook navigation
+
+- Added a dedicated workbook library between Home and an individual workbook so productions can be selected, created, and managed before opening the focused workspace.
+- Removed the permanent workbook-switching rail from the workspace. An **All Workbooks** control now returns to the library, giving the schedule and other workbook tools the full content width.
+
+### Production Config ordering
+
+- Locations, Departments, Schedule Item Types, and Roles can now be reordered by dragging them in Settings → Production Config.
+- The saved order is persisted and respected by workbook chips, selectors, schedule views, and role/type choices.
+
+### Workbook Events
+
+- Replaced the single event dropdown with a searchable, multi-select event manager.
+- Unattached events within the workbook date range appear first with their name, date, time, and event type. Other dates are kept in a collapsible list ordered by proximity to the workbook range.
+- Events already attached to another workbook are excluded with an explanation instead of appearing as ambiguous choices.
+- Added workbook-aware event creation: admins can enter an event manually or choose a Planning Center plan. The workbook start date is prefilled, matching PCO dates are prioritized, and the new event is attached to the workbook as part of the same insert.
+- Sorted attached workbook events chronologically and added an attached-event count.
+- Fixed the create-event modal layering on mobile so its footer remains usable above the floating navigation.
+
+### Verification
+
+- Production build passed (existing large-chunk warning only).
+- ESLint passed for all touched TypeScript files.
+- Desktop and 390 × 844 mobile flows were visually checked without mutating production event data.
+
+## 2026-07-26 — Crew pay per event + role departments
+
+### Changed
+
+- Crew pay is now billed **per event** (each crew row's call→release × role rate) and embedded directly in the crew list, which is now a **table grouped by event** with columns: Name, Role, Call, Release, Paid/Volunteer, Hours, Pay.
+- Added a **Total pay** section at the bottom of the Crew tab: every crew member across the whole workbook with summed hours and pay, plus a grand total. The business-office report matches this per-person payroll list.
+- Pay is computed client-side in the admin-only Crew tab; the `workbook-pay` Edge Function stays deployed for when raw role rates are locked down (per-event gap-pay is now handled by entering a single crew row that spans the gap).
+
+### Settings
+
+- Each **role** can now be assigned a **department** (Settings → Production Config, migration `049_roles_department`).
+- Removed the "paid by default" option from roles — paid/volunteer is set per crew assignment.
+
 ## 2026-07-25 — Workbook Supplies shopping list
 
 - Added an admin-only **Supplies** tab to Workbooks for bottled water, coffee, communion supplies, candles, flowers, décor, and any other event purchase.
@@ -31,19 +71,6 @@
 - TypeScript no-emit check passed.
 - Production build passed (existing large-chunk warning only).
 - The generated landscape packet was visually reviewed with representative schedule, Intercom, call-sheet, and pay data.
-
-## 2026-07-26 — Crew pay per event + role departments
-
-### Changed
-
-- Crew pay is now billed **per event** (each crew row's call→release × role rate) and embedded directly in the crew list, which is now a **table grouped by event** with columns: Name, Role, Call, Release, Paid/Volunteer, Hours, Pay.
-- Added a **Total pay** section at the bottom of the Crew tab: every crew member across the whole workbook with summed hours and pay, plus a grand total. The business-office report matches this per-person payroll list.
-- Pay is computed client-side in the admin-only Crew tab; the `workbook-pay` Edge Function stays deployed for when raw role rates are locked down (per-event gap-pay is now handled by entering a single crew row that spans the gap).
-
-### Settings
-
-- Each **role** can now be assigned a **department** (Settings → Production Config, migration `049_roles_department`).
-- Removed the "paid by default" option from roles — paid/volunteer is set per crew assignment.
 
 ## 2026-07-25 — Workbook crew pay (admin-only) + business-office report
 

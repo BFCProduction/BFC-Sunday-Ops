@@ -338,6 +338,7 @@ export async function createEvent(opts: {
   templateId?:         string | null
   pco_plan_id?:        string | null
   includeInAnalytics?: boolean
+  workbookId?:         string | null
 }): Promise<string> {
   // Resolve service type
   const { data: st, error: stErr } = await supabase
@@ -368,6 +369,7 @@ export async function createEvent(opts: {
       notes:                   opts.notes ?? null,
       pco_plan_id:             opts.pco_plan_id ?? null,
       include_in_analytics:    includeInAnalytics,
+      workbook_id:             opts.workbookId ?? null,
       legacy_sunday_id:        legacySundayId,
       legacy_special_event_id: null,
     })
