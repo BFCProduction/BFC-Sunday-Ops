@@ -309,23 +309,6 @@ export async function upsertPcoTimeMeta(input: {
   if (error) throw error
 }
 
-export async function attachEventToWorkbook(eventId: string, workbookId: string): Promise<void> {
-  const { error } = await supabase
-    .from('events')
-    .update({ workbook_id: workbookId })
-    .eq('id', eventId)
-  if (error) throw error
-}
-
-export async function attachEventsToWorkbook(eventIds: string[], workbookId: string): Promise<void> {
-  if (eventIds.length === 0) return
-  const { error } = await supabase
-    .from('events')
-    .update({ workbook_id: workbookId })
-    .in('id', eventIds)
-  if (error) throw error
-}
-
 export async function detachEventFromWorkbook(eventId: string): Promise<void> {
   const { error } = await supabase
     .from('events')

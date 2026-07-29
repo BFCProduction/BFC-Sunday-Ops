@@ -26,7 +26,7 @@ interface Props {
   onClose: () => void
   workbookId?: string
   initialDate?: string
-  preferredDateRange?: { start: string; end: string }
+  minimumPlanDate?: string
   contextLabel?: string
 }
 
@@ -36,12 +36,12 @@ function PcoPlanPicker({
   sessionToken,
   onSelect,
   onClose,
-  preferredDateRange,
+  minimumPlanDate,
 }: {
   sessionToken: string
   onSelect: (plan: PcoPlanResult, group: PcoServiceTypePlans) => void
   onClose: () => void
-  preferredDateRange?: { start: string; end: string }
+  minimumPlanDate?: string
 }) {
   const [loading,        setLoading]        = useState(true)
   const [error,          setError]          = useState('')
@@ -67,6 +67,7 @@ function PcoPlanPicker({
 
   const q = query.toLowerCase()
   const visiblePlans = (activeGroup?.plans ?? [])
+    .filter(p => !minimumPlanDate || p.event_date >= minimumPlanDate)
     .filter(p =>
       !q ||
       p.display_date.toLowerCase().includes(q) ||
@@ -74,13 +75,11 @@ function PcoPlanPicker({
       (p.title?.toLowerCase().includes(q) ?? false) ||
       (p.series_title?.toLowerCase().includes(q) ?? false),
     )
-    .sort((a, b) => {
-      const aPreferred = preferredDateRange && a.event_date >= preferredDateRange.start && a.event_date <= preferredDateRange.end ? 0 : 1
-      const bPreferred = preferredDateRange && b.event_date >= preferredDateRange.start && b.event_date <= preferredDateRange.end ? 0 : 1
-      return aPreferred - bPreferred
-        || a.event_date.localeCompare(b.event_date)
-        || (a.event_time ?? '').localeCompare(b.event_time ?? '')
-    })
+    .sort((a, b) =>
+      a.event_date.localeCompare(b.event_date)
+      || (a.event_time ?? '').localeCompare(b.event_time ?? '')
+      || (a.title || a.series_title || '').localeCompare(b.title || b.series_title || ''),
+    )
 
   const title = activeGroup ? activeGroup.name : 'Select a PCO Plan'
 
@@ -152,9 +151,9 @@ function PcoPlanPicker({
         {!loading && !error && activeGroup && (
           <>
             <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
-              {preferredDateRange && (
+              {minimumPlanDate && (
                 <p className="mb-2 text-[11px] font-medium text-blue-600">
-                  Plans from {preferredDateRange.start} through {preferredDateRange.end} appear first.
+                  Showing plans from the workbook start date forward.
                 </p>
               )}
               <div className="relative">
@@ -170,7 +169,9 @@ function PcoPlanPicker({
             </div>
             <div className="flex-1 overflow-y-auto">
               {visiblePlans.length === 0 && (
-                <p className="px-5 py-6 text-sm text-gray-400 text-center">No plans found</p>
+                <p className="px-5 py-6 text-sm text-gray-400 text-center">
+                  {minimumPlanDate ? 'No plans found on or after the workbook start date' : 'No plans found'}
+                </p>
               )}
               {visiblePlans.map(plan => {
                 const label = plan.title || plan.series_title
@@ -211,7 +212,7 @@ export function QuickCreateModal({
   onClose,
   workbookId,
   initialDate = '',
-  preferredDateRange,
+  minimumPlanDate,
   contextLabel,
 }: Props) {
   // Event source: linked Planning Center plan or manual entry.
@@ -231,7 +232,7 @@ export function QuickCreateModal({
 
   const [templates,       setTemplates]       = useState<TemplateOption[]>([])
   const [serviceTypes,     setServiceTypes]     = useState<ServiceTypeOption[]>([])
-  const [showPcoPicker,   setShowPcoPicker]   = useState(false)
+  const [showPcoPicker,   setShowPcoPicker]   = useState(Boolean(workbookId && sessionToken))
   const [saving,          setSaving]          = useState(false)
   const [error,           setError]           = useState('')
 
@@ -281,6 +282,7 @@ export function QuickCreateModal({
     setDate(initialDate)
     setTime('')
     setIncludeInAnalytics(false)
+    if (workbookId && sessionToken) setShowPcoPicker(true)
   }
 
   function startManualEntry() {
@@ -358,7 +360,7 @@ export function QuickCreateModal({
             <div className="flex items-start gap-2">
               <CalendarDays className="w-4 h-4 text-blue-500" />
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">{workbookId ? 'New Workbook Event' : 'New Event'}</h2>
+                <h2 className="text-sm font-semibold text-gray-900">{workbookId ? 'Add Event to Workbook' : 'New Event'}</h2>
                 {contextLabel && <p className="mt-0.5 text-[11px] text-gray-400">{contextLabel}</p>}
               </div>
             </div>
@@ -372,7 +374,7 @@ export function QuickCreateModal({
             {/* Event source */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Event source
+                {workbookId ? 'Planning Center plan' : 'Event source'}
               </label>
               {pcoPlanId ? (
                 <div className="flex items-center gap-2 border border-blue-200 bg-blue-50 rounded-lg px-3 py-2.5">
@@ -407,6 +409,15 @@ export function QuickCreateModal({
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
+              ) : workbookId ? (
+                <button
+                  type="button"
+                  onClick={() => sessionToken ? setShowPcoPicker(true) : setError('No PCO session — please log out and back in')}
+                  className="flex min-h-20 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-blue-300 border-dashed px-3 py-3 text-sm font-medium text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-50"
+                >
+                  <Link2 className="h-4 w-4" />
+                  Choose PCO Plan
+                </button>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -462,37 +473,39 @@ export function QuickCreateModal({
                   />
                 </div>
 
-                {/* Date + Time */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Date</label>
-                    <input
-                      type="date"
-                      value={date}
-                      onChange={event => setDate(event.target.value)}
-                      readOnly={!manualMode}
-                      className={`w-full rounded-lg border px-3 py-2.5 text-sm ${
-                        manualMode
-                          ? 'border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                          : 'cursor-default border-gray-100 bg-gray-50 text-gray-500'
-                      }`}
-                    />
+                {/* PCO owns workbook-event timing, so only standalone creation displays these fields. */}
+                {!workbookId && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Date</label>
+                      <input
+                        type="date"
+                        value={date}
+                        onChange={event => setDate(event.target.value)}
+                        readOnly={!manualMode}
+                        className={`w-full rounded-lg border px-3 py-2.5 text-sm ${
+                          manualMode
+                            ? 'border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                            : 'cursor-default border-gray-100 bg-gray-50 text-gray-500'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Time</label>
+                      <input
+                        type="time"
+                        value={time}
+                        onChange={event => setTime(event.target.value)}
+                        readOnly={!manualMode}
+                        className={`w-full rounded-lg border px-3 py-2.5 text-sm ${
+                          manualMode
+                            ? 'border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                            : 'cursor-default border-gray-100 bg-gray-50 text-gray-500'
+                        }`}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Time</label>
-                    <input
-                      type="time"
-                      value={time}
-                      onChange={event => setTime(event.target.value)}
-                      readOnly={!manualMode}
-                      className={`w-full rounded-lg border px-3 py-2.5 text-sm ${
-                        manualMode
-                          ? 'border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                          : 'cursor-default border-gray-100 bg-gray-50 text-gray-500'
-                      }`}
-                    />
-                  </div>
-                </div>
+                )}
 
                 {/* Analytics toggle */}
                 <div>
@@ -569,7 +582,9 @@ export function QuickCreateModal({
               disabled={!canSave}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating…</> : 'Create Event'}
+              {saving
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {workbookId ? 'Adding…' : 'Creating…'}</>
+                : workbookId ? 'Add Event' : 'Create Event'}
             </button>
           </div>
         </div>
@@ -579,8 +594,11 @@ export function QuickCreateModal({
         <PcoPlanPicker
           sessionToken={sessionToken}
           onSelect={handlePcoPlanSelect}
-          onClose={() => setShowPcoPicker(false)}
-          preferredDateRange={preferredDateRange}
+          onClose={() => {
+            setShowPcoPicker(false)
+            if (workbookId && !pcoPlanId) onClose()
+          }}
+          minimumPlanDate={minimumPlanDate}
         />
       )}
     </>

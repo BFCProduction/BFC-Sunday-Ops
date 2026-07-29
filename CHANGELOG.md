@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-29 — Simplified Workbook Events
+
+- Removed the passive Rooms / Locations reference block from the Events tab.
+- Replaced the searchable existing-event attachment manager with one focused **Add Event** action above the attached workbook events.
+- Workbook event creation is now Planning Center-only. The picker opens directly to PCO plan folders; manual events remain available elsewhere in Sunday Ops, while non-PCO production activities belong on the workbook Schedule.
+- PCO plan lists now exclude dates before the workbook start date and sort chronologically by date and time.
+- Removed the redundant read-only date and time fields from the workbook event confirmation because PCO owns that schedule data.
+
 ## 2026-07-26 — Workbook library, production ordering, and event manager
 
 ### Workbook navigation

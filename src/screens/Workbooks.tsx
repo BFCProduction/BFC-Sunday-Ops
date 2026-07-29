@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, BookOpen, CalendarDays, CalendarPlus,
-  Check, ChevronDown, ChevronUp, Columns3, Copy, Filter, History, LayoutGrid,
-  Link2, List, Loader2, MapPin, Pencil, Plus, Printer, RadioTower, Save, Search,
+  Check, Columns3, Copy, Filter, History, LayoutGrid,
+  Link2, List, MapPin, Pencil, Plus, Printer, RadioTower, Save,
   Send, ShoppingCart, Trash2, Users, X,
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
@@ -22,7 +22,6 @@ import {
 } from '../lib/intercom'
 import { loadAllSessions, supabase } from '../lib/supabase'
 import {
-  attachEventsToWorkbook,
   createScheduleItem,
   createWorkbook,
   deleteScheduleItem,
@@ -911,42 +910,6 @@ function EventSetupRow({
   )
 }
 
-function AttachEventRow({
-  event,
-  selected,
-  onToggle,
-}: {
-  event: Session
-  selected: boolean
-  onToggle: () => void
-}) {
-  return (
-    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${
-      selected ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-    }`}>
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={onToggle}
-        aria-label={`Select ${event.name} on ${formatLongDate(event.date)}`}
-        className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="text-sm font-bold text-gray-950">{event.name}</p>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: event.serviceTypeColor }} />
-            {event.serviceTypeName}
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-gray-500">
-          {formatLongDate(event.date)} · {formatTime(event.eventTime)}
-        </p>
-      </div>
-    </label>
-  )
-}
-
 export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const { isAdmin, sessionToken, user } = useAdmin()
   const { navigateToEvent, timezone } = useSunday()
@@ -971,11 +934,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [showCreate, setShowCreate] = useState(false)
   const [showEditor, setShowEditor] = useState(false)
   const [editingItem, setEditingItem] = useState<WorkbookScheduleItem | null>(null)
-  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(() => new Set())
-  const [eventSearch, setEventSearch] = useState('')
-  const [showOtherEvents, setShowOtherEvents] = useState(false)
-  const [attachingEvents, setAttachingEvents] = useState(false)
-  const [attachError, setAttachError] = useState('')
   const [showCreateEvent, setShowCreateEvent] = useState(false)
   const [dayFilter, setDayFilter] = useState('all')
   const [locationFilter, setLocationFilter] = useState('all')
@@ -1325,42 +1283,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     setScreen('dashboard')
   }
 
-  function toggleEventSelection(eventId: string) {
-    setSelectedEventIds(current => {
-      const next = new Set(current)
-      if (next.has(eventId)) next.delete(eventId)
-      else next.add(eventId)
-      return next
-    })
-  }
-
-  function toggleEventGroup(events: Session[]) {
-    setSelectedEventIds(current => {
-      const next = new Set(current)
-      const allSelected = events.length > 0 && events.every(event => next.has(event.id))
-      for (const event of events) {
-        if (allSelected) next.delete(event.id)
-        else next.add(event.id)
-      }
-      return next
-    })
-  }
-
-  async function attachSelectedEvents() {
-    if (!activeWorkbook || selectedEventIds.size === 0) return
-    setAttachingEvents(true)
-    setAttachError('')
-    try {
-      await attachEventsToWorkbook([...selectedEventIds], activeWorkbook.id)
-      setSelectedEventIds(new Set())
-      await reloadEvents()
-    } catch (err) {
-      setAttachError(err instanceof Error ? err.message : 'Unable to attach the selected events.')
-    } finally {
-      setAttachingEvents(false)
-    }
-  }
-
   async function saveEventSchedule(eventId: string, endTime: string | null, locationId: string | null) {
     await updateWorkbookEventSchedule(eventId, endTime, locationId)
     await reloadEvents()
@@ -1447,42 +1369,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     }
   }
 
-  const unassignedEvents = allSessions
-    .filter(session => !session.workbookId)
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.eventTime ?? '').localeCompare(b.eventTime ?? '') || a.name.localeCompare(b.name))
-  const eventQuery = eventSearch.trim().toLowerCase()
-  const matchesEventQuery = (session: Session) => !eventQuery || [
-    session.name,
-    session.date,
-    formatLongDate(session.date),
-    formatTime(session.eventTime),
-    session.serviceTypeName,
-  ].some(value => value.toLowerCase().includes(eventQuery))
-  const workbookDateEvents = unassignedEvents.filter(session =>
-    activeWorkbook
-    && session.date >= activeWorkbook.start_date
-    && session.date <= activeWorkbook.end_date
-    && matchesEventQuery(session),
-  )
-  const distanceFromWorkbookDates = (date: string) => {
-    if (!activeWorkbook) return 0
-    const timestamp = new Date(`${date}T12:00:00`).getTime()
-    const start = new Date(`${activeWorkbook.start_date}T12:00:00`).getTime()
-    const end = new Date(`${activeWorkbook.end_date}T12:00:00`).getTime()
-    return timestamp < start ? start - timestamp : Math.max(0, timestamp - end)
-  }
-  const otherDateEvents = unassignedEvents
-    .filter(session => (!activeWorkbook || session.date < activeWorkbook.start_date || session.date > activeWorkbook.end_date) && matchesEventQuery(session))
-    .sort((a, b) => {
-      if (!activeWorkbook) return a.date.localeCompare(b.date)
-      const aDistance = distanceFromWorkbookDates(a.date)
-      const bDistance = distanceFromWorkbookDates(b.date)
-      return aDistance - bDistance || a.date.localeCompare(b.date) || (a.eventTime ?? '').localeCompare(b.eventTime ?? '')
-    })
-  const attachedElsewhereCount = allSessions.filter(session =>
-    session.workbookId && session.workbookId !== activeWorkbookId,
-  ).length
-
   function openWorkbook(workbookId: string) {
     setError('')
     setActiveWorkbookId(workbookId)
@@ -1495,10 +1381,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     setPersonFilter('all')
     setShowEditor(false)
     setEditingItem(null)
-    setSelectedEventIds(new Set())
-    setEventSearch('')
-    setShowOtherEvents(false)
-    setAttachError('')
   }
 
   function closeWorkbook() {
@@ -1508,10 +1390,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     setEditingItem(null)
     setShowSendUpdate(false)
     setShowPrintPacket(false)
-    setSelectedEventIds(new Set())
-    setEventSearch('')
-    setShowOtherEvents(false)
-    setAttachError('')
     setShowCreateEvent(false)
   }
 
@@ -1853,181 +1731,30 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
             {tab === 'events' && (
               <div className="space-y-4">
-                <Card className="p-4">
-                  <SectionLabel>Rooms / Locations</SectionLabel>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {locations.length === 0 ? (
-                      <span className="text-sm text-gray-400">No locations yet.</span>
-                    ) : locations.map(location => (
-                      <span key={location.id} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700">
-                        <MapPin className="h-3.5 w-3.5" /> {location.name}
-                      </span>
-                    ))}
-                  </div>
-                  {isAdmin && (
-                    <p className="mt-3 text-xs text-gray-400">
-                      Locations are shared across all workbooks and managed in <span className="font-semibold text-gray-500">Settings → Production Config</span>.
-                    </p>
-                  )}
-                </Card>
-
-                {isAdmin && (
-                  <Card className="overflow-hidden">
-                    <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <SectionLabel>Add Events</SectionLabel>
-                        <p className="mt-2 text-sm text-gray-500">
-                          Select existing Sunday Ops events to coordinate inside this workbook. Events keep their own canonical workspaces.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowCreateEvent(true)}
-                        className="inline-flex flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                      >
-                        <CalendarPlus className="h-4 w-4" /> Create Event
-                      </button>
-                    </div>
-
-                    <div className="border-t border-gray-100 px-4 py-3">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        <input
-                          type="search"
-                          value={eventSearch}
-                          onChange={event => setEventSearch(event.target.value)}
-                          placeholder="Search by name, date, time, or event type…"
-                          className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="border-t border-gray-100 px-4 py-3">
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-wide text-gray-600">Workbook Dates</p>
-                          <p className="mt-0.5 text-[11px] text-gray-400">
-                            {formatLongDate(activeWorkbook.start_date)}
-                            {activeWorkbook.start_date !== activeWorkbook.end_date ? ` – ${formatLongDate(activeWorkbook.end_date)}` : ''}
-                          </p>
-                        </div>
-                        {workbookDateEvents.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => toggleEventGroup(workbookDateEvents)}
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                          >
-                            {workbookDateEvents.every(event => selectedEventIds.has(event.id)) ? 'Clear all' : 'Select all'}
-                          </button>
-                        )}
-                      </div>
-                      {workbookDateEvents.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-5 text-center">
-                          <p className="text-sm font-medium text-gray-600">
-                            {eventQuery ? 'No workbook-date events match this search.' : 'No unassigned events fall within the workbook dates.'}
-                          </p>
-                          {!eventQuery && (
-                            <button
-                              type="button"
-                              onClick={() => setShowCreateEvent(true)}
-                              className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-700"
-                            >
-                              Create an event for this workbook
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-                          {workbookDateEvents.map(event => (
-                            <AttachEventRow
-                              key={event.id}
-                              event={event}
-                              selected={selectedEventIds.has(event.id)}
-                              onToggle={() => toggleEventSelection(event.id)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="border-t border-gray-100">
-                      <button
-                        type="button"
-                        onClick={() => setShowOtherEvents(current => !current)}
-                        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50"
-                      >
-                        <span>
-                          <span className="block text-xs font-bold uppercase tracking-wide text-gray-600">Other Dates</span>
-                          <span className="mt-0.5 block text-[11px] text-gray-400">
-                            {otherDateEvents.length} matching unassigned event{otherDateEvents.length === 1 ? '' : 's'}, nearest dates first
-                          </span>
-                        </span>
-                        {showOtherEvents || eventQuery ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
-                      </button>
-                      {(showOtherEvents || Boolean(eventQuery)) && (
-                        <div className="max-h-96 space-y-2 overflow-y-auto border-t border-gray-100 px-4 py-3">
-                          {otherDateEvents.length === 0 ? (
-                            <p className="py-3 text-center text-sm text-gray-400">No other events match this search.</p>
-                          ) : (
-                            <>
-                              <div className="flex justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleEventGroup(otherDateEvents)}
-                                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                                >
-                                  {otherDateEvents.every(event => selectedEventIds.has(event.id)) ? 'Clear all' : 'Select all'}
-                                </button>
-                              </div>
-                              {otherDateEvents.map(event => (
-                                <AttachEventRow
-                                  key={event.id}
-                                  event={event}
-                                  selected={selectedEventIds.has(event.id)}
-                                  onToggle={() => toggleEventSelection(event.id)}
-                                />
-                              ))}
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-3 border-t border-gray-100 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-700">
-                          {selectedEventIds.size === 0
-                            ? 'Select one or more events'
-                            : `${selectedEventIds.size} event${selectedEventIds.size === 1 ? '' : 's'} selected`}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-gray-400">
-                          {attachedElsewhereCount > 0
-                            ? `${attachedElsewhereCount} event${attachedElsewhereCount === 1 ? '' : 's'} attached to another workbook are not shown.`
-                            : 'Events attached to another workbook are not shown.'}
-                        </p>
-                        {attachError && <p className="mt-1 text-xs font-medium text-red-600">{attachError}</p>}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void attachSelectedEvents()}
-                        disabled={selectedEventIds.size === 0 || attachingEvents}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {attachingEvents ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                        Attach {selectedEventIds.size > 0 ? selectedEventIds.size : ''} Event{selectedEventIds.size === 1 ? '' : 's'}
-                      </button>
-                    </div>
-                  </Card>
-                )}
-
                 <div>
-                  <div className="mb-3 flex items-center justify-between">
-                    <SectionLabel>Workbook Events</SectionLabel>
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-400"><Users className="h-3.5 w-3.5" /> {linkedEvents.length} attached</span>
+                  <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <SectionLabel>Workbook Events</SectionLabel>
+                      <p className="mt-2 text-sm text-gray-500">
+                        Add events from Planning Center. Production activities that are not PCO events belong on the Schedule tab.
+                      </p>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-3">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-400"><Users className="h-3.5 w-3.5" /> {linkedEvents.length} attached</span>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateEvent(true)}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                        >
+                          <CalendarPlus className="h-4 w-4" /> Add Event
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     {linkedEvents.length === 0 ? (
-                      <Card className="p-8 text-center text-sm text-gray-400">Attach an event to make its principal time block appear in the master schedule.</Card>
+                      <Card className="p-8 text-center text-sm text-gray-400">No PCO events have been added to this workbook.</Card>
                     ) : linkedEvents.map(event => (
                       <EventSetupRow
                         key={event.id}
@@ -2092,7 +1819,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
           sessionToken={sessionToken}
           workbookId={activeWorkbook.id}
           initialDate={activeWorkbook.start_date}
-          preferredDateRange={{ start: activeWorkbook.start_date, end: activeWorkbook.end_date }}
+          minimumPlanDate={activeWorkbook.start_date}
           contextLabel={`${activeWorkbook.name} · ${rangeLabel(activeWorkbook)}`}
           onCreated={(_newEventId, freshSessions) => {
             onSessionsChange(freshSessions)
