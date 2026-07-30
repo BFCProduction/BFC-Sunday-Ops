@@ -300,6 +300,13 @@ export interface WorkbookCrewMember {
   release_time: string | null
   is_paid: boolean
   sort_order: number
+  source: 'manual' | 'pco'
+  pco_plan_person_id: string | null
+  pco_person_id: string | null
+  pco_role_name: string | null
+  pco_status: string | null
+  pco_photo_url: string | null
+  pco_synced_at: string | null
   created_at: string
   updated_at: string
 }

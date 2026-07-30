@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from 'react'
-import { DollarSign, Pencil, Trash2, UserPlus, X } from 'lucide-react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { DollarSign, Link2, Loader2, Pencil, RefreshCw, Trash2, UserPlus, X } from 'lucide-react'
 import { Card } from '../ui/Card'
-import type { AppUser } from '../../lib/adminApi'
+import { syncPcoWorkbookCrew, type AppUser } from '../../lib/adminApi'
 import { createCrewMember, updateCrewMember, deleteCrewMember, type CrewMemberInput } from '../../lib/workbooks'
 import {
   buildWorkbookPayLines,
@@ -35,6 +35,7 @@ interface CrewTabProps {
   users: AppUser[]
   roles: CrewRole[]
   crew: WorkbookCrewMember[]
+  sessionToken: string | null
   onChanged: () => Promise<void>
 }
 
@@ -44,6 +45,9 @@ function avatarFor(member: WorkbookCrewMember, users: AppUser[]) {
   const initials = name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()
   if (user?.avatar_url) {
     return <img src={user.avatar_url} alt="" className="h-7 w-7 flex-shrink-0 rounded-full object-cover" />
+  }
+  if (member.pco_photo_url) {
+    return <img src={member.pco_photo_url} alt="" className="h-7 w-7 flex-shrink-0 rounded-full object-cover" />
   }
   return <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700">{initials}</span>
 }
@@ -173,12 +177,41 @@ function CrewMemberModal({
   )
 }
 
-export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, onChanged }: CrewTabProps) {
+export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, sessionToken, onChanged }: CrewTabProps) {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<WorkbookCrewMember | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
+  const [syncError, setSyncError] = useState('')
 
-  const roleName = (id: string | null) => (id ? roles.find(role => role.id === id)?.name ?? '—' : '—')
+  const roleName = (member: WorkbookCrewMember) =>
+    (member.role_id ? roles.find(role => role.id === member.role_id)?.name : null)
+    ?? member.pco_role_name
+    ?? '—'
+
+  const syncFromPco = useCallback(async () => {
+    if (!sessionToken || linkedEvents.length === 0) return
+    setSyncing(true)
+    setSyncError('')
+    try {
+      const result = await syncPcoWorkbookCrew(sessionToken, workbook.id)
+      await onChanged()
+      setSyncMessage(`PCO crew up to date · ${result.assignments} assignment${result.assignments === 1 ? '' : 's'}`)
+      if (result.errors.length > 0) {
+        setSyncError(`${result.errors.length} event${result.errors.length === 1 ? '' : 's'} could not be synced. ${result.errors[0].error}`)
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Unable to sync assigned crew from Planning Center.')
+    } finally {
+      setSyncing(false)
+    }
+  }, [linkedEvents.length, onChanged, sessionToken, workbook.id])
+
+  const linkedEventIdsKey = linkedEvents.map(event => event.id).join(',')
+  useEffect(() => {
+    void syncFromPco()
+  }, [linkedEventIdsKey, syncFromPco])
 
   // Pay computed client-side (admin-only tab): per-event hours × role rate, summed per person.
   const { lines: payLines, totalHours, totalPay } = buildWorkbookPayLines(crew, users, roles)
@@ -218,11 +251,26 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
           <div>
             <p className="text-sm font-bold text-gray-900">Crew</p>
             <p className="mt-0.5 text-xs text-gray-500">
-              Who&apos;s working, their role, call / release times, and pay per event. Call times cluster onto the schedule.
-              Pay is admin-only and never shown to volunteers.
+              Assigned crew sync automatically from each linked Planning Center plan. Call / release times, pay status,
+              and local role adjustments stay in Sunday Ops.
             </p>
+            {(syncMessage || syncError) && (
+              <div className="mt-2">
+                {syncMessage && !syncError && <p className="text-xs font-medium text-emerald-600">{syncMessage}</p>}
+                {syncError && <p className="text-xs font-medium text-red-600">{syncError}</p>}
+              </div>
+            )}
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void syncFromPco()}
+              disabled={syncing || linkedEvents.length === 0 || !sessionToken}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {syncing ? 'Syncing…' : 'Sync PCO'}
+            </button>
             <button
               onClick={() => { setEditing(null); setShowModal(true) }}
               disabled={workbookDays.length === 0}
@@ -234,7 +282,9 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
       </Card>
 
       {crew.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-gray-400">No crew added yet. Use “Add crew” to build the roster.</Card>
+        <Card className="p-8 text-center text-sm text-gray-400">
+          {syncing ? 'Loading assigned crew from Planning Center…' : 'No assigned PCO crew or manually added crew yet.'}
+        </Card>
       ) : groups.map(group => (
         <Card key={group.key} className="overflow-hidden">
           <div className="bg-gray-800 px-4 py-2 text-sm font-semibold text-white">{group.label}</div>
@@ -261,10 +311,15 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                         <span className="font-semibold text-gray-900">
                           {workbookCrewPersonName(member, users)}
                           {member.is_open && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Open</span>}
+                          {member.source === 'pco' && (
+                            <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-700">
+                              <Link2 className="h-2.5 w-2.5" /> PCO
+                            </span>
+                          )}
                         </span>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 text-gray-600">{roleName(member.role_id)}</td>
+                    <td className="px-3 py-2.5 text-gray-600">{roleName(member)}</td>
                     <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{formatTime(member.call_time)}</td>
                     <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{formatTime(member.release_time)}</td>
                     <td className="px-3 py-2.5">
@@ -277,10 +332,12 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => { setEditing(member); setShowModal(true) }} className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600" aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></button>
-                        {confirmDelete === member.id ? (
-                          <button onClick={() => void remove(member.id)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700">Sure?</button>
-                        ) : (
-                          <button onClick={() => setConfirmDelete(member.id)} className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                        {member.source !== 'pco' && (
+                          confirmDelete === member.id ? (
+                            <button onClick={() => void remove(member.id)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700">Sure?</button>
+                          ) : (
+                            <button onClick={() => setConfirmDelete(member.id)} className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                          )
                         )}
                       </div>
                     </td>

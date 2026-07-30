@@ -36,7 +36,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
   - **PCO-first event manager** — the Events tab is a focused list of attached workbook events plus one **Add Event** action. Workbook events are created from Planning Center plans and attached atomically; non-PCO production activities are entered as Schedule items. The plan picker hides plans before the workbook start date and sorts the remaining plans chronologically.
   - **Schedule** — a chronological Detail view plus **By Room** and **By Department** views on a shared time-axis grid (time down the left, one column per room/department, items positioned by real start/end, same-column overlaps flagged as conflicts). Day-N labels (Day 1 = the workbook's earliest event).
   - **PCO plan times** pulled into the schedule read-only and kept in sync (never stored); each can be assigned a room + departments via an overlay.
-  - **Crew roster** (admin only) — people (PCO user / manual guest / open TBD) with roles, call/release times, and paid/volunteer flags; shared call times cluster onto the schedule. The crew list is a per-event table (Name, Role, Call, Release, Paid/Volunteer, Hours, Pay).
+  - **Crew roster** (admin only) — assigned people automatically sync from every attached event's Planning Center plan when the Crew tab opens. PCO owns assignment membership; Sunday Ops keeps editable role mapping, call/release times, and paid/volunteer flags. Manual guests and open/TBD rows remain supported; shared call times cluster onto the schedule.
   - **Call sheets** — printable per-person schedule (per-day call/release, role, event), with crew avatars.
   - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), calculated client-side in the admin-only Crew tab, shown per row, and totaled per person across the workbook, with a printable business-office pay report. The deployed `workbook-pay` Edge Function remains available for the future raw-rate security hardening.
   - **Intercom Grid** (admin only) — event-scoped assignments pulled from the workbook crew roster. Duplicate rows for the same person collapse; workbook-wide crew appear on every attached event while event-specific crew stay scoped to their event. Each person gets a wired/wireless/no-intercom assignment and per-channel **Momentary / Latch / Off** settings. Production Config owns global pack capacities, the reusable master channel list, and per-role starting defaults; an event can add or remove its own channel columns without changing the master list. Over-capacity pack counts are flagged.
@@ -229,6 +229,7 @@ Completed (previously listed as pending):
 - `workbook_schedule_assignments` — per-schedule-item crew assignments (real user or open/named slot, role, department)
 - `workbook_pco_time_meta` — room + department annotation for a read-only PCO plan time, keyed by (`event_id`, `pco_time_id`) (migration `046`)
 - `workbook_crew` — crew roster: person (PCO user / manual guest / open TBD), role, day (+ optional event), call/release times, paid flag (migration `047`)
+  - Migration `052` adds PCO assignment identity/source fields so linked-plan crew can sync without duplicating rows or overwriting Sunday Ops call/release/pay details.
 - **Intercom configuration + event grids (migration `050`):**
   - `intercom_pack_types` — account-level wired/wireless availability counts (future specific equipment can attach without replacing the pack type)
   - `intercom_channels` — reusable master channel list
@@ -243,6 +244,7 @@ Functions:
 
 Edge Functions (workbook):
 - `workbook-pay` — admin-only (verifies the PCO session token + `is_admin`); computes crew pay for a workbook and returns it only to verified admins. Deployed; wired in for the raw-rate lockdown (crew pay is currently computed client-side in the admin-only Crew tab).
+- `pco-workbook-crew` — admin-only; mirrors non-declined team assignments from every attached event's linked PCO plan into `workbook_crew` while preserving workbook-local call/release, pay, and role overrides.
 
 Views:
 - `analytics_records` — view over `service_records` that remaps legacy service-type values, exposes event identity/time/labels, and powers Analytics screens. As of migration `043`, it filters to events with `include_in_analytics = true` plus legacy `service_records` rows that have no `event_id` (pre-events historical data).
@@ -298,6 +300,8 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260725031614_047_workbook_crew.sql`
 - `supabase/migrations/20260725203121_049_roles_department.sql`
 - `supabase/migrations/20260725211500_050_workbook_intercom.sql`
+- `supabase/migrations/20260726003000_051_workbook_supplies.sql`
+- `supabase/migrations/20260729184500_052_workbook_crew_pco_sync.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-29 — PCO crew sync + event timing cleanup
+
+- Removed the workbook-only event end-time field from attached event rows. Planning Center remains the owner of event timing; the Events tab now saves only the workbook location assignment.
+- Added automatic Crew-tab synchronization from each attached event's linked PCO plan.
+- PCO assignments are matched to existing Sunday Ops users by PCO person ID and to configured roles by position name. Unmatched positions retain their PCO label instead of disappearing.
+- Imported crew remain editable for Sunday Ops-specific call/release times, paid status, and local role mapping. PCO-owned roster additions/removals are reconciled each time the Crew tab opens, with a manual **Sync PCO** retry action.
+- Added migration `052_workbook_crew_pco_sync` and the protected `pco-workbook-crew` Edge Function.
+
 ## 2026-07-29 — Simplified Workbook Events
 
 - Removed the passive Rooms / Locations reference block from the Events tab.

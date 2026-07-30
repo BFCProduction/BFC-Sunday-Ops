@@ -34,7 +34,7 @@ import {
   loadWorkbooks,
   publishWorkbookSchedule,
   updateScheduleItem,
-  updateWorkbookEventSchedule,
+  updateWorkbookEventLocation,
   upsertPcoTimeMeta,
   type PcoTimeMeta,
   type ScheduleAssignmentInput,
@@ -870,17 +870,16 @@ function EventSetupRow({
 }: {
   event: Session
   locations: Location[]
-  onSave: (eventId: string, endTime: string | null, locationId: string | null) => Promise<void>
+  onSave: (eventId: string, locationId: string | null) => Promise<void>
   onOpen: (eventId: string) => void
   onDetach: (eventId: string) => Promise<void>
 }) {
-  const [endTime, setEndTime] = useState(event.eventEndTime?.slice(0, 5) ?? '')
   const [locationId, setLocationId] = useState(event.workbookLocationId ?? '')
   const [saving, setSaving] = useState(false)
 
   async function save() {
     setSaving(true)
-    await onSave(event.id, endTime || null, locationId || null)
+    await onSave(event.id, locationId || null)
     setSaving(false)
   }
 
@@ -895,7 +894,6 @@ function EventSetupRow({
           <option value="">Primary location</option>
           {locations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
         </select>
-        <input type="time" value={endTime} onChange={changeEvent => setEndTime(changeEvent.target.value)} className={`${FIELD_CLASS} lg:w-32`} aria-label="Event end time" />
         <button onClick={save} disabled={saving} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
           {saving ? 'Saving...' : 'Save'}
         </button>
@@ -1283,8 +1281,8 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     setScreen('dashboard')
   }
 
-  async function saveEventSchedule(eventId: string, endTime: string | null, locationId: string | null) {
-    await updateWorkbookEventSchedule(eventId, endTime, locationId)
+  async function saveEventSchedule(eventId: string, locationId: string | null) {
+    await updateWorkbookEventLocation(eventId, locationId)
     await reloadEvents()
   }
 
@@ -1778,6 +1776,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 users={users}
                 roles={crewRoles}
                 crew={crew}
+                sessionToken={sessionToken}
                 onChanged={reloadCrew}
               />
             )}

@@ -132,6 +132,44 @@ export async function fetchPcoPlanTimes(
   return (payload as { schedule: PcoPlanTimeResult[] }).schedule ?? []
 }
 
+// ── PCO Workbook Crew Sync ───────────────────────────────────────────────────
+
+export interface PcoWorkbookCrewSyncResult {
+  assignments:    number
+  added:          number
+  updated:        number
+  removed:        number
+  events_synced:  number
+  unmatched_roles: string[]
+  errors: Array<{
+    event_id:   string
+    event_name: string
+    error:      string
+  }>
+}
+
+export async function syncPcoWorkbookCrew(
+  sessionToken: string,
+  workbookId: string,
+): Promise<PcoWorkbookCrewSyncResult> {
+  const response = await fetch(getFunctionUrl('pco-workbook-crew'), {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'Content-Type':    'application/json',
+      'x-session-token': sessionToken,
+    },
+    body: JSON.stringify({ workbook_id: workbookId }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw errorFromResponse(payload, `Crew sync failed with ${response.status}`, response.status)
+  }
+
+  return payload as PcoWorkbookCrewSyncResult
+}
+
 // ── PCO Plan Items (Run of Show) ─────────────────────────────────────────────
 
 export interface PcoPlanItemResult {

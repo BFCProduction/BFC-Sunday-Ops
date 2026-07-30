@@ -317,15 +317,13 @@ export async function detachEventFromWorkbook(eventId: string): Promise<void> {
   if (error) throw error
 }
 
-export async function updateWorkbookEventSchedule(
+export async function updateWorkbookEventLocation(
   eventId: string,
-  endTime: string | null,
   locationId: string | null,
 ): Promise<void> {
   const { error } = await supabase
     .from('events')
     .update({
-      event_end_time: endTime,
       workbook_location_id: locationId,
     })
     .eq('id', eventId)
