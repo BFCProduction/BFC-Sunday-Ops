@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-07-30 — Room-aware Workbook Input Lists
+## 2026-07-30 — Workbook Input Lists and Crew Workflow Cleanup
 
 - Added an Input List tab to every workbook. Room-defined infrastructure is displayed as plain read-only values while workbook-entry cells autosave production-specific source, device, person, destination, and monitor assignments.
 - Added a dedicated top-level **Workbook Settings** area and split its growing configuration into focused tabs for Locations, Departments, Schedule Types, Crew Roles, Intercom, and Input Lists.
