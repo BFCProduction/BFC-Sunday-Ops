@@ -2,7 +2,13 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { DollarSign, Link2, Loader2, Pencil, RefreshCw, Trash2, UserPlus, X } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { syncPcoWorkbookCrew, type AppUser } from '../../lib/adminApi'
-import { createCrewMember, updateCrewMember, deleteCrewMember, type CrewMemberInput } from '../../lib/workbooks'
+import {
+  createCrewMember,
+  updateCrewMember,
+  updateCrewMemberTime,
+  deleteCrewMember,
+  type CrewMemberInput,
+} from '../../lib/workbooks'
 import {
   buildWorkbookPayLines,
   workbookCrewMemberHours,
@@ -18,14 +24,6 @@ const FIELD = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-
 
 function formatDay(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-}
-
-function formatTime(time: string | null) {
-  if (!time) return '—'
-  const [hour, minute] = time.slice(0, 5).split(':').map(Number)
-  if (Number.isNaN(hour)) return time
-  const suffix = hour >= 12 ? 'PM' : 'AM'
-  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${suffix}`
 }
 
 interface CrewTabProps {
@@ -50,6 +48,71 @@ function avatarFor(member: WorkbookCrewMember, users: AppUser[]) {
     return <img src={member.pco_photo_url} alt="" className="h-7 w-7 flex-shrink-0 rounded-full object-cover" />
   }
   return <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700">{initials}</span>
+}
+
+function InlineCrewTimeInput({
+  memberId,
+  field,
+  label,
+  value,
+  onSaved,
+}: {
+  memberId: string
+  field: 'call_time' | 'release_time'
+  label: string
+  value: string | null
+  onSaved: () => Promise<void>
+}) {
+  const savedValue = value?.slice(0, 5) ?? ''
+  const [draft, setDraft] = useState(savedValue)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!saving) setDraft(savedValue)
+  }, [savedValue, saving])
+
+  async function save() {
+    if (saving || draft === savedValue) return
+    setSaving(true)
+    setError('')
+    try {
+      await updateCrewMemberTime(memberId, field, draft || null)
+      await onSaved()
+    } catch (saveError) {
+      setDraft(savedValue)
+      setError(saveError instanceof Error ? saveError.message : `Unable to save ${label.toLowerCase()}.`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex min-w-[8rem] items-center gap-1.5">
+      <input
+        type="time"
+        value={draft}
+        onChange={event => setDraft(event.target.value)}
+        onBlur={() => void save()}
+        onKeyDown={event => {
+          if (event.key === 'Enter') event.currentTarget.blur()
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            setDraft(savedValue)
+          }
+        }}
+        aria-label={`${label} time`}
+        aria-invalid={Boolean(error)}
+        title={error || `${label} time — saves when you leave the field`}
+        className={`w-[7rem] rounded-md border bg-white px-2 py-1.5 font-mono text-xs text-gray-700 outline-none transition focus:ring-2 ${
+          error
+            ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
+            : 'border-gray-200 focus:border-blue-400 focus:ring-blue-100'
+        }`}
+      />
+      {saving && <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-blue-500" aria-label="Saving" />}
+    </div>
+  )
 }
 
 function CrewMemberModal({
@@ -320,8 +383,24 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-gray-600">{roleName(member)}</td>
-                    <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{formatTime(member.call_time)}</td>
-                    <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{formatTime(member.release_time)}</td>
+                    <td className="px-3 py-2.5">
+                      <InlineCrewTimeInput
+                        memberId={member.id}
+                        field="call_time"
+                        label="Call"
+                        value={member.call_time}
+                        onSaved={onChanged}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <InlineCrewTimeInput
+                        memberId={member.id}
+                        field="release_time"
+                        label="Release"
+                        value={member.release_time}
+                        onSaved={onChanged}
+                      />
+                    </td>
                     <td className="px-3 py-2.5">
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${member.is_paid ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
                         {member.is_paid ? 'Paid' : 'Volunteer'}

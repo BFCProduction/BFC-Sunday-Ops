@@ -233,6 +233,21 @@ export async function updateCrewMember(id: string, input: CrewMemberInput): Prom
   if (error) throw error
 }
 
+export async function updateCrewMemberTime(
+  id: string,
+  field: 'call_time' | 'release_time',
+  value: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('workbook_crew')
+    .update({
+      [field]: value,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+  if (error) throw error
+}
+
 export async function deleteCrewMember(id: string): Promise<void> {
   const { error } = await supabase.from('workbook_crew').delete().eq('id', id)
   if (error) throw error

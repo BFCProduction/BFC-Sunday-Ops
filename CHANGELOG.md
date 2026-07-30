@@ -15,6 +15,7 @@
 - Input Lists now show each repeated room or floor-box label as one vertically merged group cell. The visible Type column was replaced by a labeled, print-safe color system for Audio Input, Audio Output, Monitor Output, Network, Fiber, and BNC connections.
 - Input List fills now mirror the original Sanctuary I/O sheet: white inputs, light-gray monitor outputs, medium-gray audio outputs, dark-gray network/BNC rows, and yellow fiber rows. Print spacing and type were rebalanced against populated workbook data so body rows remain single-line and headers wrap only between complete words.
 - Workbook Crew sync now imports only assignments from each linked PCO plan's **Production** team. Previously imported worship-team assignments are removed during the next automatic or manual sync.
+- Crew call and release times can now be edited directly in the roster table. Each time field saves when focus leaves it, with inline saving and error feedback; the full edit dialog remains available for person, role, event, and pay details.
 
 ## 2026-07-29 — PCO crew sync + event timing cleanup
 
