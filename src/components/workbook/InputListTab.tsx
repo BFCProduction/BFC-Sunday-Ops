@@ -10,12 +10,14 @@ import {
 import { Card } from '../ui/Card'
 import {
   INPUT_LIST_CONNECTION_TYPES,
+  inputListColumnIsVisible,
   inputListRowGroupKey,
   loadInputListConfiguration,
   loadWorkbookInputListValues,
   saveWorkbookInputListValue,
 } from '../../lib/inputLists'
 import type {
+  InputListConnectionType,
   InputListRoomRow,
   InputListSection,
   Location,
@@ -38,8 +40,34 @@ function roomValue(row: InputListRoomRow, columnId: string) {
   return row.room_values.find(value => value.column_id === columnId)?.value ?? ''
 }
 
-function typeLabel(type: InputListRoomRow['connection_type']) {
-  return INPUT_LIST_CONNECTION_TYPES.find(option => option.key === type)?.label ?? type
+const CONNECTION_TYPE_STYLES: Record<InputListConnectionType, {
+  row: string
+  swatch: string
+}> = {
+  audio_input: {
+    row: 'bg-white',
+    swatch: 'border-gray-300 bg-white',
+  },
+  audio_output: {
+    row: 'bg-[#cccccc]',
+    swatch: 'border-gray-500 bg-[#cccccc]',
+  },
+  monitor_output: {
+    row: 'bg-[#efefef]',
+    swatch: 'border-gray-400 bg-[#efefef]',
+  },
+  network: {
+    row: 'bg-[#b7b7b7]',
+    swatch: 'border-gray-500 bg-[#b7b7b7]',
+  },
+  fiber: {
+    row: 'bg-[#ffff00]',
+    swatch: 'border-yellow-500 bg-[#ffff00]',
+  },
+  bnc: {
+    row: 'bg-[#999999]',
+    swatch: 'border-gray-600 bg-[#999999]',
+  },
 }
 
 export function InputListTab({ workbook, locations, linkedEvents, editable }: InputListTabProps) {
@@ -63,6 +91,11 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
   const [savingKey, setSavingKey] = useState('')
   const [savedKey, setSavedKey] = useState('')
   const [error, setError] = useState('')
+  const usedConnectionTypes = useMemo(
+    () => INPUT_LIST_CONNECTION_TYPES.filter(option =>
+      sections.some(section => section.rows.some(row => row.connection_type === option.key))),
+    [sections],
+  )
 
   useEffect(() => {
     if (orderedLocations.some(location => location.id === locationId)) return
@@ -164,6 +197,19 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
             {selectedLocation.name} is assigned to an attached event in this workbook.
           </p>
         )}
+        {usedConnectionTypes.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-3">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+              Connection colors
+            </span>
+            {usedConnectionTypes.map(option => (
+              <span key={option.key} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
+                <span className={`h-3 w-3 rounded-sm border ${CONNECTION_TYPE_STYLES[option.key].swatch}`} />
+                {option.label}
+              </span>
+            ))}
+          </div>
+        )}
       </Card>
 
       {error && (
@@ -190,6 +236,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
       ) : (
         sections.map(section => {
           const isCollapsed = collapsed.has(section.id)
+          const visibleColumns = section.columns.filter(inputListColumnIsVisible)
           return (
             <Card key={section.id} className="overflow-hidden">
               <button
@@ -207,7 +254,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
               </button>
 
               {!isCollapsed && (
-                section.columns.length === 0 ? (
+                visibleColumns.length === 0 ? (
                   <p className="px-5 py-6 text-sm text-gray-500">This section does not have any columns yet.</p>
                 ) : section.rows.length === 0 ? (
                   <p className="px-5 py-6 text-sm text-gray-500">This section does not have any room connections yet.</p>
@@ -216,13 +263,10 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                     <table className="min-w-full border-collapse text-left">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="whitespace-nowrap border-b border-r border-gray-200 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                            Type
-                          </th>
-                          {section.columns.map(column => (
+                          {visibleColumns.map(column => (
                             <th
                               key={column.id}
-                              className="min-w-[150px] border-b border-r border-gray-200 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-gray-400 last:border-r-0"
+                              className={`${column.value_source === 'room' ? 'min-w-[120px]' : 'min-w-[150px]'} border-b border-r border-gray-200 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-gray-400 last:border-r-0`}
                             >
                               {column.name}
                             </th>
@@ -231,26 +275,45 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                       </thead>
                       <tbody>
                         {section.rows.map((row, rowIndex) => {
-                          const startsGroup = rowIndex > 0
-                            && inputListRowGroupKey(row, section.columns)
-                              !== inputListRowGroupKey(section.rows[rowIndex - 1], section.columns)
+                          const groupColumn = visibleColumns.find(column => column.value_source === 'room')
+                          const groupKey = inputListRowGroupKey(row, section.columns)
+                          const isGroupStart = rowIndex === 0
+                            || groupKey !== inputListRowGroupKey(section.rows[rowIndex - 1], section.columns)
+                          let groupRowSpan = 1
+                          if (isGroupStart) {
+                            while (
+                              rowIndex + groupRowSpan < section.rows.length
+                              && inputListRowGroupKey(section.rows[rowIndex + groupRowSpan], section.columns) === groupKey
+                            ) {
+                              groupRowSpan += 1
+                            }
+                          }
                           return (
                             <tr
                               key={row.id}
-                              className={`border-b border-gray-100 last:border-b-0 ${startsGroup ? 'border-t-2 border-t-gray-300' : ''}`}
+                              className={`border-b border-gray-100 last:border-b-0 ${CONNECTION_TYPE_STYLES[row.connection_type].row} ${isGroupStart && rowIndex > 0 ? 'border-t-2 border-t-gray-300' : ''}`}
                             >
-                            <td className="whitespace-nowrap border-r border-gray-100 bg-gray-50/70 px-3 py-2 text-[11px] font-semibold text-gray-500">
-                              {typeLabel(row.connection_type)}
-                            </td>
-                            {section.columns.map(column => {
+                            {visibleColumns.map(column => {
+                              if (column.id === groupColumn?.id && !isGroupStart) return null
                               const key = valueKey(row.id, column.id)
                               const value = column.value_source === 'room'
                                 ? roomValue(row, column.id)
                                 : values[key] ?? ''
+                              if (column.id === groupColumn?.id && groupRowSpan > 1) {
+                                return (
+                                  <td
+                                    key={column.id}
+                                    rowSpan={groupRowSpan}
+                                    className="whitespace-nowrap border-r-2 border-gray-300 bg-white px-3 py-2 text-center align-middle text-sm font-bold text-gray-900"
+                                  >
+                                    {value || '—'}
+                                  </td>
+                                )
+                              }
                               return (
                                 <td key={column.id} className="border-r border-gray-100 p-1.5 last:border-r-0">
                                   {column.value_source === 'room' || !editable ? (
-                                    <span className={`block min-h-8 px-2 py-1.5 text-sm ${value ? 'text-gray-800' : 'text-gray-300'}`}>
+                                    <span className={`block min-h-8 whitespace-nowrap px-2 py-1.5 text-sm ${value ? 'text-gray-800' : 'text-gray-300'}`}>
                                       {value || '—'}
                                     </span>
                                   ) : (
@@ -262,7 +325,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                                         onKeyDown={event => {
                                           if (event.key === 'Enter') event.currentTarget.blur()
                                         }}
-                                        className="w-full rounded-md border border-transparent bg-white px-2 py-1.5 pr-7 text-sm text-gray-900 outline-none hover:border-gray-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                        className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 pr-7 text-sm text-gray-900 outline-none hover:border-gray-200 hover:bg-white/70 focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500"
                                       />
                                       {savingKey === key && <Loader2 className="absolute right-2 top-2 h-3.5 w-3.5 animate-spin text-blue-500" />}
                                       {savedKey === key && <Check className="absolute right-2 top-2 h-3.5 w-3.5 text-emerald-600" />}

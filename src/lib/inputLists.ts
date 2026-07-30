@@ -10,20 +10,10 @@ import type {
   WorkbookInputListValue,
 } from '../types'
 
-export const INPUT_LIST_CONNECTION_TYPES: Array<{
-  key: InputListConnectionType
-  label: string
-}> = [
-  { key: 'audio_input', label: 'Audio input' },
-  { key: 'audio_output', label: 'Audio output' },
-  { key: 'monitor_output', label: 'Monitor output' },
-  { key: 'network', label: 'Network' },
-  { key: 'fiber', label: 'Fiber' },
-  { key: 'bnc', label: 'BNC' },
-]
+export { INPUT_LIST_CONNECTION_TYPES } from './inputListConnectionTypes'
 
 export interface InputListPrintRow {
-  connectionType: string
+  connectionType: InputListConnectionType
   groupKey: string
   values: string[]
 }
@@ -31,12 +21,17 @@ export interface InputListPrintRow {
 export interface InputListPrintSection {
   name: string
   columns: string[]
+  groupColumnIndex: number | null
   rows: InputListPrintRow[]
 }
 
 export interface InputListPrintDocument {
   locationName: string
   sections: InputListPrintSection[]
+}
+
+export function inputListColumnIsVisible(column: Pick<InputListSectionColumn, 'name'>): boolean {
+  return column.name.trim().toLocaleLowerCase() !== 'type'
 }
 
 function sortByOrder<T extends { sort_order: number }>(rows: T[]) {
@@ -355,19 +350,26 @@ export async function loadWorkbookInputListDocuments(
     .filter(entry => preferred.size === 0 || preferred.has(entry.location.id) || withValues.has(entry.location.id))
     .map(entry => ({
       locationName: entry.location.name,
-      sections: entry.sections.map(section => ({
-        name: section.name,
-        columns: section.columns.map(column => column.name),
-        rows: section.rows.map(row => ({
-          connectionType: INPUT_LIST_CONNECTION_TYPES.find(option => option.key === row.connection_type)?.label ?? row.connection_type,
-          groupKey: inputListRowGroupKey(row, section.columns),
-          values: section.columns.map(column => {
-            if (column.value_source === 'room') {
-              return row.room_values.find(value => value.column_id === column.id)?.value ?? ''
-            }
-            return valueByKey.get(valueKey(row.id, column.id)) ?? ''
-          }),
-        })),
-      })),
+      sections: entry.sections.map(section => {
+        const visibleColumns = section.columns.filter(inputListColumnIsVisible)
+        return {
+          name: section.name,
+          columns: visibleColumns.map(column => column.name),
+          groupColumnIndex: (() => {
+            const index = visibleColumns.findIndex(column => column.value_source === 'room')
+            return index >= 0 ? index : null
+          })(),
+          rows: section.rows.map(row => ({
+            connectionType: row.connection_type,
+            groupKey: inputListRowGroupKey(row, section.columns),
+            values: visibleColumns.map(column => {
+              if (column.value_source === 'room') {
+                return row.room_values.find(value => value.column_id === column.id)?.value ?? ''
+              }
+              return valueByKey.get(valueKey(row.id, column.id)) ?? ''
+            }),
+          })),
+        }
+      }),
     }))
 }

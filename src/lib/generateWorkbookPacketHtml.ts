@@ -2,6 +2,7 @@ import type { CallSheetPerson } from './generateCallSheetHtml'
 import type { PayLine } from './generatePayReportHtml'
 import type { Department, Workbook, WorkbookIntercomChannel, WorkbookSupplyItem } from '../types'
 import type { WorkbookScheduleExportRow } from './generateWorkbookScheduleHtml'
+import { INPUT_LIST_CONNECTION_TYPES } from './inputListConnectionTypes'
 import type { InputListPrintDocument, InputListPrintRow, InputListPrintSection } from './inputLists'
 
 export type WorkbookPrintSection = 'schedule' | 'inputLists' | 'supplies' | 'intercom' | 'callSheets' | 'crewPay'
@@ -179,7 +180,7 @@ function splitInputListRows(rows: InputListPrintRow[]): [InputListPrintRow[], In
   for (let index = 0; index < groups.length - 1; index++) {
     cumulative += groups[index].length
     const difference = Math.abs(midpoint - cumulative)
-    if (difference < bestDifference) {
+    if (difference <= bestDifference) {
       bestDifference = difference
       bestGroupCount = index + 1
     }
@@ -195,18 +196,48 @@ function inputListTable(section: InputListPrintSection, rows: InputListPrintRow[
   return `<table class="input-list-table">
     <thead>
       <tr>
-        <th class="input-list-type-col">Type</th>
         ${section.columns.map(column => `<th>${esc(column)}</th>`).join('')}
       </tr>
     </thead>
     <tbody>
-      ${rows.map((row, index) => `
-        <tr class="${index > 0 && rows[index - 1].groupKey !== row.groupKey ? 'input-list-group-start' : ''}">
-          <td class="input-list-type">${esc(row.connectionType)}</td>
-          ${row.values.map(value => `<td>${value ? esc(value) : '<span class="muted">—</span>'}</td>`).join('')}
-        </tr>`).join('')}
+      ${rows.map((row, index) => {
+        const isGroupStart = index === 0 || rows[index - 1].groupKey !== row.groupKey
+        let groupRowSpan = 1
+        if (isGroupStart) {
+          while (index + groupRowSpan < rows.length && rows[index + groupRowSpan].groupKey === row.groupKey) {
+            groupRowSpan += 1
+          }
+        }
+        return `
+          <tr class="input-list-row input-list-type-${row.connectionType.replaceAll('_', '-')} ${index > 0 && isGroupStart ? 'input-list-group-start' : ''}">
+            ${row.values.map((value, columnIndex) => {
+              if (columnIndex === section.groupColumnIndex && !isGroupStart) return ''
+              if (columnIndex === section.groupColumnIndex && groupRowSpan > 1) {
+                return isGroupStart
+                  ? `<td class="input-list-group-cell" rowspan="${groupRowSpan}">${value ? esc(value) : '<span class="muted">—</span>'}</td>`
+                  : ''
+              }
+              return `<td>${value ? esc(value) : '<span class="muted">—</span>'}</td>`
+            }).join('')}
+          </tr>`
+      }).join('')}
     </tbody>
   </table>`
+}
+
+function inputListLegend(document: InputListPrintDocument) {
+  const usedTypes = new Set(document.sections.flatMap(section => section.rows.map(row => row.connectionType)))
+  return `<div class="input-list-legend">
+    <span class="input-list-legend-title">Connection colors</span>
+    ${INPUT_LIST_CONNECTION_TYPES
+      .filter(option => usedTypes.has(option.key))
+      .map(option => `
+        <span class="input-list-legend-item">
+          <span class="input-list-swatch input-list-swatch-${option.key.replaceAll('_', '-')}"></span>
+          ${esc(option.label)}
+        </span>`)
+      .join('')}
+  </div>`
 }
 
 function inputListsSection(input: WorkbookPacketInput) {
@@ -217,6 +248,7 @@ function inputListsSection(input: WorkbookPacketInput) {
   return input.inputListDocuments.map(document => `
     <section class="packet-page input-list-page">
       ${packetHeader('Input List', input.workbook, document.locationName)}
+      ${inputListLegend(document)}
       ${document.sections.map(section => `
         <section class="input-list-block">
           <h2>${esc(section.name)}</h2>
@@ -321,8 +353,8 @@ export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
 <title>${esc(input.workbook.name)} — Workbook Packet</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #eef2f7; }
-  .packet-page { width: 11in; min-height: 8.5in; margin: 18px auto; padding: .38in; background: white; page-break-after: always; }
+  body { margin: 0; color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #eef2f7; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .packet-page { width: 8.5in; min-height: 11in; margin: 18px auto; padding: .38in; background: white; page-break-after: always; }
   .packet-page:last-child { page-break-after: auto; }
   .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; border-bottom: 3px solid #111827; padding-bottom: 10px; margin-bottom: 16px; }
   .eyebrow { margin: 0 0 3px; color: #2563eb; font-size: 8px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
@@ -355,16 +387,32 @@ export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   .intercom-table .role-col { width: 1.55in; text-align: left; }
   .intercom-table .pack-col { width: .8in; text-align: left; }
   .intercom-table .total-col { width: .45in; }
-  .input-list-block { margin-bottom: 14px; }
+  .input-list-block { margin-bottom: 10px; }
   .input-list-block h2 { margin-top: 0; padding: 5px 7px; background: #f1f5f9; }
-  .input-list-table-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .12in; align-items: start; }
+  .input-list-table-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .1in; align-items: start; }
   .input-list-table { table-layout: auto; }
   .input-list-table thead { display: table-header-group; }
-  .input-list-table th, .input-list-table td { padding: 3px 4px; font-size: 6.5px; overflow-wrap: anywhere; }
-  .input-list-table .input-list-type-col { width: .68in; }
-  .input-list-table .input-list-type { color: #64748b; font-size: 6px; font-weight: 700; }
+  .input-list-table th { padding: 2.5px; font-size: 7px; line-height: 1.15; letter-spacing: .025em; white-space: normal; overflow-wrap: normal; word-break: normal; hyphens: none; }
+  .input-list-table td { padding: 2px 2.25px; font-size: 7.75px; line-height: 1.1; white-space: nowrap; }
+  .input-list-table .input-list-group-cell { width: .58in; border-right: 2px solid #94a3b8; background: #fff; color: #1f2937; font-weight: 800; text-align: center; vertical-align: middle; }
+  .input-list-type-audio-input td:not(.input-list-group-cell) { background: #fff; }
+  .input-list-type-audio-output td:not(.input-list-group-cell) { background: #ccc; }
+  .input-list-type-monitor-output td:not(.input-list-group-cell) { background: #efefef; }
+  .input-list-type-network td:not(.input-list-group-cell) { background: #b7b7b7; }
+  .input-list-type-fiber td:not(.input-list-group-cell) { background: #ff0; }
+  .input-list-type-bnc td:not(.input-list-group-cell) { background: #999; }
   .input-list-table .input-list-group-start td { border-top: 2px solid #9ca3af; }
-  .input-list-empty { margin: 0; padding: 10px; color: #94a3b8; font-size: 8px; }
+  .input-list-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; margin: -4px 0 12px; }
+  .input-list-legend-title { color: #64748b; font-size: 7px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .input-list-legend-item { display: inline-flex; align-items: center; gap: 4px; color: #475569; font-size: 8px; font-weight: 700; }
+  .input-list-swatch { width: 10px; height: 10px; border: 1px solid #cbd5e1; border-radius: 2px; }
+  .input-list-swatch-audio-input { background: #fff; }
+  .input-list-swatch-audio-output { background: #ccc; }
+  .input-list-swatch-monitor-output { background: #efefef; }
+  .input-list-swatch-network { background: #b7b7b7; }
+  .input-list-swatch-fiber { background: #ff0; }
+  .input-list-swatch-bnc { background: #999; }
+  .input-list-empty { margin: 0; padding: 10px; color: #94a3b8; font-size: 10px; }
   .supplies-table .number-col { width: .3in; }
   .supplies-table .description-col { width: 2.2in; }
   .supplies-table .quantity-col { width: .55in; }
@@ -381,9 +429,9 @@ export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   .pay-table tfoot td { border-top: 2px solid #111827; font-size: 10px; }
   .footnote { margin-top: 10px; color: #9ca3af; font-size: 8px; }
   @media print {
-    @page { size: letter landscape; margin: 0; }
+    @page { size: letter portrait; margin: .38in; }
     body { background: white; }
-    .packet-page { margin: 0; }
+    .packet-page { width: auto; min-height: auto; margin: 0; padding: 0; }
   }
 </style>
 </head>
