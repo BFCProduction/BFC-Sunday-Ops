@@ -2,7 +2,7 @@ import type { CallSheetPerson } from './generateCallSheetHtml'
 import type { PayLine } from './generatePayReportHtml'
 import type { Department, Workbook, WorkbookIntercomChannel, WorkbookSupplyItem } from '../types'
 import type { WorkbookScheduleExportRow } from './generateWorkbookScheduleHtml'
-import type { InputListPrintDocument } from './inputLists'
+import type { InputListPrintDocument, InputListPrintRow, InputListPrintSection } from './inputLists'
 
 export type WorkbookPrintSection = 'schedule' | 'inputLists' | 'supplies' | 'intercom' | 'callSheets' | 'crewPay'
 
@@ -161,6 +161,54 @@ function intercomSection(input: WorkbookPacketInput) {
   }).join('')
 }
 
+function splitInputListRows(rows: InputListPrintRow[]): [InputListPrintRow[], InputListPrintRow[]] {
+  if (rows.length < 2) return [rows, []]
+
+  const groups: InputListPrintRow[][] = []
+  for (const row of rows) {
+    const current = groups[groups.length - 1]
+    if (current?.[0]?.groupKey === row.groupKey) current.push(row)
+    else groups.push([row])
+  }
+  if (groups.length < 2) return [rows, []]
+
+  const midpoint = rows.length / 2
+  let cumulative = 0
+  let bestGroupCount = 1
+  let bestDifference = Number.POSITIVE_INFINITY
+  for (let index = 0; index < groups.length - 1; index++) {
+    cumulative += groups[index].length
+    const difference = Math.abs(midpoint - cumulative)
+    if (difference < bestDifference) {
+      bestDifference = difference
+      bestGroupCount = index + 1
+    }
+  }
+
+  return [
+    groups.slice(0, bestGroupCount).flat(),
+    groups.slice(bestGroupCount).flat(),
+  ]
+}
+
+function inputListTable(section: InputListPrintSection, rows: InputListPrintRow[]) {
+  return `<table class="input-list-table">
+    <thead>
+      <tr>
+        <th class="input-list-type-col">Type</th>
+        ${section.columns.map(column => `<th>${esc(column)}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((row, index) => `
+        <tr class="${index > 0 && rows[index - 1].groupKey !== row.groupKey ? 'input-list-group-start' : ''}">
+          <td class="input-list-type">${esc(row.connectionType)}</td>
+          ${row.values.map(value => `<td>${value ? esc(value) : '<span class="muted">—</span>'}</td>`).join('')}
+        </tr>`).join('')}
+    </tbody>
+  </table>`
+}
+
 function inputListsSection(input: WorkbookPacketInput) {
   if (input.inputListDocuments.length === 0) {
     return `<section class="packet-page">${packetHeader('Input Lists', input.workbook)}<p class="empty">No room input lists are configured for this workbook.</p></section>`
@@ -174,21 +222,15 @@ function inputListsSection(input: WorkbookPacketInput) {
           <h2>${esc(section.name)}</h2>
           ${section.rows.length === 0 || section.columns.length === 0
             ? '<p class="input-list-empty">No configured connections.</p>'
-            : `<table class="input-list-table">
-                <thead>
-                  <tr>
-                    <th class="input-list-type-col">Type</th>
-                    ${section.columns.map(column => `<th>${esc(column)}</th>`).join('')}
-                  </tr>
-                </thead>
-                <tbody>
-                  ${section.rows.map(row => `
-                    <tr>
-                      <td class="input-list-type">${esc(row.connectionType)}</td>
-                      ${row.values.map(value => `<td>${value ? esc(value) : '<span class="muted">—</span>'}</td>`).join('')}
-                    </tr>`).join('')}
-                </tbody>
-              </table>`}
+            : (() => {
+                const [leftRows, rightRows] = splitInputListRows(section.rows)
+                return rightRows.length
+                  ? `<div class="input-list-table-pair">
+                      ${inputListTable(section, leftRows)}
+                      ${inputListTable(section, rightRows)}
+                    </div>`
+                  : inputListTable(section, leftRows)
+              })()}
         </section>`).join('')}
     </section>`).join('')
 }
@@ -315,11 +357,13 @@ export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   .intercom-table .total-col { width: .45in; }
   .input-list-block { margin-bottom: 14px; }
   .input-list-block h2 { margin-top: 0; padding: 5px 7px; background: #f1f5f9; }
+  .input-list-table-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .12in; align-items: start; }
   .input-list-table { table-layout: auto; }
   .input-list-table thead { display: table-header-group; }
-  .input-list-table th, .input-list-table td { padding: 4px 5px; font-size: 7.5px; overflow-wrap: anywhere; }
-  .input-list-table .input-list-type-col { width: .85in; }
-  .input-list-table .input-list-type { color: #64748b; font-size: 7px; font-weight: 700; }
+  .input-list-table th, .input-list-table td { padding: 3px 4px; font-size: 6.5px; overflow-wrap: anywhere; }
+  .input-list-table .input-list-type-col { width: .68in; }
+  .input-list-table .input-list-type { color: #64748b; font-size: 6px; font-weight: 700; }
+  .input-list-table .input-list-group-start td { border-top: 2px solid #9ca3af; }
   .input-list-empty { margin: 0; padding: 10px; color: #94a3b8; font-size: 8px; }
   .supplies-table .number-col { width: .3in; }
   .supplies-table .description-col { width: 2.2in; }

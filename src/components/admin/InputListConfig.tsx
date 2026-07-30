@@ -35,6 +35,7 @@ import {
   deleteInputListColumn,
   deleteInputListRow,
   deleteInputListSection,
+  groupInputListRows,
   loadInputListConfiguration,
   renameInputListSection,
   reorderInputListColumns,
@@ -368,6 +369,12 @@ export function InputListConfig({ locations }: InputListConfigProps) {
   async function persistRoomValue(rowId: string, columnId: string, value: string) {
     try {
       await saveInputListRoomValue(rowId, columnId, value)
+      if (columnId === roomColumns[0]?.id) {
+        const nextSections = await loadInputListConfiguration(locationId)
+        const nextSection = nextSections.find(section => section.id === activeSectionId)
+        if (nextSection) await reorderInputListRows(nextSection.rows.map(row => row.id))
+        await reload(activeSectionId)
+      }
       setNotice('Room value saved.')
     } catch (err) {
       await reload(activeSectionId)
@@ -402,8 +409,10 @@ export function InputListConfig({ locations }: InputListConfigProps) {
     const newIndex = activeSection.rows.findIndex(row => row.id === over.id)
     if (oldIndex === -1 || newIndex === -1) return
     const previous = activeSection.rows
-    const reordered = arrayMove(activeSection.rows, oldIndex, newIndex)
-      .map((row, index) => ({ ...row, sort_order: index }))
+    const reordered = groupInputListRows(
+      arrayMove(activeSection.rows, oldIndex, newIndex),
+      activeSection.columns,
+    ).map((row, index) => ({ ...row, sort_order: index }))
     setSections(current => current.map(section =>
       section.id === activeSection.id ? { ...section, rows: reordered } : section,
     ))

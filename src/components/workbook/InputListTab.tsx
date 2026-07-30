@@ -10,6 +10,7 @@ import {
 import { Card } from '../ui/Card'
 import {
   INPUT_LIST_CONNECTION_TYPES,
+  inputListRowGroupKey,
   loadInputListConfiguration,
   loadWorkbookInputListValues,
   saveWorkbookInputListValue,
@@ -229,8 +230,15 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                         </tr>
                       </thead>
                       <tbody>
-                        {section.rows.map(row => (
-                          <tr key={row.id} className="border-b border-gray-100 last:border-b-0">
+                        {section.rows.map((row, rowIndex) => {
+                          const startsGroup = rowIndex > 0
+                            && inputListRowGroupKey(row, section.columns)
+                              !== inputListRowGroupKey(section.rows[rowIndex - 1], section.columns)
+                          return (
+                            <tr
+                              key={row.id}
+                              className={`border-b border-gray-100 last:border-b-0 ${startsGroup ? 'border-t-2 border-t-gray-300' : ''}`}
+                            >
                             <td className="whitespace-nowrap border-r border-gray-100 bg-gray-50/70 px-3 py-2 text-[11px] font-semibold text-gray-500">
                               {typeLabel(row.connection_type)}
                             </td>
@@ -263,8 +271,9 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                                 </td>
                               )
                             })}
-                          </tr>
-                        ))}
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

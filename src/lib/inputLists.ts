@@ -22,13 +22,16 @@ export const INPUT_LIST_CONNECTION_TYPES: Array<{
   { key: 'bnc', label: 'BNC' },
 ]
 
+export interface InputListPrintRow {
+  connectionType: string
+  groupKey: string
+  values: string[]
+}
+
 export interface InputListPrintSection {
   name: string
   columns: string[]
-  rows: Array<{
-    connectionType: string
-    values: string[]
-  }>
+  rows: InputListPrintRow[]
 }
 
 export interface InputListPrintDocument {
@@ -38,6 +41,34 @@ export interface InputListPrintDocument {
 
 function sortByOrder<T extends { sort_order: number }>(rows: T[]) {
   return [...rows].sort((a, b) => a.sort_order - b.sort_order)
+}
+
+export function inputListRowGroupKey(
+  row: InputListRoomRow,
+  columns: InputListSectionColumn[],
+): string {
+  const primaryRoomColumn = columns.find(column => column.value_source === 'room')
+  if (!primaryRoomColumn) return `row:${row.id}`
+  const groupValue = row.room_values
+    .find(value => value.column_id === primaryRoomColumn.id)
+    ?.value
+    .trim()
+    .toLocaleLowerCase()
+  return groupValue ? `room:${groupValue}` : `row:${row.id}`
+}
+
+export function groupInputListRows(
+  rows: InputListRoomRow[],
+  columns: InputListSectionColumn[],
+): InputListRoomRow[] {
+  const grouped = new Map<string, InputListRoomRow[]>()
+  for (const row of rows) {
+    const key = inputListRowGroupKey(row, columns)
+    const group = grouped.get(key)
+    if (group) group.push(row)
+    else grouped.set(key, [row])
+  }
+  return [...grouped.values()].flat()
 }
 
 export async function loadInputListConfiguration(locationId: string): Promise<InputListSection[]> {
@@ -94,14 +125,18 @@ export async function loadInputListConfiguration(locationId: string): Promise<In
     roomValues = results.flatMap(result => (result.data ?? []) as InputListRoomValue[])
   }
 
-  return sortByOrder(sections).map(section => ({
-    ...section,
-    columns: sortByOrder(columns.filter(column => column.section_id === section.id)),
-    rows: sortByOrder(rows.filter(row => row.section_id === section.id)).map(row => ({
+  return sortByOrder(sections).map(section => {
+    const sectionColumns = sortByOrder(columns.filter(column => column.section_id === section.id))
+    const sectionRows = sortByOrder(rows.filter(row => row.section_id === section.id)).map(row => ({
       ...row,
       room_values: roomValues.filter(value => value.row_id === row.id),
-    })),
-  }))
+    }))
+    return {
+      ...section,
+      columns: sectionColumns,
+      rows: groupInputListRows(sectionRows, sectionColumns),
+    }
+  })
 }
 
 export async function createInputListSection(
@@ -325,6 +360,7 @@ export async function loadWorkbookInputListDocuments(
         columns: section.columns.map(column => column.name),
         rows: section.rows.map(row => ({
           connectionType: INPUT_LIST_CONNECTION_TYPES.find(option => option.key === row.connection_type)?.label ?? row.connection_type,
+          groupKey: inputListRowGroupKey(row, section.columns),
           values: section.columns.map(column => {
             if (column.value_source === 'room') {
               return row.room_values.find(value => value.column_id === column.id)?.value ?? ''

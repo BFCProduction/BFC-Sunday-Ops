@@ -308,6 +308,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260726003000_051_workbook_supplies.sql`
 - `supabase/migrations/20260729184500_052_workbook_crew_pco_sync.sql`
 - `supabase/migrations/20260730160000_053_workbook_input_lists.sql`
+- `supabase/migrations/20260730190000_054_group_input_list_connections.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

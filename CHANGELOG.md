@@ -9,6 +9,8 @@
 - Seeded a Sanctuary starter configuration from the existing Sunday-morning I/O worksheet while leaving production-specific assignments blank.
 - Added Input Lists as selectable pages in the existing whole-workbook Print / PDF packet, with no standalone print action.
 - Added migration `053_workbook_input_lists`.
+- Grouped all connections that share the same primary room value (such as a floor box) even when their connection types differ, and added migration `054_group_input_list_connections` to normalize existing room inventories.
+- Input List print pages now split each section into two balanced tables side by side, keeping each room group in one print column.
 
 ## 2026-07-29 — PCO crew sync + event timing cleanup
 
