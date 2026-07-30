@@ -3,7 +3,7 @@ import {
   AlertTriangle, ArrowLeft, ArrowRight, BookOpen, CalendarDays, CalendarPlus,
   Check, Columns3, Copy, Filter, History, LayoutGrid,
   Link2, List, MapPin, Pencil, Plus, Printer, RadioTower, Save,
-  Send, ShoppingCart, Trash2, Users, X,
+  Send, ShoppingCart, TableProperties, Trash2, Users, X,
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
@@ -54,8 +54,10 @@ import { CrewTab } from '../components/workbook/CrewTab'
 import { IntercomGrid } from '../components/workbook/IntercomGrid'
 import { SuppliesTab } from '../components/workbook/SuppliesTab'
 import { WorkbookPrintModal } from '../components/workbook/WorkbookPrintModal'
+import { InputListTab } from '../components/workbook/InputListTab'
 import { QuickCreateModal } from '../components/layout/QuickCreateModal'
 import { workbookScheduleDiff, type DiffScheduleItem, type DiffEvent } from '../lib/workbookDiff'
+import { loadWorkbookInputListDocuments } from '../lib/inputLists'
 import type {
   CrewRole,
   Department,
@@ -924,7 +926,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [pcoMeta, setPcoMeta] = useState<Record<string, PcoTimeMeta>>({})
   const [assigningPcoRow, setAssigningPcoRow] = useState<DisplayRow | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
-  const [tab, setTab] = useState<'schedule' | 'events' | 'crew' | 'intercom' | 'supplies'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'events' | 'crew' | 'intercom' | 'inputList' | 'supplies'>('schedule')
   const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
   const [loading, setLoading] = useState(true)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
@@ -1311,6 +1313,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       const pay = sections.includes('crewPay')
         ? buildWorkbookPayLines(crew, users, crewRoles)
         : { lines: [], totalHours: 0, totalPay: 0 }
+      const inputListDocuments = sections.includes('inputLists')
+        ? await loadWorkbookInputListDocuments(
+            activeWorkbook.id,
+            locations,
+            linkedEvents.map(event => event.workbookLocationId).filter((id): id is string => Boolean(id)),
+          )
+        : []
 
       let intercomEvents: IntercomPrintEvent[] = []
       if (sections.includes('intercom')) {
@@ -1349,6 +1358,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         workbook: activeWorkbook,
         sections,
         scheduleRows: rows,
+        inputListDocuments,
         supplies,
         departments: departmentOptions,
         intercomEvents,
@@ -1536,6 +1546,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 {([
                   ['schedule', 'Schedule', CalendarDays],
                   ['events', 'Events', Link2],
+                  ['inputList', 'Input List', TableProperties],
                 ] as const).map(([id, label, Icon]) => (
                   <button key={id} onClick={() => setTab(id)} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === id ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
                     <Icon className="h-4 w-4" /> {label}
@@ -1791,6 +1802,15 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
               />
             )}
 
+            {tab === 'inputList' && (
+              <InputListTab
+                workbook={activeWorkbook}
+                locations={locations}
+                linkedEvents={linkedEvents}
+                editable={isAdmin}
+              />
+            )}
+
             {tab === 'supplies' && isAdmin && (
               <SuppliesTab
                 workbook={activeWorkbook}
@@ -1831,6 +1851,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       {showPrintPacket && activeWorkbook && (
         <WorkbookPrintModal
           canIncludeIntercom={isAdmin && linkedEvents.length > 0}
+          canIncludeInputLists={locations.length > 0}
           canIncludeSupplies={isAdmin && supplies.length > 0}
           canIncludeCallSheets={isAdmin && crew.some(member => !member.is_open)}
           canIncludeCrewPay={isAdmin && crew.some(member => member.is_paid && !member.is_open)}

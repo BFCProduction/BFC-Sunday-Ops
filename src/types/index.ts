@@ -327,6 +327,63 @@ export interface WorkbookSupplyItem {
   updated_at: string
 }
 
+// -- Workbook input lists ------------------------------------------------------
+
+export type InputListColumnSource = 'room' | 'workbook'
+export type InputListConnectionType =
+  | 'audio_input'
+  | 'audio_output'
+  | 'monitor_output'
+  | 'network'
+  | 'fiber'
+  | 'bnc'
+
+export interface InputListSectionColumn {
+  id: string
+  section_id: string
+  name: string
+  value_source: InputListColumnSource
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface InputListRoomValue {
+  row_id: string
+  column_id: string
+  value: string
+  updated_at: string
+}
+
+export interface InputListRoomRow {
+  id: string
+  section_id: string
+  connection_type: InputListConnectionType
+  sort_order: number
+  created_at: string
+  updated_at: string
+  room_values: InputListRoomValue[]
+}
+
+export interface InputListSection {
+  id: string
+  location_id: string
+  name: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+  columns: InputListSectionColumn[]
+  rows: InputListRoomRow[]
+}
+
+export interface WorkbookInputListValue {
+  workbook_id: string
+  row_id: string
+  column_id: string
+  value: string
+  updated_at: string
+}
+
 // -- Workbook intercom grid ----------------------------------------------------
 
 export type IntercomPackTypeKey = 'wired' | 'wireless'

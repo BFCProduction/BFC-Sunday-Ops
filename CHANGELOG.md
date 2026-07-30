@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-30 — Room-aware Workbook Input Lists
+
+- Added an Input List tab to every workbook. Room-defined infrastructure is displayed as plain read-only values while workbook-entry cells autosave production-specific source, device, person, destination, and monitor assignments.
+- Added a dedicated top-level **Workbook Settings** area and split its growing configuration into focused tabs for Locations, Departments, Schedule Types, Crew Roles, Intercom, and Input Lists.
+- Input List settings support reusable room sections, configurable room-defined/workbook-entry columns, and drag ordering for sections, columns, and every room connection row.
+- Added Audio Input, Audio Output, Monitor Output, Network, Fiber, and BNC connection types.
+- Seeded a Sanctuary starter configuration from the existing Sunday-morning I/O worksheet while leaving production-specific assignments blank.
+- Added Input Lists as selectable pages in the existing whole-workbook Print / PDF packet, with no standalone print action.
+- Added migration `053_workbook_input_lists`.
+
 ## 2026-07-29 — PCO crew sync + event timing cleanup
 
 - Removed the workbook-only event end-time field from attached event rows. Planning Center remains the owner of event timing; the Events tab now saves only the workbook location assignment.

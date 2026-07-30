@@ -32,17 +32,18 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **Production Docs** — per-event stage plots, input lists, run sheets, and other files; Google Drive auto-sync via a service account + filename convention; manual upload (PDF) or Drive/Sheets link via admin UI; horizontal tab bar, full-width inline viewer on desktop, Google Docs Viewer on mobile for pinch-to-zoom
 - **Workbooks** — a scheduling layer above events for multi-event / multi-day productions (conferences, assemblies). Reachable from the sidebar, mobile nav, and Home; writes are admin-gated. Includes:
   - **Workbook library + focused workspace** — Workbooks opens to a dedicated library for choosing or creating a production. Opening a workbook uses the full content width, with an **All Workbooks** control to return to the library instead of a permanent workbook-switching rail.
-  - **Production Config** in Settings (admin-only): manage and drag to reorder account-level Locations, Departments, Roles (+ hourly rate), and schedule-item Types. Workbook selectors and views respect the saved order.
+  - **Workbook Settings** in Settings (admin-only): a tabbed configuration area for Locations, Departments, Roles (+ hourly rate), schedule-item Types, Intercom, and room Input Lists. Ordered lists use drag-and-drop and workbook selectors respect the saved order.
   - **PCO-first event manager** — the Events tab is a focused list of attached workbook events plus one **Add Event** action. Workbook events are created from Planning Center plans and attached atomically; non-PCO production activities are entered as Schedule items. The plan picker hides plans before the workbook start date and sorts the remaining plans chronologically.
   - **Schedule** — a chronological Detail view plus **By Room** and **By Department** views on a shared time-axis grid (time down the left, one column per room/department, items positioned by real start/end, same-column overlaps flagged as conflicts). Day-N labels (Day 1 = the workbook's earliest event).
   - **PCO plan times** pulled into the schedule read-only and kept in sync (never stored); each can be assigned a room + departments via an overlay.
   - **Crew roster** (admin only) — assigned people automatically sync from every attached event's Planning Center plan when the Crew tab opens. PCO owns assignment membership; Sunday Ops keeps editable role mapping, call/release times, and paid/volunteer flags. Manual guests and open/TBD rows remain supported; shared call times cluster onto the schedule.
   - **Call sheets** — printable per-person schedule (per-day call/release, role, event), with crew avatars.
   - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), calculated client-side in the admin-only Crew tab, shown per row, and totaled per person across the workbook, with a printable business-office pay report. The deployed `workbook-pay` Edge Function remains available for the future raw-rate security hardening.
-  - **Intercom Grid** (admin only) — event-scoped assignments pulled from the workbook crew roster. Duplicate rows for the same person collapse; workbook-wide crew appear on every attached event while event-specific crew stay scoped to their event. Each person gets a wired/wireless/no-intercom assignment and per-channel **Momentary / Latch / Off** settings. Production Config owns global pack capacities, the reusable master channel list, and per-role starting defaults; an event can add or remove its own channel columns without changing the master list. Over-capacity pack counts are flagged.
+  - **Intercom Grid** (admin only) — event-scoped assignments pulled from the workbook crew roster. Duplicate rows for the same person collapse; workbook-wide crew appear on every attached event while event-specific crew stay scoped to their event. Each person gets a wired/wireless/no-intercom assignment and per-channel **Momentary / Latch / Off** settings. Workbook Settings owns global pack capacities, the reusable master channel list, and per-role starting defaults; an event can add or remove its own channel columns without changing the master list. Over-capacity pack counts are flagged.
+  - **Input List** — a room-aware workbook document built from reusable sections, configurable columns, and an ordered connection inventory. Room-defined infrastructure is shown read-only while production-specific inputs, outputs, devices, people, destinations, and monitor assignments autosave in the workbook. Connection types include audio input, audio output, monitor output, network, fiber, and BNC.
   - **Supplies** (admin only) — a workbook-wide shopping list for consumables, décor, and miscellaneous purchases. Each row stores item, description, quantity, unit price, optional department, and purchase link; the tab calculates line totals and a workbook estimate.
   - **Send Update** — snapshots the schedule, diffs it against the last sent version, and produces a copyable change summary for occasional crew.
-  - **Workbook print packet** — one Print / PDF control with selectable pages for the detail schedule, Supplies shopping list, event Intercom Grids, per-person call sheets, and the admin-only business-office pay report. Events attach to a workbook + location with an end time.
+  - **Workbook print packet** — one Print / PDF control with selectable pages for the detail schedule, room Input Lists, Supplies shopping list, event Intercom Grids, per-person call sheets, and the admin-only business-office pay report.
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -219,7 +220,7 @@ Completed (previously listed as pending):
 - `special_events` — legacy bridge table retained for older standalone/non-Sunday events; new standalone event creation writes directly to `events`
 - `event_checklist_items` — per-event checklist items (snapshotted from Sunday blueprints or standalone event templates)
 - `event_checklist_completions` — completions for event checklist items
-- **Production Config — account-level reference data managed in Settings (migration `045`):**
+- **Workbook Settings / Production Config — account-level reference data managed in Settings (migration `045`):**
   - `locations` — rooms/venues, referenced by workbooks and events (replaces the per-workbook `workbook_locations`, which was dropped)
   - `departments` — production departments used to tag schedule items and crew
   - `roles` — crew roles with an `hourly_rate` and an optional `department_id` (migration `049`). Rate/pay are admin-only, computed for verified admins (see the `workbook-pay` Edge Function). Raw-rate anon lockdown is a pending follow-up.
@@ -230,6 +231,10 @@ Completed (previously listed as pending):
 - `workbook_pco_time_meta` — room + department annotation for a read-only PCO plan time, keyed by (`event_id`, `pco_time_id`) (migration `046`)
 - `workbook_crew` — crew roster: person (PCO user / manual guest / open TBD), role, day (+ optional event), call/release times, paid flag (migration `047`)
   - Migration `052` adds PCO assignment identity/source fields so linked-plan crew can sync without duplicating rows or overwriting Sunday Ops call/release/pay details.
+- **Input List room configuration + workbook values (migration `053`):**
+  - `input_list_sections`, `input_list_columns`, and `input_list_rows` — ordered, location-specific document structure and connection inventory
+  - `input_list_room_values` — reusable fixed infrastructure values shown read-only inside workbooks
+  - `workbook_input_list_values` — production-specific values keyed to a workbook, room connection row, and workbook-entry column
 - **Intercom configuration + event grids (migration `050`):**
   - `intercom_pack_types` — account-level wired/wireless availability counts (future specific equipment can attach without replacing the pack type)
   - `intercom_channels` — reusable master channel list
@@ -302,6 +307,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260725211500_050_workbook_intercom.sql`
 - `supabase/migrations/20260726003000_051_workbook_supplies.sql`
 - `supabase/migrations/20260729184500_052_workbook_crew_pco_sync.sql`
+- `supabase/migrations/20260730160000_053_workbook_input_lists.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

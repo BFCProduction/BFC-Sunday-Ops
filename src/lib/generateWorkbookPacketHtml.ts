@@ -2,8 +2,9 @@ import type { CallSheetPerson } from './generateCallSheetHtml'
 import type { PayLine } from './generatePayReportHtml'
 import type { Department, Workbook, WorkbookIntercomChannel, WorkbookSupplyItem } from '../types'
 import type { WorkbookScheduleExportRow } from './generateWorkbookScheduleHtml'
+import type { InputListPrintDocument } from './inputLists'
 
-export type WorkbookPrintSection = 'schedule' | 'supplies' | 'intercom' | 'callSheets' | 'crewPay'
+export type WorkbookPrintSection = 'schedule' | 'inputLists' | 'supplies' | 'intercom' | 'callSheets' | 'crewPay'
 
 export interface IntercomPrintRow {
   name: string
@@ -24,6 +25,7 @@ export interface WorkbookPacketInput {
   workbook: Workbook
   sections: WorkbookPrintSection[]
   scheduleRows: WorkbookScheduleExportRow[]
+  inputListDocuments: InputListPrintDocument[]
   supplies: WorkbookSupplyItem[]
   departments: Department[]
   intercomEvents: IntercomPrintEvent[]
@@ -159,6 +161,38 @@ function intercomSection(input: WorkbookPacketInput) {
   }).join('')
 }
 
+function inputListsSection(input: WorkbookPacketInput) {
+  if (input.inputListDocuments.length === 0) {
+    return `<section class="packet-page">${packetHeader('Input Lists', input.workbook)}<p class="empty">No room input lists are configured for this workbook.</p></section>`
+  }
+
+  return input.inputListDocuments.map(document => `
+    <section class="packet-page input-list-page">
+      ${packetHeader('Input List', input.workbook, document.locationName)}
+      ${document.sections.map(section => `
+        <section class="input-list-block">
+          <h2>${esc(section.name)}</h2>
+          ${section.rows.length === 0 || section.columns.length === 0
+            ? '<p class="input-list-empty">No configured connections.</p>'
+            : `<table class="input-list-table">
+                <thead>
+                  <tr>
+                    <th class="input-list-type-col">Type</th>
+                    ${section.columns.map(column => `<th>${esc(column)}</th>`).join('')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${section.rows.map(row => `
+                    <tr>
+                      <td class="input-list-type">${esc(row.connectionType)}</td>
+                      ${row.values.map(value => `<td>${value ? esc(value) : '<span class="muted">—</span>'}</td>`).join('')}
+                    </tr>`).join('')}
+                </tbody>
+              </table>`}
+        </section>`).join('')}
+    </section>`).join('')
+}
+
 function suppliesSection(input: WorkbookPacketInput) {
   const departmentById = new Map(input.departments.map(department => [department.id, department.name]))
   const total = input.supplies.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
@@ -231,6 +265,7 @@ function paySection(input: WorkbookPacketInput) {
 export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   const sectionHtml = input.sections.map(section => {
     if (section === 'schedule') return scheduleSection(input)
+    if (section === 'inputLists') return inputListsSection(input)
     if (section === 'supplies') return suppliesSection(input)
     if (section === 'intercom') return intercomSection(input)
     if (section === 'callSheets') return callSheetSection(input)
@@ -278,6 +313,14 @@ export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   .intercom-table .role-col { width: 1.55in; text-align: left; }
   .intercom-table .pack-col { width: .8in; text-align: left; }
   .intercom-table .total-col { width: .45in; }
+  .input-list-block { margin-bottom: 14px; }
+  .input-list-block h2 { margin-top: 0; padding: 5px 7px; background: #f1f5f9; }
+  .input-list-table { table-layout: auto; }
+  .input-list-table thead { display: table-header-group; }
+  .input-list-table th, .input-list-table td { padding: 4px 5px; font-size: 7.5px; overflow-wrap: anywhere; }
+  .input-list-table .input-list-type-col { width: .85in; }
+  .input-list-table .input-list-type { color: #64748b; font-size: 7px; font-weight: 700; }
+  .input-list-empty { margin: 0; padding: 10px; color: #94a3b8; font-size: 8px; }
   .supplies-table .number-col { width: .3in; }
   .supplies-table .description-col { width: 2.2in; }
   .supplies-table .quantity-col { width: .55in; }

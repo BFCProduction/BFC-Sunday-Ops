@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileDown, Globe, Loader2, Settings as SettingsIcon, SlidersHorizontal, Users } from 'lucide-react'
+import { BookOpen, FileDown, Globe, Loader2, Settings as SettingsIcon, Users } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { ProductionConfig } from '../components/admin/ProductionConfig'
 import { useAdmin } from '../context/adminState'
@@ -45,6 +45,7 @@ async function openPdf(eventId: string) {
 export function Settings() {
   const { isAdmin, sessionToken, user } = useAdmin()
   const { activeEventId, timezone } = useSunday()
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'app' | 'reporting' | 'workbooks' | 'people'>('app')
 
   // ── Timezone state ──
   const [churchTimezone, setChurchTimezone] = useState(timezone)
@@ -179,10 +180,39 @@ export function Settings() {
         <h2 className="text-gray-900 font-bold text-lg">Settings</h2>
       </div>
 
-      <div className="p-5 space-y-8 max-w-3xl">
+      <div className="max-w-5xl p-5">
+        <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-1">
+          {[
+            { id: 'app', label: 'App Settings', icon: Globe },
+            { id: 'reporting', label: 'Reporting', icon: FileDown },
+            ...(isAdmin
+              ? [
+                  { id: 'workbooks', label: 'Workbook Settings', icon: BookOpen },
+                  { id: 'people', label: 'People & Access', icon: Users },
+                ] as const
+              : []),
+          ].map(tab => {
+            const Icon = tab.icon
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveSettingsTab(tab.id as typeof activeSettingsTab)}
+                className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  activeSettingsTab === tab.id
+                    ? 'bg-white text-blue-700 shadow-sm'
+                    : 'text-gray-500 hover:bg-white/70 hover:text-gray-800'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
 
         {/* ── App Settings ── */}
-        <div>
+        {activeSettingsTab === 'app' && <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">App Settings</p>
 
           {/* Timezone */}
@@ -269,10 +299,10 @@ export function Settings() {
             )}
           </Card>
 
-        </div>
+        </div>}
 
         {/* ── Reporting ── */}
-        <div>
+        {activeSettingsTab === 'reporting' && <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Reporting</p>
 
           {/* Report export */}
@@ -311,21 +341,21 @@ export function Settings() {
             {reportEventsError && <p className="text-red-600 text-xs mt-3">{reportEventsError}</p>}
           </Card>
 
-        </div>
+        </div>}
 
         {/* ── Production Config ── */}
-        {isAdmin && (
+        {isAdmin && activeSettingsTab === 'workbooks' && (
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-500" />
-              Production Config
+              <BookOpen className="w-3.5 h-3.5 text-blue-500" />
+              Workbook Settings
             </p>
             <ProductionConfig />
           </div>
         )}
 
         {/* ── People & Access ── */}
-        {isAdmin && (
+        {isAdmin && activeSettingsTab === 'people' && (
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
               <Users className="w-3.5 h-3.5 text-blue-500" />

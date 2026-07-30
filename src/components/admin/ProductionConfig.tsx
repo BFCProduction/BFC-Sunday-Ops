@@ -42,6 +42,7 @@ import {
   updateIntercomPackCapacity,
   type IntercomConfig,
 } from '../../lib/intercom'
+import { InputListConfig } from './InputListConfig'
 
 interface NamedRow { id: string; name: string }
 
@@ -585,6 +586,7 @@ function IntercomConfigManager({ roles }: { roles: CrewRole[] }) {
 }
 
 export function ProductionConfig() {
+  const [activeTab, setActiveTab] = useState<'locations' | 'departments' | 'scheduleTypes' | 'roles' | 'intercom' | 'inputLists'>('locations')
   const [locations, setLocations] = useState<Location[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [types, setTypes] = useState<ScheduleItemType[]>([])
@@ -669,43 +671,78 @@ export function ProductionConfig() {
   }
   if (loadError) return <p className="text-red-600 text-sm">{loadError}</p>
 
+  const tabs = [
+    { id: 'locations', label: 'Locations' },
+    { id: 'departments', label: 'Departments' },
+    { id: 'scheduleTypes', label: 'Schedule Types' },
+    { id: 'roles', label: 'Crew Roles' },
+    { id: 'intercom', label: 'Intercom' },
+    { id: 'inputLists', label: 'Input Lists' },
+  ] as const
+
   return (
     <div>
-      <ListManager
-        title="Locations"
-        description="Rooms and venues used across workbooks and events. Referenced when scheduling."
-        icon={<MapPin className="w-4 h-4 text-blue-600" />}
-        addPlaceholder="Add a location, e.g. Sanctuary"
-        rows={locations}
-        onAdd={async name => { await createLocation(name, nextSortOrder(locations)); await reloadLocations() }}
-        onRename={async (id, name) => { await renameLocation(id, name); await reloadLocations() }}
-        onDelete={async id => { await deleteLocation(id); await reloadLocations() }}
-        onReorder={saveLocationOrder}
-      />
-      <ListManager
-        title="Departments"
-        description="Production departments used to tag schedule items and (later) crew."
-        icon={<Users className="w-4 h-4 text-blue-600" />}
-        addPlaceholder="Add a department, e.g. Audio"
-        rows={departments}
-        onAdd={async name => { await createDepartment(name, nextSortOrder(departments)); await reloadDepartments() }}
-        onRename={async (id, name) => { await renameDepartment(id, name); await reloadDepartments() }}
-        onDelete={async id => { await deleteDepartment(id); await reloadDepartments() }}
-        onReorder={saveDepartmentOrder}
-      />
-      <ListManager
-        title="Schedule item types"
-        description="The kinds of activity you can put on a schedule (call, rehearsal, meal, …). Add your own; each new type gets a default icon you can refine later."
-        icon={<Tag className="w-4 h-4 text-blue-600" />}
-        addPlaceholder="Add a type, e.g. Soundcheck"
-        rows={types.map(t => ({ id: t.id, name: t.label }))}
-        onAdd={async label => { await createScheduleItemType(label, nextSortOrder(types)); await reloadTypes() }}
-        onRename={async (id, label) => { await renameScheduleItemType(id, label); await reloadTypes() }}
-        onDelete={async id => { await deleteScheduleItemType(id); await reloadTypes() }}
-        onReorder={saveTypeOrder}
-      />
-      <RolesManager roles={roles} departments={departments} reload={reloadRoles} onReorder={saveRoleOrder} />
-      <IntercomConfigManager roles={roles} />
+      <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-1">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+              activeTab === tab.id
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-gray-500 hover:bg-white/70 hover:text-gray-800'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'locations' && (
+        <ListManager
+          title="Locations"
+          description="Rooms and venues used across workbooks and events. Referenced when scheduling."
+          icon={<MapPin className="w-4 h-4 text-blue-600" />}
+          addPlaceholder="Add a location, e.g. Sanctuary"
+          rows={locations}
+          onAdd={async name => { await createLocation(name, nextSortOrder(locations)); await reloadLocations() }}
+          onRename={async (id, name) => { await renameLocation(id, name); await reloadLocations() }}
+          onDelete={async id => { await deleteLocation(id); await reloadLocations() }}
+          onReorder={saveLocationOrder}
+        />
+      )}
+      {activeTab === 'departments' && (
+        <ListManager
+          title="Departments"
+          description="Production departments used to tag schedule items and (later) crew."
+          icon={<Users className="w-4 h-4 text-blue-600" />}
+          addPlaceholder="Add a department, e.g. Audio"
+          rows={departments}
+          onAdd={async name => { await createDepartment(name, nextSortOrder(departments)); await reloadDepartments() }}
+          onRename={async (id, name) => { await renameDepartment(id, name); await reloadDepartments() }}
+          onDelete={async id => { await deleteDepartment(id); await reloadDepartments() }}
+          onReorder={saveDepartmentOrder}
+        />
+      )}
+      {activeTab === 'scheduleTypes' && (
+        <ListManager
+          title="Schedule item types"
+          description="The kinds of activity you can put on a schedule (call, rehearsal, meal, …). Add your own; each new type gets a default icon you can refine later."
+          icon={<Tag className="w-4 h-4 text-blue-600" />}
+          addPlaceholder="Add a type, e.g. Soundcheck"
+          rows={types.map(t => ({ id: t.id, name: t.label }))}
+          onAdd={async label => { await createScheduleItemType(label, nextSortOrder(types)); await reloadTypes() }}
+          onRename={async (id, label) => { await renameScheduleItemType(id, label); await reloadTypes() }}
+          onDelete={async id => { await deleteScheduleItemType(id); await reloadTypes() }}
+          onReorder={saveTypeOrder}
+        />
+      )}
+      {activeTab === 'roles' && (
+        <RolesManager roles={roles} departments={departments} reload={reloadRoles} onReorder={saveRoleOrder} />
+      )}
+      {activeTab === 'intercom' && <IntercomConfigManager roles={roles} />}
+      {activeTab === 'inputLists' && <InputListConfig locations={locations} />}
     </div>
   )
 }
