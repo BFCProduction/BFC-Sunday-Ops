@@ -2,9 +2,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { getValidPcoToken, pcoReauthBody, type PcoSessionTokens } from '../_shared/pco-token.ts'
 
-// Mirrors the assigned people from every PCO-linked event in a workbook into
-// workbook_crew. PCO owns assignment membership; Sunday Ops preserves local
-// call/release, pay, and role-override fields on rows that already exist.
+// Mirrors the assigned Production-team people from every PCO-linked event in a
+// workbook into workbook_crew. PCO owns assignment membership; Sunday Ops
+// preserves local call/release, pay, and role-override fields on existing rows.
 
 const ALLOWED_ORIGINS = [
   'https://bfcproduction.github.io',
@@ -12,6 +12,7 @@ const ALLOWED_ORIGINS = [
 ]
 
 const PCO_API_BASE = 'https://api.planningcenteronline.com/services/v2'
+const PRODUCTION_TEAM_NAME = 'production'
 
 function corsHeaders(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -60,6 +61,20 @@ interface PcoPlanPerson {
         id?: string
       } | null
     }
+    team?: {
+      data?: {
+        id?: string
+        type?: string
+      } | null
+    }
+  }
+}
+
+interface PcoTeam {
+  id: string
+  type: string
+  attributes: {
+    name: string | null
   }
 }
 
@@ -84,9 +99,10 @@ async function fetchPlanPeople(
 
   for (const serviceTypeId of candidateServiceTypeIds) {
     const collected: PcoPlanPerson[] = []
+    const teamNameById = new Map<string, string>()
     let nextUrl: string | null = `${PCO_API_BASE}/service_types/${serviceTypeId}`
       + `/plans/${planId}/team_members`
-      + '?per_page=100&filter=not_archived,not_declined,not_deleted'
+      + '?per_page=100&filter=not_archived,not_declined,not_deleted&include=team'
 
     try {
       let pageGuard = 0
@@ -108,9 +124,15 @@ async function fetchPlanPeople(
         lastError = null
         const body = await response.json() as {
           data?: PcoPlanPerson[]
+          included?: PcoTeam[]
           links?: { next?: string | null }
         }
         collected.push(...(body.data ?? []))
+        for (const team of body.included ?? []) {
+          if (team.type === 'Team') {
+            teamNameById.set(team.id, normalized(team.attributes.name))
+          }
+        }
         nextUrl = body.links?.next ?? null
         pageGuard++
       }
@@ -118,7 +140,11 @@ async function fetchPlanPeople(
       if (collected.length > 0 || !lastError) {
         return collected.filter(member => {
           const status = normalized(member.attributes.status)
-          return status !== 'd' && status !== 'declined'
+          const teamId = member.relationships?.team?.data?.id
+          const teamName = teamId ? teamNameById.get(teamId) : null
+          return status !== 'd'
+            && status !== 'declined'
+            && teamName === PRODUCTION_TEAM_NAME
         })
       }
     } catch (error) {

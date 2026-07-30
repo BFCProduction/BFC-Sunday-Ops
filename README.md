@@ -249,7 +249,7 @@ Functions:
 
 Edge Functions (workbook):
 - `workbook-pay` — admin-only (verifies the PCO session token + `is_admin`); computes crew pay for a workbook and returns it only to verified admins. Deployed; wired in for the raw-rate lockdown (crew pay is currently computed client-side in the admin-only Crew tab).
-- `pco-workbook-crew` — admin-only; mirrors non-declined team assignments from every attached event's linked PCO plan into `workbook_crew` while preserving workbook-local call/release, pay, and role overrides.
+- `pco-workbook-crew` — admin-only; mirrors non-declined assignments from the **Production** team on every attached event's linked PCO plan into `workbook_crew` while preserving workbook-local call/release, pay, and role overrides.
 
 Views:
 - `analytics_records` — view over `service_records` that remaps legacy service-type values, exposes event identity/time/labels, and powers Analytics screens. As of migration `043`, it filters to events with `include_in_analytics = true` plus legacy `service_records` rows that have no `event_id` (pre-events historical data).
