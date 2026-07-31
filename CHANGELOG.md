@@ -7,7 +7,13 @@
 - Unmatched PCO positions now display as **Not assigned** in the Role column instead of showing PCO role text that looks like a successful local role assignment.
 - Crew rows now start in Planning Center assignment order and can be reordered by dragging within each event. Manual ordering is persisted and protected from later PCO syncs by migration `055_workbook_crew_manual_order`; manually added or newly synced rows append without disturbing an existing custom order.
 - Replaced per-person edit pencils with one page-level **Edit crew / Done** mode. The default roster is fully read-only; edit mode exposes inline role, call, release, and Paid/Volunteer controls plus drag handles, Add Crew, and manual-row deletion. Inline changes autosave, so bulk roster cleanup no longer requires opening a modal for every person.
+- Standardized every event roster onto the same fixed column grid, so Type, Hours, and Pay remain aligned whether an event contains paid dollar amounts or only volunteer dashes.
 - Call, Release, Hours, and Pay values on the Crew tab now use the app's normal font instead of the monospace font.
+- Crew, Intercom, and Supplies workbook tabs are now visible to non-admins in read-only mode. Crew hides the Type and Pay columns plus the total-pay section for non-admins, while admin editing and PCO sync controls remain protected.
+- Non-admin workbook packets can include non-financial Crew call sheets, Intercom grids, and Supplies pages, but the business-office crew-pay option is not shown and the export path rejects that section for non-admins.
+- PCO crew rows now retain a roster display name, with migration `056_workbook_crew_display_names` backfilling existing linked users so non-admins can see names without access to the protected user directory.
+- Supplies now use the app's standard font for row numbers, quantities, prices, line totals, and the estimated total. The Item column is wider, and quantities are restricted to whole numbers in both the editor and database; migration `057_workbook_supplies_whole_quantities` rounds legacy fractional values to the nearest whole number before enforcing the constraint.
+- Intercom talk controls now include **Latch/Momentary** alongside Momentary and Latch. Every normal channel also has an independent **Listen / Listen on Talk / Off** receive control, while Program is modeled and displayed only as an on/off audio-feed checkbox. Role defaults, event grids, read-only views, and printed Intercom packets all use the expanded states; migration `058_intercom_talk_listen_program_modes` preserves existing assignments and converts prior Program selections to enabled feeds.
 
 ## 2026-07-30 — Workbook Input Lists and Crew Workflow Cleanup
 

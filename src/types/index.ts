@@ -388,7 +388,14 @@ export interface WorkbookInputListValue {
 // -- Workbook intercom grid ----------------------------------------------------
 
 export type IntercomPackTypeKey = 'wired' | 'wireless'
-export type IntercomButtonMode = 'momentary' | 'latch'
+export type IntercomButtonMode = 'momentary' | 'latch' | 'latch_momentary'
+export type IntercomListenMode = 'listen' | 'listen_on_talk'
+
+export interface IntercomChannelState {
+  talk_mode: IntercomButtonMode | null
+  listen_mode: IntercomListenMode | null
+  program_enabled: boolean
+}
 
 export interface IntercomPackType {
   key: IntercomPackTypeKey
@@ -404,6 +411,7 @@ export interface IntercomChannel {
   name: string
   sort_order: number
   is_active: boolean
+  is_program: boolean
   created_at: string
   updated_at: string
 }
@@ -411,7 +419,7 @@ export interface IntercomChannel {
 export interface RoleIntercomDefault {
   role_id: string
   pack_type: IntercomPackTypeKey | null
-  channel_modes: Record<string, IntercomButtonMode>
+  channel_states: Record<string, IntercomChannelState>
 }
 
 export interface WorkbookIntercomChannel {
@@ -420,6 +428,7 @@ export interface WorkbookIntercomChannel {
   event_id: string
   master_channel_id: string | null
   name: string
+  is_program: boolean
   sort_order: number
   created_at: string
 }
@@ -431,7 +440,7 @@ export interface WorkbookIntercomAssignment {
   crew_key: string
   role_id: string | null
   pack_type: IntercomPackTypeKey | null
-  channel_modes: Record<string, IntercomButtonMode>
+  channel_states: Record<string, IntercomChannelState>
   created_at: string
   updated_at: string
 }

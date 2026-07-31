@@ -18,6 +18,7 @@ import { buildWorkbookCallSheetPeople, buildWorkbookPayLines } from '../lib/work
 import {
   buildIntercomCrewIdentities,
   loadIntercomConfig,
+  loadWorkbookIntercomEvent,
   prepareWorkbookIntercomEvent,
 } from '../lib/intercom'
 import { loadAllSessions, supabase } from '../lib/supabase'
@@ -1300,6 +1301,9 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
   async function exportWorkbookPacket(sections: WorkbookPrintSection[]) {
     if (!activeWorkbook) return
+    // Financial pages are never accepted from a non-admin, even if a caller
+    // bypasses the print modal and invokes this function directly.
+    const permittedSections = isAdmin ? sections : sections.filter(section => section !== 'crewPay')
     const win = window.open('', '_blank')
     if (!win) throw new Error('Pop-up was blocked. Please allow pop-ups and try again.')
     win.document.open()
@@ -1307,13 +1311,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     win.document.close()
 
     try {
-      const callSheetPeople = sections.includes('callSheets')
+      const callSheetPeople = permittedSections.includes('callSheets')
         ? buildWorkbookCallSheetPeople(crew, linkedEvents, users, crewRoles)
         : []
-      const pay = sections.includes('crewPay')
+      const pay = permittedSections.includes('crewPay')
         ? buildWorkbookPayLines(crew, users, crewRoles)
         : { lines: [], totalHours: 0, totalPay: 0 }
-      const inputListDocuments = sections.includes('inputLists')
+      const inputListDocuments = permittedSections.includes('inputLists')
         ? await loadWorkbookInputListDocuments(
             activeWorkbook.id,
             locations,
@@ -1322,12 +1326,14 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         : []
 
       let intercomEvents: IntercomPrintEvent[] = []
-      if (sections.includes('intercom')) {
+      if (permittedSections.includes('intercom')) {
         const config = await loadIntercomConfig()
         const sorted = [...linkedEvents].sort((a, b) => a.date.localeCompare(b.date) || (a.eventTime ?? '').localeCompare(b.eventTime ?? ''))
         intercomEvents = await Promise.all(sorted.map(async event => {
           const identities = buildIntercomCrewIdentities(crew, event, users, crewRoles)
-          const eventData = await prepareWorkbookIntercomEvent(activeWorkbook.id, event.id, identities, config)
+          const eventData = isAdmin
+            ? await prepareWorkbookIntercomEvent(activeWorkbook.id, event.id, identities, config)
+            : await loadWorkbookIntercomEvent(activeWorkbook.id, event.id)
           const assignmentByCrew = new Map(eventData.assignments.map(assignment => [assignment.crew_key, assignment]))
           return {
             eventName: event.name,
@@ -1342,7 +1348,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 name: identity.name,
                 roles: identity.roleNames,
                 packType: packLabel,
-                channelModes: assignment?.channel_modes ?? {},
+                channelStates: assignment?.channel_states ?? {},
               }
             }),
             packUsage: config.packTypes.map(pack => ({
@@ -1356,7 +1362,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
       const html = generateWorkbookPacketHtml({
         workbook: activeWorkbook,
-        sections,
+        sections: permittedSections,
         scheduleRows: rows,
         inputListDocuments,
         supplies,
@@ -1552,19 +1558,15 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     <Icon className="h-4 w-4" /> {label}
                   </button>
                 ))}
-                {isAdmin && (
-                  <>
-                    <button onClick={() => setTab('crew')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'crew' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
-                      <Users className="h-4 w-4" /> Crew
-                    </button>
-                    <button onClick={() => setTab('intercom')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'intercom' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
-                      <RadioTower className="h-4 w-4" /> Intercom
-                    </button>
-                    <button onClick={() => setTab('supplies')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'supplies' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
-                      <ShoppingCart className="h-4 w-4" /> Supplies
-                    </button>
-                  </>
-                )}
+                <button onClick={() => setTab('crew')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'crew' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <Users className="h-4 w-4" /> Crew
+                </button>
+                <button onClick={() => setTab('intercom')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'intercom' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <RadioTower className="h-4 w-4" /> Intercom
+                </button>
+                <button onClick={() => setTab('supplies')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'supplies' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <ShoppingCart className="h-4 w-4" /> Supplies
+                </button>
               </div>
             </Card>
 
@@ -1779,7 +1781,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
               </div>
             )}
 
-            {tab === 'crew' && isAdmin && (
+            {tab === 'crew' && (
               <CrewTab
                 workbook={activeWorkbook}
                 workbookDays={workbookDays}
@@ -1787,18 +1789,20 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 users={users}
                 roles={crewRoles}
                 crew={crew}
+                isAdmin={isAdmin}
                 sessionToken={sessionToken}
                 onChanged={reloadCrew}
               />
             )}
 
-            {tab === 'intercom' && isAdmin && (
+            {tab === 'intercom' && (
               <IntercomGrid
                 workbook={activeWorkbook}
                 linkedEvents={linkedEvents}
                 users={users}
                 roles={crewRoles}
                 crew={crew}
+                editable={isAdmin}
               />
             )}
 
@@ -1811,11 +1815,12 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
               />
             )}
 
-            {tab === 'supplies' && isAdmin && (
+            {tab === 'supplies' && (
               <SuppliesTab
                 workbook={activeWorkbook}
                 departments={departmentOptions}
                 supplies={supplies}
+                editable={isAdmin}
                 onChanged={reloadSupplies}
               />
             )}
@@ -1850,11 +1855,12 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
       {showPrintPacket && activeWorkbook && (
         <WorkbookPrintModal
-          canIncludeIntercom={isAdmin && linkedEvents.length > 0}
+          canIncludeIntercom={linkedEvents.length > 0}
           canIncludeInputLists={locations.length > 0}
-          canIncludeSupplies={isAdmin && supplies.length > 0}
-          canIncludeCallSheets={isAdmin && crew.some(member => !member.is_open)}
+          canIncludeSupplies={supplies.length > 0}
+          canIncludeCallSheets={crew.some(member => !member.is_open)}
           canIncludeCrewPay={isAdmin && crew.some(member => member.is_paid && !member.is_open)}
+          showCrewPayOption={isAdmin}
           onPrint={exportWorkbookPacket}
           onClose={() => setShowPrintPacket(false)}
         />

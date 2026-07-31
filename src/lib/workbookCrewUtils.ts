@@ -12,7 +12,7 @@ function toMinutes(time: string | null): number | null {
 
 export function workbookCrewPersonName(member: WorkbookCrewMember, users: AppUser[]): string {
   if (member.is_open) return 'TBD'
-  if (member.user_id) return users.find(user => user.id === member.user_id)?.name ?? 'Unknown'
+  if (member.user_id) return users.find(user => user.id === member.user_id)?.name ?? member.person_name ?? 'Unknown'
   return member.person_name ?? 'Unknown'
 }
 

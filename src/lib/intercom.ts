@@ -4,6 +4,8 @@ import type {
   CrewRole,
   IntercomButtonMode,
   IntercomChannel,
+  IntercomChannelState,
+  IntercomListenMode,
   IntercomPackType,
   IntercomPackTypeKey,
   RoleIntercomDefault,
@@ -36,13 +38,17 @@ export interface WorkbookIntercomEventData {
 interface DefaultChannelRow {
   role_id: string
   channel_id: string
-  button_mode: IntercomButtonMode
+  button_mode: IntercomButtonMode | null
+  listen_mode: IntercomListenMode | null
+  program_enabled: boolean
 }
 
 interface ChannelAssignmentRow {
   assignment_id: string
   event_channel_id: string
-  button_mode: IntercomButtonMode
+  button_mode: IntercomButtonMode | null
+  listen_mode: IntercomListenMode | null
+  program_enabled: boolean
 }
 
 export async function loadIntercomConfig(): Promise<IntercomConfig> {
@@ -57,11 +63,15 @@ export async function loadIntercomConfig(): Promise<IntercomConfig> {
   if (defaultResult.error) throw defaultResult.error
   if (defaultChannelResult.error) throw defaultChannelResult.error
 
-  const modesByRole = new Map<string, Record<string, IntercomButtonMode>>()
+  const statesByRole = new Map<string, Record<string, IntercomChannelState>>()
   for (const row of (defaultChannelResult.data ?? []) as DefaultChannelRow[]) {
-    const modes = modesByRole.get(row.role_id) ?? {}
-    modes[row.channel_id] = row.button_mode
-    modesByRole.set(row.role_id, modes)
+    const states = statesByRole.get(row.role_id) ?? {}
+    states[row.channel_id] = {
+      talk_mode: row.button_mode,
+      listen_mode: row.listen_mode,
+      program_enabled: row.program_enabled,
+    }
+    statesByRole.set(row.role_id, states)
   }
 
   return {
@@ -73,7 +83,7 @@ export async function loadIntercomConfig(): Promise<IntercomConfig> {
     }>).map(row => ({
       role_id: row.role_id,
       pack_type: row.pack_type,
-      channel_modes: modesByRole.get(row.role_id) ?? {},
+      channel_states: statesByRole.get(row.role_id) ?? {},
     })),
   }
 }
@@ -87,9 +97,10 @@ export async function updateIntercomPackCapacity(key: IntercomPackTypeKey, count
 }
 
 export async function createIntercomChannel(name: string, sortOrder: number): Promise<IntercomChannel> {
+  const trimmedName = name.trim()
   const { data, error } = await supabase
     .from('intercom_channels')
-    .insert({ name: name.trim(), sort_order: sortOrder })
+    .insert({ name: trimmedName, is_program: trimmedName.toLowerCase() === 'program', sort_order: sortOrder })
     .select('*')
     .single()
   if (error) throw error
@@ -97,9 +108,10 @@ export async function createIntercomChannel(name: string, sortOrder: number): Pr
 }
 
 export async function renameIntercomChannel(id: string, name: string): Promise<void> {
+  const trimmedName = name.trim()
   const { error } = await supabase
     .from('intercom_channels')
-    .update({ name: name.trim(), updated_at: new Date().toISOString() })
+    .update({ name: trimmedName, is_program: trimmedName.toLowerCase() === 'program', updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
 }
@@ -112,7 +124,7 @@ export async function deleteIntercomChannel(id: string): Promise<void> {
 export async function saveRoleIntercomDefault(
   roleId: string,
   packType: IntercomPackTypeKey | null,
-  channelModes: Record<string, IntercomButtonMode>,
+  channelStates: Record<string, IntercomChannelState>,
 ): Promise<void> {
   const { error: defaultError } = await supabase
     .from('role_intercom_defaults')
@@ -129,10 +141,14 @@ export async function saveRoleIntercomDefault(
     .eq('role_id', roleId)
   if (deleteError) throw deleteError
 
-  const rows = Object.entries(channelModes).map(([channelId, mode]) => ({
+  const rows = Object.entries(channelStates)
+    .filter(([, state]) => state.talk_mode || state.listen_mode || state.program_enabled)
+    .map(([channelId, state]) => ({
     role_id: roleId,
     channel_id: channelId,
-    button_mode: mode,
+    button_mode: state.talk_mode,
+    listen_mode: state.listen_mode,
+    program_enabled: state.program_enabled,
   }))
   if (rows.length > 0) {
     const { error } = await supabase.from('role_intercom_default_channels').insert(rows)
@@ -215,7 +231,7 @@ export async function loadWorkbookIntercomEvent(
   if (channelResult.error) throw channelResult.error
   if (assignmentResult.error) throw assignmentResult.error
 
-  const assignments = (assignmentResult.data ?? []) as Array<Omit<WorkbookIntercomAssignment, 'channel_modes'>>
+  const assignments = (assignmentResult.data ?? []) as Array<Omit<WorkbookIntercomAssignment, 'channel_states'>>
   const assignmentIds = assignments.map(assignment => assignment.id)
   let modeRows: ChannelAssignmentRow[] = []
   if (assignmentIds.length > 0) {
@@ -227,18 +243,22 @@ export async function loadWorkbookIntercomEvent(
     modeRows = (data ?? []) as ChannelAssignmentRow[]
   }
 
-  const modesByAssignment = new Map<string, Record<string, IntercomButtonMode>>()
+  const statesByAssignment = new Map<string, Record<string, IntercomChannelState>>()
   for (const row of modeRows) {
-    const modes = modesByAssignment.get(row.assignment_id) ?? {}
-    modes[row.event_channel_id] = row.button_mode
-    modesByAssignment.set(row.assignment_id, modes)
+    const states = statesByAssignment.get(row.assignment_id) ?? {}
+    states[row.event_channel_id] = {
+      talk_mode: row.button_mode,
+      listen_mode: row.listen_mode,
+      program_enabled: row.program_enabled,
+    }
+    statesByAssignment.set(row.assignment_id, states)
   }
 
   return {
     channels: (channelResult.data ?? []) as WorkbookIntercomChannel[],
     assignments: assignments.map(assignment => ({
       ...assignment,
-      channel_modes: modesByAssignment.get(assignment.id) ?? {},
+      channel_states: statesByAssignment.get(assignment.id) ?? {},
     })),
   }
 }
@@ -262,6 +282,7 @@ async function initializeEventChannels(
       event_id: eventId,
       master_channel_id: channel.id,
       name: channel.name,
+      is_program: channel.is_program,
       sort_order: index,
     })))
   if (insertError) throw insertError
@@ -309,19 +330,23 @@ async function ensureCrewAssignments(
   const defaultModeRows: Array<{
     assignment_id: string
     event_channel_id: string
-    button_mode: IntercomButtonMode
+    button_mode: IntercomButtonMode | null
+    listen_mode: IntercomListenMode | null
+    program_enabled: boolean
   }> = []
   for (const assignment of (inserted ?? []) as Array<{ id: string; crew_key: string }>) {
     const identity = identityByKey.get(assignment.crew_key)
     const roleDefault = identity?.primaryRoleId ? defaultByRole.get(identity.primaryRoleId) : null
     if (!roleDefault?.pack_type) continue
-    for (const [masterChannelId, mode] of Object.entries(roleDefault.channel_modes)) {
+    for (const [masterChannelId, state] of Object.entries(roleDefault.channel_states)) {
       const eventChannelId = eventChannelByMaster.get(masterChannelId)
       if (eventChannelId) {
         defaultModeRows.push({
           assignment_id: assignment.id,
           event_channel_id: eventChannelId,
-          button_mode: mode,
+          button_mode: state.talk_mode,
+          listen_mode: state.listen_mode,
+          program_enabled: state.program_enabled,
         })
       }
     }
@@ -369,12 +394,12 @@ export async function setIntercomPackType(
   }
 }
 
-export async function setIntercomChannelMode(
+export async function setIntercomChannelState(
   assignmentId: string,
   eventChannelId: string,
-  mode: IntercomButtonMode | null,
+  state: IntercomChannelState,
 ): Promise<void> {
-  if (!mode) {
+  if (!state.talk_mode && !state.listen_mode && !state.program_enabled) {
     const { error } = await supabase
       .from('workbook_intercom_channel_assignments')
       .delete()
@@ -388,7 +413,9 @@ export async function setIntercomChannelMode(
     .upsert({
       assignment_id: assignmentId,
       event_channel_id: eventChannelId,
-      button_mode: mode,
+      button_mode: state.talk_mode,
+      listen_mode: state.listen_mode,
+      program_enabled: state.program_enabled,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'assignment_id,event_channel_id' })
   if (error) throw error
@@ -407,6 +434,7 @@ export async function addMasterChannelToEvent(
       event_id: eventId,
       master_channel_id: channel.id,
       name: channel.name,
+      is_program: channel.is_program,
       sort_order: sortOrder,
     })
   if (error) throw error
@@ -418,13 +446,15 @@ export async function addEventIntercomChannel(
   name: string,
   sortOrder: number,
 ): Promise<void> {
+  const trimmedName = name.trim()
   const { error } = await supabase
     .from('workbook_intercom_channels')
     .insert({
       workbook_id: workbookId,
       event_id: eventId,
       master_channel_id: null,
-      name: name.trim(),
+      name: trimmedName,
+      is_program: trimmedName.toLowerCase() === 'program',
       sort_order: sortOrder,
     })
   if (error) throw error

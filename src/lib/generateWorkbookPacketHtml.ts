@@ -1,6 +1,6 @@
 import type { CallSheetPerson } from './generateCallSheetHtml'
 import type { PayLine } from './generatePayReportHtml'
-import type { Department, Workbook, WorkbookIntercomChannel, WorkbookSupplyItem } from '../types'
+import type { Department, IntercomChannelState, Workbook, WorkbookIntercomChannel, WorkbookSupplyItem } from '../types'
 import type { WorkbookScheduleExportRow } from './generateWorkbookScheduleHtml'
 import { INPUT_LIST_CONNECTION_TYPES } from './inputListConnectionTypes'
 import type { InputListPrintDocument, InputListPrintRow, InputListPrintSection } from './inputLists'
@@ -11,7 +11,7 @@ export interface IntercomPrintRow {
   name: string
   roles: string[]
   packType: string | null
-  channelModes: Record<string, 'momentary' | 'latch'>
+  channelStates: Record<string, IntercomChannelState>
 }
 
 export interface IntercomPrintEvent {
@@ -65,7 +65,7 @@ function money(value: number) {
 }
 
 function quantity(value: number) {
-  return value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return value.toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
 function printableLink(value: string | null) {
@@ -134,7 +134,7 @@ function intercomSection(input: WorkbookPacketInput) {
     return `
       <section class="packet-page intercom-page">
         ${packetHeader('Intercom Grid', input.workbook, `${formatDate(event.eventDate)} · ${event.eventName}`)}
-        <div class="legend">${inventory}<span class="mode momentary">M · Momentary</span><span class="mode latch">L · Latch</span></div>
+        <div class="legend">${inventory}<span class="mode momentary">M · Momentary</span><span class="mode latch">L · Latch</span><span class="mode latch-momentary">LM · Latch/Momentary</span><span class="mode listen">Listen</span><span class="mode listen-on-talk">Listen on Talk</span><span class="mode program-feed">☑ Program feed</span></div>
         <table class="intercom-table">
           <thead>
             <tr>
@@ -151,10 +151,25 @@ function intercomSection(input: WorkbookPacketInput) {
                 <td>${row.roles.length ? esc(row.roles.join(' / ')) : '<span class="muted">—</span>'}</td>
                 <td>${row.packType ? esc(row.packType) : '<span class="muted">No intercom</span>'}</td>
                 ${event.channels.map(channel => {
-                  const mode = row.packType ? row.channelModes[channel.id] : null
-                  return `<td class="center">${mode ? `<span class="mode-cell ${mode}">${mode === 'momentary' ? 'M' : 'L'}</span>` : ''}</td>`
+                  const state = row.packType ? row.channelStates[channel.id] : null
+                  if (channel.is_program) {
+                    return `<td class="center"><span class="program-checkbox">${state?.program_enabled ? '☑' : '☐'}</span></td>`
+                  }
+                  const talkLabel = state?.talk_mode === 'momentary'
+                    ? 'M'
+                    : state?.talk_mode === 'latch'
+                      ? 'L'
+                      : state?.talk_mode === 'latch_momentary'
+                        ? 'LM'
+                        : ''
+                  const listenLabel = state?.listen_mode === 'listen'
+                    ? 'Listen'
+                    : state?.listen_mode === 'listen_on_talk'
+                      ? 'On Talk'
+                      : ''
+                  return `<td class="center"><div class="channel-state-cell">${talkLabel ? `<span class="mode-cell ${state?.talk_mode}">${talkLabel}</span>` : ''}${listenLabel ? `<span class="listen-cell ${state?.listen_mode}">${listenLabel}</span>` : ''}</div></td>`
                 }).join('')}
-                <td class="center mono"><strong>${row.packType ? Object.keys(row.channelModes).length : 0}</strong></td>
+                <td class="center mono"><strong>${row.packType ? Object.values(row.channelStates).filter(state => state.talk_mode || state.listen_mode || state.program_enabled).length : 0}</strong></td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -380,6 +395,10 @@ export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   .inventory.over { background: #fee2e2; color: #b91c1c; }
   .mode.momentary { background: #dbeafe; color: #1d4ed8; }
   .mode.latch { background: #ede9fe; color: #6d28d9; }
+  .mode.latch-momentary { background: #d1fae5; color: #047857; }
+  .mode.listen { background: #cffafe; color: #0e7490; }
+  .mode.listen-on-talk { background: #ffedd5; color: #c2410c; }
+  .mode.program-feed { background: #fef3c7; color: #b45309; }
   .intercom-table th { padding: 5px 3px; text-align: center; overflow-wrap: anywhere; }
   .intercom-table td { padding: 5px 4px; }
   .intercom-table .number-col { width: .3in; }
@@ -421,9 +440,15 @@ export function generateWorkbookPacketHtml(input: WorkbookPacketInput): string {
   .supplies-table .link-col { width: 1.05in; }
   .supplies-table a { color: #2563eb; text-decoration: none; }
   .supplies-table tfoot td { border-top: 2px solid #111827; font-size: 9.5px; }
-  .mode-cell { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; font-size: 8px; font-weight: 900; }
+  .channel-state-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .mode-cell { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 4px; font-size: 8px; font-weight: 900; }
   .mode-cell.momentary { background: #dbeafe; color: #1d4ed8; }
   .mode-cell.latch { background: #ede9fe; color: #6d28d9; }
+  .mode-cell.latch_momentary { background: #d1fae5; color: #047857; }
+  .listen-cell { display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; padding: 2px 4px; font-size: 6.5px; font-weight: 800; }
+  .listen-cell.listen { background: #cffafe; color: #0e7490; }
+  .listen-cell.listen_on_talk { background: #ffedd5; color: #c2410c; }
+  .program-checkbox { color: #b45309; font-size: 14px; font-weight: 900; }
   .notice { margin: 0 0 14px; padding: 9px 11px; border: 1px solid #e5e7eb; border-radius: 7px; background: #f8fafc; color: #64748b; font-size: 8.5px; }
   .pay-table { max-width: 6.8in; }
   .pay-table tfoot td { border-top: 2px solid #111827; font-size: 10px; }

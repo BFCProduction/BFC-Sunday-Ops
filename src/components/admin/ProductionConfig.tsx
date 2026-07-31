@@ -22,6 +22,8 @@ import type {
   CrewRole,
   Department,
   IntercomButtonMode,
+  IntercomChannelState,
+  IntercomListenMode,
   IntercomPackTypeKey,
   Location,
   ScheduleItemType,
@@ -365,23 +367,41 @@ function RolesManager({
   )
 }
 
-function nextChannelMode(mode: IntercomButtonMode | null): IntercomButtonMode | null {
+function nextDefaultTalkMode(mode: IntercomButtonMode | null): IntercomButtonMode | null {
   if (!mode) return 'momentary'
   if (mode === 'momentary') return 'latch'
+  if (mode === 'latch') return 'latch_momentary'
   return null
 }
 
-function modeLabel(mode: IntercomButtonMode | null) {
+function nextDefaultListenMode(mode: IntercomListenMode | null): IntercomListenMode | null {
+  if (!mode) return 'listen'
+  if (mode === 'listen') return 'listen_on_talk'
+  return null
+}
+
+function defaultTalkLabel(mode: IntercomButtonMode | null) {
   if (mode === 'momentary') return 'M'
   if (mode === 'latch') return 'L'
-  return '—'
+  if (mode === 'latch_momentary') return 'LM'
+  return 'Off'
+}
+
+function defaultListenLabel(mode: IntercomListenMode | null) {
+  if (mode === 'listen') return 'Listen'
+  if (mode === 'listen_on_talk') return 'On Talk'
+  return 'Off'
+}
+
+function blankIntercomChannelState(): IntercomChannelState {
+  return { talk_mode: null, listen_mode: null, program_enabled: false }
 }
 
 function IntercomConfigManager({ roles }: { roles: CrewRole[] }) {
   const [config, setConfig] = useState<IntercomConfig | null>(null)
   const [selectedRoleId, setSelectedRoleId] = useState('')
   const [packType, setPackType] = useState<IntercomPackTypeKey | null>(null)
-  const [channelModes, setChannelModes] = useState<Record<string, IntercomButtonMode>>({})
+  const [channelStates, setChannelStates] = useState<Record<string, IntercomChannelState>>({})
   const [capacityDrafts, setCapacityDrafts] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -412,12 +432,12 @@ function IntercomConfigManager({ roles }: { roles: CrewRole[] }) {
   useEffect(() => {
     if (!config || !selectedRoleId) {
       setPackType(null)
-      setChannelModes({})
+      setChannelStates({})
       return
     }
     const roleDefault = config.roleDefaults.find(item => item.role_id === selectedRoleId)
     setPackType(roleDefault?.pack_type ?? null)
-    setChannelModes(roleDefault?.channel_modes ?? {})
+    setChannelStates(roleDefault?.channel_states ?? {})
     setNotice('')
   }, [config, selectedRoleId])
 
@@ -439,7 +459,7 @@ function IntercomConfigManager({ roles }: { roles: CrewRole[] }) {
     if (!selectedRoleId) return
     setSaving(true); setError(''); setNotice('')
     try {
-      await saveRoleIntercomDefault(selectedRoleId, packType, channelModes)
+      await saveRoleIntercomDefault(selectedRoleId, packType, channelStates)
       await reload()
       setNotice('Role defaults saved. Existing event grids were not changed.')
     } catch (err) {
@@ -541,31 +561,79 @@ function IntercomConfigManager({ roles }: { roles: CrewRole[] }) {
 
         <div className="mt-3 flex flex-wrap gap-2">
           {config.masterChannels.map(channel => {
-            const mode = channelModes[channel.id] ?? null
-            return (
-              <button
-                key={channel.id}
-                type="button"
-                disabled={!selectedRoleId || !packType}
-                onClick={() => {
-                  const next = nextChannelMode(mode)
-                  setChannelModes(current => {
-                    const updated = { ...current }
-                    if (next) updated[channel.id] = next
-                    else delete updated[channel.id]
-                    return updated
-                  })
-                }}
-                className={`rounded-lg border px-3 py-2 text-left disabled:opacity-40 ${
-                  mode === 'momentary' ? 'border-blue-300 bg-blue-50 text-blue-800'
-                    : mode === 'latch' ? 'border-violet-300 bg-violet-50 text-violet-800'
+            const state = channelStates[channel.id] ?? blankIntercomChannelState()
+            if (channel.is_program) {
+              return (
+                <button
+                  key={channel.id}
+                  type="button"
+                  disabled={!selectedRoleId || !packType}
+                  onClick={() => setChannelStates(current => ({
+                    ...current,
+                    [channel.id]: {
+                      talk_mode: null,
+                      listen_mode: null,
+                      program_enabled: !state.program_enabled,
+                    },
+                  }))}
+                  className={`rounded-lg border px-3 py-2 text-left disabled:opacity-40 ${
+                    state.program_enabled
+                      ? 'border-amber-300 bg-amber-50 text-amber-800'
                       : 'border-gray-200 bg-white text-gray-500'
-                }`}>
+                  }`}>
+                  <span className="block text-xs font-semibold">{channel.name}</span>
+                  <span className="mt-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide">
+                    <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${state.program_enabled ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'}`}>
+                      {state.program_enabled && <Check className="h-2.5 w-2.5" />}
+                    </span>
+                    Program feed
+                  </span>
+                </button>
+              )
+            }
+            return (
+              <div key={channel.id} className="min-w-44 rounded-lg border border-gray-200 bg-white p-2">
                 <span className="block text-xs font-semibold">{channel.name}</span>
-                <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide">
-                  {mode ? (mode === 'momentary' ? 'M · Momentary' : 'L · Latch') : modeLabel(null)}
-                </span>
-              </button>
+                <div className="mt-1.5 space-y-1">
+                  <button
+                    type="button"
+                    disabled={!selectedRoleId || !packType}
+                    onClick={() => setChannelStates(current => ({
+                      ...current,
+                      [channel.id]: {
+                        ...state,
+                        talk_mode: nextDefaultTalkMode(state.talk_mode),
+                        program_enabled: false,
+                      },
+                    }))}
+                    className={`flex w-full items-center justify-between rounded border px-2 py-1 text-[10px] font-bold disabled:opacity-40 ${
+                      state.talk_mode === 'momentary' ? 'border-blue-300 bg-blue-50 text-blue-800'
+                        : state.talk_mode === 'latch' ? 'border-violet-300 bg-violet-50 text-violet-800'
+                          : state.talk_mode === 'latch_momentary' ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                            : 'border-gray-200 text-gray-400'
+                    }`}>
+                    <span>Talk</span><span>{defaultTalkLabel(state.talk_mode)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedRoleId || !packType}
+                    onClick={() => setChannelStates(current => ({
+                      ...current,
+                      [channel.id]: {
+                        ...state,
+                        listen_mode: nextDefaultListenMode(state.listen_mode),
+                        program_enabled: false,
+                      },
+                    }))}
+                    className={`flex w-full items-center justify-between rounded border px-2 py-1 text-[10px] font-bold disabled:opacity-40 ${
+                      state.listen_mode === 'listen' ? 'border-cyan-300 bg-cyan-50 text-cyan-800'
+                        : state.listen_mode === 'listen_on_talk' ? 'border-orange-300 bg-orange-50 text-orange-800'
+                          : 'border-gray-200 text-gray-400'
+                    }`}>
+                    <span>Listen</span><span>{defaultListenLabel(state.listen_mode)}</span>
+                  </button>
+                </div>
+              </div>
             )
           })}
         </div>
@@ -576,7 +644,7 @@ function IntercomConfigManager({ roles }: { roles: CrewRole[] }) {
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save defaults
           </button>
-          <span className="text-xs text-gray-400">Click a channel to cycle Off → Momentary → Latch.</span>
+          <span className="text-xs text-gray-400">Talk cycles Off → Momentary → Latch → Latch/Momentary. Listen cycles Off → Listen → Listen on Talk. Program is on/off.</span>
           {notice && <span className="text-xs font-medium text-emerald-700">{notice}</span>}
           {error && <span className="text-xs font-medium text-red-600">{error}</span>}
         </div>

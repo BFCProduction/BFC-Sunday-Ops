@@ -359,7 +359,9 @@ Deno.serve(async request => {
         event_id: event.id,
         scheduled_date: event.event_date,
         user_id: mappedUserId ?? existing?.user_id ?? null,
-        person_name: mappedUserId || existing?.user_id ? null : personName,
+        // Keep the PCO display name on the roster row so read-only operators can
+        // see the crew list without receiving access to the protected users table.
+        person_name: personName,
         is_open: false,
         source: 'pco',
         pco_plan_person_id: member.id,

@@ -61,6 +61,7 @@ interface CrewTabProps {
   users: AppUser[]
   roles: CrewRole[]
   crew: WorkbookCrewMember[]
+  isAdmin: boolean
   sessionToken: string | null
   onChanged: () => Promise<void>
 }
@@ -352,13 +353,14 @@ function AddCrewModal({
   )
 }
 
-export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, sessionToken, onChanged }: CrewTabProps) {
+export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, isAdmin, sessionToken, onChanged }: CrewTabProps) {
   const [showModal, setShowModal] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
   const [syncError, setSyncError] = useState('')
+  const editMode = isAdmin && isEditing
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -384,7 +386,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
   }
 
   const syncFromPco = useCallback(async () => {
-    if (!sessionToken || linkedEvents.length === 0) return
+    if (!isAdmin || !sessionToken || linkedEvents.length === 0) return
     setSyncing(true)
     setSyncError('')
     try {
@@ -399,20 +401,26 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
     } finally {
       setSyncing(false)
     }
-  }, [linkedEvents.length, onChanged, sessionToken, workbook.id])
+  }, [isAdmin, linkedEvents.length, onChanged, sessionToken, workbook.id])
 
   const linkedEventIdsKey = linkedEvents.map(event => event.id).join(',')
   useEffect(() => {
+    if (!isAdmin) return
     void syncFromPco()
-  }, [linkedEventIdsKey, syncFromPco])
+  }, [isAdmin, linkedEventIdsKey, syncFromPco])
 
-  // Pay computed client-side (admin-only tab): per-event hours × role rate, summed per person.
-  const { lines: payLines, totalHours, totalPay } = buildWorkbookPayLines(crew, users, roles)
-  const unpricedPaidAssignments = crew.filter(member => {
-    if (!member.is_paid) return false
-    const role = assignedRole(member)
-    return !role || Number(role.hourly_rate) <= 0
-  }).length
+  // Keep all pay calculation out of the non-admin render path.
+  const paySummary = isAdmin
+    ? buildWorkbookPayLines(crew, users, roles)
+    : { lines: [], totalHours: 0, totalPay: 0 }
+  const { lines: payLines, totalHours, totalPay } = paySummary
+  const unpricedPaidAssignments = isAdmin
+    ? crew.filter(member => {
+        if (!member.is_paid) return false
+        const role = assignedRole(member)
+        return !role || Number(role.hourly_rate) <= 0
+      }).length
+    : 0
 
   // Crew grouped by event; crew with no event are grouped by day.
   const groups = (() => {
@@ -443,7 +451,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
   }
 
   async function reorderGroup(members: WorkbookCrewMember[], event: DragEndEvent) {
-    if (!isEditing) return
+    if (!editMode) return
     const { active, over } = event
     if (!over || active.id === over.id) return
     const oldIndex = members.findIndex(member => member.id === active.id)
@@ -467,10 +475,11 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
           <div>
             <p className="text-sm font-bold text-gray-900">Crew</p>
             <p className="mt-0.5 text-xs text-gray-500">
-              Assigned crew sync automatically from each linked Planning Center plan. Call / release times, pay status,
-              local role adjustments, and drag ordering stay in Sunday Ops.
+              {isAdmin
+                ? 'Assigned crew sync automatically from each linked Planning Center plan. Call / release times, pay status, local role adjustments, and drag ordering stay in Sunday Ops.'
+                : 'Review the assigned crew, local roles, and call / release times for each linked event.'}
             </p>
-            {isEditing && <p className="mt-1 text-xs font-medium text-blue-600">Edit mode · changes save automatically</p>}
+            {editMode && <p className="mt-1 text-xs font-medium text-blue-600">Edit mode · changes save automatically</p>}
             {(syncMessage || syncError) && (
               <div className="mt-2">
                 {syncMessage && !syncError && <p className="text-xs font-medium text-emerald-600">{syncMessage}</p>}
@@ -478,18 +487,18 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
               </div>
             )}
           </div>
-          <div className="flex flex-shrink-0 items-center gap-2">
+          {isAdmin && <div className="flex flex-shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => void syncFromPco()}
-              disabled={isEditing || syncing || linkedEvents.length === 0 || !sessionToken}
-              title={isEditing ? 'Finish editing before syncing from Planning Center.' : 'Sync assigned crew from Planning Center'}
+              disabled={editMode || syncing || linkedEvents.length === 0 || !sessionToken}
+              title={editMode ? 'Finish editing before syncing from Planning Center.' : 'Sync assigned crew from Planning Center'}
               className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               {syncing ? 'Syncing…' : 'Sync PCO'}
             </button>
-            {isEditing && (
+            {editMode && (
               <button
                 onClick={() => setShowModal(true)}
                 disabled={workbookDays.length === 0}
@@ -505,15 +514,15 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                 setShowModal(false)
               }}
               className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                isEditing
+                editMode
                   ? 'bg-blue-600 text-white hover:bg-blue-700'
                   : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
               }`}
             >
-              {isEditing ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-              {isEditing ? 'Done' : 'Edit crew'}
+              {editMode ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+              {editMode ? 'Done' : 'Edit crew'}
             </button>
-          </div>
+          </div>}
         </div>
       </Card>
 
@@ -527,24 +536,46 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={event => void reorderGroup(group.members, event)}>
             <SortableContext items={group.members.map(member => member.id)} strategy={verticalListSortingStrategy}>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                  <th className="px-4 py-2">Name</th>
-                  <th className="px-3 py-2">Role</th>
-                  <th className="px-3 py-2">Call</th>
-                  <th className="px-3 py-2">Release</th>
-                  <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2 text-right">Hours</th>
-                  <th className="px-3 py-2 text-right">Pay</th>
-                  {isEditing && <th className="px-3 py-2" />}
-                </tr>
-              </thead>
-              <tbody>
+                <table className={`w-full table-fixed text-sm ${isAdmin ? 'min-w-[1100px]' : 'min-w-[820px]'}`}>
+                  <colgroup>
+                    {isAdmin ? (
+                      <>
+                        <col style={{ width: editMode ? '21%' : '31%' }} />
+                        <col style={{ width: editMode ? '18%' : '20%' }} />
+                        <col style={{ width: editMode ? '14%' : '11%' }} />
+                        <col style={{ width: editMode ? '14%' : '11%' }} />
+                        <col style={{ width: editMode ? '14%' : '10%' }} />
+                        <col style={{ width: editMode ? '7%' : '8%' }} />
+                        <col style={{ width: editMode ? '8%' : '9%' }} />
+                        {editMode && <col style={{ width: '4%' }} />}
+                      </>
+                    ) : (
+                      <>
+                        <col style={{ width: '34%' }} />
+                        <col style={{ width: '26%' }} />
+                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '10%' }} />
+                      </>
+                    )}
+                  </colgroup>
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                      <th className="px-4 py-2">Name</th>
+                      <th className="px-3 py-2">Role</th>
+                      <th className="px-3 py-2">Call</th>
+                      <th className="px-3 py-2">Release</th>
+                      {isAdmin && <th className="px-3 py-2">Type</th>}
+                      <th className="px-3 py-2 text-right">Hours</th>
+                      {isAdmin && <th className="px-3 py-2 text-right">Pay</th>}
+                      {editMode && <th className="px-3 py-2" />}
+                    </tr>
+                  </thead>
+                  <tbody>
                 {group.members.map(member => {
-                  const pay = payDisplay(member)
+                  const pay = isAdmin ? payDisplay(member) : null
                   const role = assignedRole(member)
-                  return <SortableCrewRow key={member.id} id={member.id} disabled={!isEditing}>
+                  return <SortableCrewRow key={member.id} id={member.id} disabled={!editMode}>
                     {dragHandle => <>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
@@ -562,7 +593,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-gray-600">
-                      {isEditing ? (
+                      {editMode ? (
                         <InlineCrewSelect
                           value={member.role_id ?? ''}
                           label={`Role for ${workbookCrewPersonName(member, users)}`}
@@ -581,8 +612,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5">
-                      {isEditing ? (
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {editMode ? (
                         <InlineCrewTimeInput
                           memberId={member.id}
                           field="call_time"
@@ -592,8 +623,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                         />
                       ) : <span className="text-gray-700">{formatCrewTime(member.call_time)}</span>}
                     </td>
-                    <td className="px-3 py-2.5">
-                      {isEditing ? (
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {editMode ? (
                         <InlineCrewTimeInput
                           memberId={member.id}
                           field="release_time"
@@ -603,8 +634,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                         />
                       ) : <span className="text-gray-700">{formatCrewTime(member.release_time)}</span>}
                     </td>
-                    <td className="px-3 py-2.5">
-                      {isEditing ? (
+                    {isAdmin && <td className="px-3 py-2.5 whitespace-nowrap">
+                      {editMode ? (
                         <InlineCrewSelect
                           value={member.is_paid ? 'paid' : 'volunteer'}
                           label={`Pay type for ${workbookCrewPersonName(member, users)}`}
@@ -619,12 +650,14 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                           {member.is_paid ? 'Paid' : 'Volunteer'}
                         </span>
                       )}
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-gray-700">{workbookCrewMemberHours(member).toFixed(1)}</td>
-                    <td className={`px-3 py-2.5 text-right font-semibold ${pay.warning ? 'text-xs text-amber-700' : 'text-gray-900'}`}>
-                      {pay.label}
-                    </td>
-                    {isEditing && (
+                    </td>}
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap text-gray-700">{workbookCrewMemberHours(member).toFixed(1)}</td>
+                    {isAdmin && pay && (
+                      <td className={`px-3 py-2.5 text-right whitespace-nowrap font-semibold ${pay.warning ? 'text-xs text-amber-700' : 'text-gray-900'}`}>
+                        {pay.label}
+                      </td>
+                    )}
+                    {editMode && (
                       <td className="px-3 py-2.5">
                         <div className="flex items-center justify-end gap-1">
                           {member.source !== 'pco' && (
@@ -640,7 +673,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                     </>}
                   </SortableCrewRow>
                 })}
-              </tbody>
+                  </tbody>
                 </table>
               </div>
             </SortableContext>
@@ -648,7 +681,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
         </Card>
       ))}
 
-      {payLines.length > 0 && (
+      {isAdmin && payLines.length > 0 && (
         <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center gap-2 bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">
             <DollarSign className="h-4 w-4" /> Total pay — all crew across the workbook
@@ -689,7 +722,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
         </Card>
       )}
 
-      {showModal && isEditing && (
+      {isAdmin && showModal && editMode && (
         <AddCrewModal
           workbookId={workbook.id}
           workbookDays={workbookDays}

@@ -8,6 +8,7 @@ interface SuppliesTabProps {
   workbook: Workbook
   departments: Department[]
   supplies: WorkbookSupplyItem[]
+  editable: boolean
   onChanged: () => Promise<void>
 }
 
@@ -16,7 +17,7 @@ function money(value: number) {
 }
 
 function quantityLabel(value: number) {
-  return value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return value.toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
 function normalizedUrl(value: string): string | null {
@@ -66,8 +67,8 @@ function SupplyEditor({
     }
     const parsedQuantity = Number(quantity)
     const parsedPrice = unitPrice.trim() ? Number(unitPrice) : 0
-    if (!Number.isFinite(parsedQuantity) || parsedQuantity < 0) {
-      setError('Quantity must be zero or greater.')
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 0) {
+      setError('Quantity must be a whole number zero or greater.')
       return
     }
     if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
@@ -138,7 +139,7 @@ function SupplyEditor({
             <input
               type="number"
               min="0"
-              step="0.01"
+              step="1"
               value={quantity}
               onChange={event => setQuantity(event.target.value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
@@ -201,7 +202,7 @@ function SupplyEditor({
   )
 }
 
-export function SuppliesTab({ workbook, departments, supplies, onChanged }: SuppliesTabProps) {
+export function SuppliesTab({ workbook, departments, supplies, editable, onChanged }: SuppliesTabProps) {
   const [showEditor, setShowEditor] = useState(false)
   const [editing, setEditing] = useState<WorkbookSupplyItem | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -210,6 +211,7 @@ export function SuppliesTab({ workbook, departments, supplies, onChanged }: Supp
   const estimatedTotal = supplies.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
 
   async function remove(id: string) {
+    if (!editable) return
     setError('')
     try {
       await deleteSupplyItem(id)
@@ -237,11 +239,11 @@ export function SuppliesTab({ workbook, departments, supplies, onChanged }: Supp
             <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
               Estimated total {money(estimatedTotal)}
             </span>
-            <button
+            {editable && <button
               onClick={() => { setEditing(null); setShowEditor(true) }}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
               <Plus className="h-4 w-4" /> Add item
-            </button>
+            </button>}
           </div>
         </div>
       </Card>
@@ -252,22 +254,24 @@ export function SuppliesTab({ workbook, departments, supplies, onChanged }: Supp
         <Card className="p-10 text-center">
           <PackageOpen className="mx-auto h-7 w-7 text-gray-300" />
           <p className="mt-3 text-sm font-semibold text-gray-700">The shopping list is empty</p>
-          <p className="mt-1 text-xs text-gray-400">Add water, coffee, candles, flowers, or anything else this workbook needs.</p>
+          <p className="mt-1 text-xs text-gray-400">
+            {editable ? 'Add water, coffee, candles, flowers, or anything else this workbook needs.' : 'No supply items have been added yet.'}
+          </p>
         </Card>
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] table-fixed text-sm">
+            <table className="w-full min-w-[1100px] table-fixed text-sm">
               <colgroup>
                 <col className="w-12" />
-                <col className="w-44" />
+                <col className="w-64" />
                 <col />
                 <col className="w-24" />
                 <col className="w-28" />
                 <col className="w-36" />
                 <col className="w-36" />
                 <col className="w-28" />
-                <col className="w-24" />
+                {editable && <col className="w-24" />}
               </colgroup>
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-100 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">
@@ -279,17 +283,17 @@ export function SuppliesTab({ workbook, departments, supplies, onChanged }: Supp
                   <th className="px-3 py-3">Department</th>
                   <th className="px-3 py-3">Link</th>
                   <th className="px-3 py-3 text-right">Total</th>
-                  <th className="px-3 py-3 text-right">Actions</th>
+                  {editable && <th className="px-3 py-3 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {supplies.map((item, index) => (
                   <tr key={item.id} className="border-b border-gray-100 last:border-0 hover:bg-blue-50/30">
-                    <td className="px-3 py-3 text-center font-mono text-xs text-gray-400">{index + 1}</td>
+                    <td className="px-3 py-3 text-center text-xs text-gray-400">{index + 1}</td>
                     <td className="px-3 py-3 font-semibold text-gray-900">{item.item_name}</td>
                     <td className="px-3 py-3 text-xs leading-relaxed text-gray-600">{item.description || <span className="text-gray-300">—</span>}</td>
-                    <td className="px-3 py-3 text-right font-mono text-gray-700">{quantityLabel(item.quantity)}</td>
-                    <td className="px-3 py-3 text-right font-mono text-gray-700">{money(item.unit_price)}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{quantityLabel(item.quantity)}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{money(item.unit_price)}</td>
                     <td className="px-3 py-3 text-xs text-gray-600">
                       {item.department_id ? departmentById.get(item.department_id) ?? 'Unknown' : <span className="text-gray-300">—</span>}
                     </td>
@@ -305,8 +309,8 @@ export function SuppliesTab({ workbook, departments, supplies, onChanged }: Supp
                         </a>
                       ) : <span className="text-gray-300">—</span>}
                     </td>
-                    <td className="px-3 py-3 text-right font-mono font-semibold text-gray-900">{money(item.quantity * item.unit_price)}</td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3 text-right font-semibold text-gray-900">{money(item.quantity * item.unit_price)}</td>
+                    {editable && <td className="px-3 py-3">
                       <div className="flex justify-end gap-1">
                         <button
                           onClick={() => { setEditing(item); setShowEditor(true) }}
@@ -325,15 +329,15 @@ export function SuppliesTab({ workbook, departments, supplies, onChanged }: Supp
                           </button>
                         )}
                       </div>
-                    </td>
+                    </td>}
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold text-gray-900">
                   <td className="px-3 py-3" colSpan={7}>Estimated total</td>
-                  <td className="px-3 py-3 text-right font-mono">{money(estimatedTotal)}</td>
-                  <td />
+                  <td className="px-3 py-3 text-right">{money(estimatedTotal)}</td>
+                  {editable && <td />}
                 </tr>
               </tfoot>
             </table>
@@ -341,7 +345,7 @@ export function SuppliesTab({ workbook, departments, supplies, onChanged }: Supp
         </Card>
       )}
 
-      {showEditor && (
+      {editable && showEditor && (
         <SupplyEditor
           workbook={workbook}
           departments={departments}

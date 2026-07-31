@@ -7,8 +7,9 @@ import {
   buildIntercomCrewIdentities,
   deleteEventIntercomChannel,
   loadIntercomConfig,
+  loadWorkbookIntercomEvent,
   prepareWorkbookIntercomEvent,
-  setIntercomChannelMode,
+  setIntercomChannelState,
   setIntercomPackType,
   type IntercomConfig,
   type WorkbookIntercomEventData,
@@ -17,6 +18,8 @@ import type { AppUser } from '../../lib/adminApi'
 import type {
   CrewRole,
   IntercomButtonMode,
+  IntercomChannelState,
+  IntercomListenMode,
   IntercomPackTypeKey,
   Session,
   Workbook,
@@ -30,6 +33,7 @@ interface IntercomGridProps {
   users: AppUser[]
   roles: CrewRole[]
   crew: WorkbookCrewMember[]
+  editable: boolean
 }
 
 function formatEvent(event: Session) {
@@ -41,16 +45,47 @@ function formatEvent(event: Session) {
   return `${day} · ${event.name}`
 }
 
-function nextMode(mode: IntercomButtonMode | null): IntercomButtonMode | null {
+function emptyChannelState(): IntercomChannelState {
+  return { talk_mode: null, listen_mode: null, program_enabled: false }
+}
+
+function nextTalkMode(mode: IntercomButtonMode | null): IntercomButtonMode | null {
   if (!mode) return 'momentary'
   if (mode === 'momentary') return 'latch'
+  if (mode === 'latch') return 'latch_momentary'
   return null
 }
 
-function modeClass(mode: IntercomButtonMode | null) {
+function nextListenMode(mode: IntercomListenMode | null): IntercomListenMode | null {
+  if (!mode) return 'listen'
+  if (mode === 'listen') return 'listen_on_talk'
+  return null
+}
+
+function talkModeClass(mode: IntercomButtonMode | null) {
   if (mode === 'momentary') return 'border-blue-300 bg-blue-100 text-blue-800'
   if (mode === 'latch') return 'border-violet-300 bg-violet-100 text-violet-800'
+  if (mode === 'latch_momentary') return 'border-emerald-300 bg-emerald-100 text-emerald-800'
   return 'border-gray-200 bg-white text-gray-300 hover:border-gray-300 hover:text-gray-500'
+}
+
+function listenModeClass(mode: IntercomListenMode | null) {
+  if (mode === 'listen') return 'border-cyan-300 bg-cyan-100 text-cyan-800'
+  if (mode === 'listen_on_talk') return 'border-orange-300 bg-orange-100 text-orange-800'
+  return 'border-gray-200 bg-white text-gray-300 hover:border-gray-300 hover:text-gray-500'
+}
+
+function talkModeLabel(mode: IntercomButtonMode | null) {
+  if (mode === 'momentary') return 'M'
+  if (mode === 'latch') return 'L'
+  if (mode === 'latch_momentary') return 'LM'
+  return 'Off'
+}
+
+function listenModeLabel(mode: IntercomListenMode | null) {
+  if (mode === 'listen') return 'Listen'
+  if (mode === 'listen_on_talk') return 'On Talk'
+  return 'Off'
 }
 
 function avatar(name: string, isOpen: boolean) {
@@ -68,7 +103,7 @@ const GRID_NUMBER_WIDTH = 48
 const GRID_CREW_WIDTH = 192
 const GRID_ROLE_WIDTH = 192
 const GRID_PACK_WIDTH = 128
-const GRID_CHANNEL_MIN_WIDTH = 112
+const GRID_CHANNEL_MIN_WIDTH = 168
 const GRID_TOTAL_WIDTH = 96
 const GRID_FIXED_WIDTH = GRID_NUMBER_WIDTH
   + GRID_CREW_WIDTH
@@ -76,7 +111,7 @@ const GRID_FIXED_WIDTH = GRID_NUMBER_WIDTH
   + GRID_PACK_WIDTH
   + GRID_TOTAL_WIDTH
 
-export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: IntercomGridProps) {
+export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, editable }: IntercomGridProps) {
   const sortedEvents = useMemo(
     () => [...linkedEvents].sort((a, b) => a.date.localeCompare(b.date) || (a.eventTime ?? '').localeCompare(b.eventTime ?? '')),
     [linkedEvents],
@@ -118,7 +153,9 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
     setLoading(true)
     setError('')
     try {
-      const next = await prepareWorkbookIntercomEvent(workbook.id, selectedEvent.id, identities, config)
+      const next = editable
+        ? await prepareWorkbookIntercomEvent(workbook.id, selectedEvent.id, identities, config)
+        : await loadWorkbookIntercomEvent(workbook.id, selectedEvent.id)
       setData(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load the Intercom Grid.')
@@ -127,7 +164,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
     }
     // identities captured through identityKey so new roster rows get seeded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config, identityKey, selectedEvent, workbook.id])
+  }, [config, editable, identityKey, selectedEvent, workbook.id])
 
   useEffect(() => { void reload() }, [reload])
 
@@ -145,13 +182,14 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
   const gridWidth = GRID_FIXED_WIDTH + data.channels.length * GRID_CHANNEL_MIN_WIDTH
 
   async function changePack(assignment: WorkbookIntercomAssignment, packType: IntercomPackTypeKey | null) {
+    if (!editable) return
     const key = `pack:${assignment.id}`
     setSavingKey(key)
     setError('')
     setData(current => ({
       ...current,
       assignments: current.assignments.map(item => item.id === assignment.id
-        ? { ...item, pack_type: packType, channel_modes: packType ? item.channel_modes : {} }
+        ? { ...item, pack_type: packType, channel_states: packType ? item.channel_states : {} }
         : item),
     }))
     try {
@@ -164,10 +202,12 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
     }
   }
 
-  async function cycleChannel(assignment: WorkbookIntercomAssignment, channelId: string) {
-    if (!assignment.pack_type) return
-    const currentMode = assignment.channel_modes[channelId] ?? null
-    const next = nextMode(currentMode)
+  async function changeChannelState(
+    assignment: WorkbookIntercomAssignment,
+    channelId: string,
+    nextState: IntercomChannelState,
+  ) {
+    if (!editable || !assignment.pack_type) return
     const key = `channel:${assignment.id}:${channelId}`
     setSavingKey(key)
     setError('')
@@ -175,14 +215,14 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
       ...current,
       assignments: current.assignments.map(item => {
         if (item.id !== assignment.id) return item
-        const modes = { ...item.channel_modes }
-        if (next) modes[channelId] = next
-        else delete modes[channelId]
-        return { ...item, channel_modes: modes }
+        const states = { ...item.channel_states }
+        if (nextState.talk_mode || nextState.listen_mode || nextState.program_enabled) states[channelId] = nextState
+        else delete states[channelId]
+        return { ...item, channel_states: states }
       }),
     }))
     try {
-      await setIntercomChannelMode(assignment.id, channelId, next)
+      await setIntercomChannelState(assignment.id, channelId, nextState)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update the channel.')
       await reload()
@@ -192,7 +232,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
   }
 
   async function addMasterColumn() {
-    if (!selectedEvent || !config || !unusedMasterId) return
+    if (!editable || !selectedEvent || !config || !unusedMasterId) return
     const master = config.masterChannels.find(channel => channel.id === unusedMasterId)
     if (!master) return
     setSavingKey('add-channel')
@@ -209,7 +249,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
   }
 
   async function addEventColumn() {
-    if (!selectedEvent || !eventChannelName.trim()) return
+    if (!editable || !selectedEvent || !eventChannelName.trim()) return
     setSavingKey('add-channel')
     setError('')
     try {
@@ -224,6 +264,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
   }
 
   async function removeChannel(channelId: string) {
+    if (!editable) return
     setSavingKey(`delete:${channelId}`)
     setError('')
     try {
@@ -256,8 +297,9 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
               <RadioTower className="h-4 w-4 text-blue-600" /> Intercom Grid
             </p>
             <p className="mt-1 max-w-2xl text-xs text-gray-500">
-              Assign each event crew member a wired or wireless pack, then click channel cells to cycle
-              Off → Momentary → Latch. Role defaults are copied once and remain editable here.
+              {editable
+                ? 'Assign packs, talk-button behavior, and independent listen behavior. Program is an on/off audio feed. Role defaults are copied once and remain editable here.'
+                : 'Review each event crew member’s intercom pack and channel assignments.'}
             </p>
           </div>
           <label className="w-full xl:w-80">
@@ -285,8 +327,17 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
           })}
           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">M · Momentary</span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700">L · Latch</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">LM · Latch/Momentary</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700">Listen</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700">Listen on Talk</span>
         </div>
       </Card>
+
+      {!editable && error && (
+        <p className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+          <AlertTriangle className="h-3.5 w-3.5" /> {error}
+        </p>
+      )}
 
       <div style={{ width: `min(100%, ${gridWidth}px)` }}>
         <Card className="overflow-hidden">
@@ -323,10 +374,11 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
                   <th className="sticky left-60 z-20 w-48 border-r border-gray-200 bg-gray-100 px-3 py-3 text-left">Role</th>
                   <th className="sticky left-[27rem] z-20 w-32 border-r border-gray-200 bg-gray-100 px-3 py-3 text-left">Com pack</th>
                   {data.channels.map(channel => (
-                    <th key={channel.id} className="min-w-28 border-r border-gray-200 px-2 py-2 text-center">
+                    <th key={channel.id} className="border-r border-gray-200 px-2 py-2 text-center">
                       <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden">
                         <span className="min-w-0 truncate normal-case tracking-normal text-gray-700">{channel.name}</span>
-                        {confirmDelete === channel.id ? (
+                        {channel.is_program && <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] tracking-normal text-amber-700">Feed</span>}
+                        {!editable ? null : confirmDelete === channel.id ? (
                           <button
                             onClick={() => void removeChannel(channel.id)}
                             className="flex-shrink-0 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
@@ -349,7 +401,9 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
               <tbody>
                 {identities.map((identity, index) => {
                   const assignment = assignmentByCrew.get(identity.key)
-                  const total = assignment?.pack_type ? Object.keys(assignment.channel_modes).length : 0
+                  const total = assignment?.pack_type
+                    ? Object.values(assignment.channel_states).filter(state => state.talk_mode || state.listen_mode || state.program_enabled).length
+                    : 0
                   return (
                     <tr key={identity.key} className="border-b border-gray-100 last:border-0 hover:bg-blue-50/30">
                       <td className="sticky left-0 z-10 border-r border-gray-100 bg-white px-2 py-2.5 text-center font-mono text-xs text-gray-400">{index + 1}</td>
@@ -367,7 +421,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
                       </td>
                       <td className="sticky left-[27rem] z-10 border-r border-gray-100 bg-white px-2 py-2">
                         {assignment ? (
-                          <div className="relative">
+                          editable ? <div className="relative">
                             <select
                               value={assignment.pack_type ?? ''}
                               onChange={event => void changePack(assignment, (event.target.value || null) as IntercomPackTypeKey | null)}
@@ -376,22 +430,93 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
                               {(config?.packTypes ?? []).map(pack => <option key={pack.key} value={pack.key}>{pack.label}</option>)}
                             </select>
                             {savingKey === `pack:${assignment.id}` && <Loader2 className="absolute right-7 top-2 h-3 w-3 animate-spin text-blue-500" />}
-                          </div>
+                          </div> : (
+                            <span className="block px-2 py-1.5 text-xs font-semibold text-gray-700">
+                              {assignment.pack_type
+                                ? config?.packTypes.find(pack => pack.key === assignment.pack_type)?.label ?? assignment.pack_type
+                                : 'No intercom'}
+                            </span>
+                          )
                         ) : <span className="text-xs text-gray-300">Preparing…</span>}
                       </td>
                       {data.channels.map(channel => {
-                        const mode = assignment?.channel_modes[channel.id] ?? null
+                        const state = assignment?.channel_states[channel.id] ?? emptyChannelState()
                         const key = assignment ? `channel:${assignment.id}:${channel.id}` : ''
+                        const disabled = !assignment?.pack_type || savingKey === key
                         return (
                           <td key={channel.id} className="border-r border-gray-100 px-2 py-2 text-center">
-                            <button
-                              type="button"
-                              disabled={!assignment?.pack_type || savingKey === key}
-                              onClick={() => assignment && void cycleChannel(assignment, channel.id)}
-                              className={`mx-auto flex h-8 w-9 items-center justify-center rounded-lg border text-xs font-black transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${modeClass(mode)}`}
-                              aria-label={`${identity.name}, ${channel.name}: ${mode ?? 'off'}`}>
-                              {savingKey === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : mode === 'momentary' ? 'M' : mode === 'latch' ? 'L' : ''}
-                            </button>
+                            {channel.is_program ? (
+                              editable ? (
+                                <button
+                                  type="button"
+                                  disabled={disabled}
+                                  onClick={() => assignment && void changeChannelState(assignment, channel.id, {
+                                    talk_mode: null,
+                                    listen_mode: null,
+                                    program_enabled: !state.program_enabled,
+                                  })}
+                                  className={`mx-auto inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
+                                    state.program_enabled
+                                      ? 'border-amber-300 bg-amber-100 text-amber-800'
+                                      : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+                                  }`}
+                                  aria-label={`${identity.name}, Program feed: ${state.program_enabled ? 'on' : 'off'}`}>
+                                  {savingKey === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (
+                                    <span className={`flex h-4 w-4 items-center justify-center rounded border ${state.program_enabled ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white'}`}>
+                                      {state.program_enabled && <Check className="h-3 w-3" />}
+                                    </span>
+                                  )}
+                                  Feed
+                                </button>
+                              ) : (
+                                <span className={`mx-auto inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold ${state.program_enabled ? 'border-amber-300 bg-amber-100 text-amber-800' : 'border-gray-200 text-gray-300'}`}>
+                                  <span className={`flex h-4 w-4 items-center justify-center rounded border ${state.program_enabled ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white'}`}>
+                                    {state.program_enabled && <Check className="h-3 w-3" />}
+                                  </span>
+                                  Feed
+                                </span>
+                              )
+                            ) : (
+                              <div className="space-y-1">
+                                {editable ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      disabled={disabled}
+                                      onClick={() => assignment && void changeChannelState(assignment, channel.id, {
+                                        ...state,
+                                        talk_mode: nextTalkMode(state.talk_mode),
+                                        program_enabled: false,
+                                      })}
+                                      className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-[10px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${talkModeClass(state.talk_mode)}`}
+                                      aria-label={`${identity.name}, ${channel.name} talk: ${state.talk_mode ?? 'off'}`}>
+                                      <span>Talk</span><span>{savingKey === key ? '…' : talkModeLabel(state.talk_mode)}</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={disabled}
+                                      onClick={() => assignment && void changeChannelState(assignment, channel.id, {
+                                        ...state,
+                                        listen_mode: nextListenMode(state.listen_mode),
+                                        program_enabled: false,
+                                      })}
+                                      className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-[10px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${listenModeClass(state.listen_mode)}`}
+                                      aria-label={`${identity.name}, ${channel.name} listen: ${state.listen_mode ?? 'off'}`}>
+                                      <span>Listen</span><span>{savingKey === key ? '…' : listenModeLabel(state.listen_mode)}</span>
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-[10px] font-bold ${talkModeClass(state.talk_mode)}`}>
+                                      <span>Talk</span><span>{talkModeLabel(state.talk_mode)}</span>
+                                    </span>
+                                    <span className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-[10px] font-bold ${listenModeClass(state.listen_mode)}`}>
+                                      <span>Listen</span><span>{listenModeLabel(state.listen_mode)}</span>
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </td>
                         )
                       })}
@@ -406,7 +531,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
         </Card>
       </div>
 
-      <Card className="p-4">
+      {editable && <Card className="p-4">
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Add from master list</p>
@@ -456,7 +581,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew }: Int
             <Check className="h-3.5 w-3.5 text-emerald-500" /> Changes save immediately. Removing a column affects only this event.
           </p>
         )}
-      </Card>
+      </Card>}
     </div>
   )
 }

@@ -8,6 +8,7 @@ interface WorkbookPrintModalProps {
   canIncludeSupplies: boolean
   canIncludeCallSheets: boolean
   canIncludeCrewPay: boolean
+  showCrewPayOption: boolean
   onPrint: (sections: WorkbookPrintSection[]) => Promise<void>
   onClose: () => void
 }
@@ -31,6 +32,7 @@ export function WorkbookPrintModal({
   canIncludeSupplies,
   canIncludeCallSheets,
   canIncludeCrewPay,
+  showCrewPayOption,
   onPrint,
   onClose,
 }: WorkbookPrintModalProps) {
@@ -79,7 +81,7 @@ export function WorkbookPrintModal({
         </div>
 
         <div className="space-y-2 p-5">
-          {OPTIONS.map(option => {
+          {OPTIONS.filter(option => option.id !== 'crewPay' || showCrewPayOption).map(option => {
             const enabled = available(option.id)
             const checked = selected.includes(option.id)
             const Icon = option.id === 'intercom'

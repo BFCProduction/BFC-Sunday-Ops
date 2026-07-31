@@ -36,14 +36,14 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
   - **PCO-first event manager** — the Events tab is a focused list of attached workbook events plus one **Add Event** action. Workbook events are created from Planning Center plans and attached atomically; non-PCO production activities are entered as Schedule items. The plan picker hides plans before the workbook start date and sorts the remaining plans chronologically.
   - **Schedule** — a chronological Detail view plus **By Room** and **By Department** views on a shared time-axis grid (time down the left, one column per room/department, items positioned by real start/end, same-column overlaps flagged as conflicts). Day-N labels (Day 1 = the workbook's earliest event).
   - **PCO plan times** pulled into the schedule read-only and kept in sync (never stored); each can be assigned a room + departments via an overlay.
-  - **Crew roster** (admin only) — assigned people from the **Production** team automatically sync from every attached event's Planning Center plan when the Crew tab opens. PCO owns assignment membership; Sunday Ops keeps editable role mapping, call/release times, paid/volunteer flags, and manual row ordering. The page is read-only by default; one **Edit crew** control enables inline autosaving for every row. Each event starts in PCO assignment order and can be reordered by dragging without later syncs overwriting that local order. Manual guests and open/TBD rows remain supported; shared call times cluster onto the schedule.
+  - **Crew roster** — visible to every workbook user with assigned people from the **Production** team, local roles, call/release times, hours, and PCO ordering. Admins can sync from Planning Center and use one **Edit crew** control for inline role/time/pay-type editing, drag ordering, manual guests, and open/TBD rows. Paid/volunteer status, per-row pay, and workbook pay totals are omitted entirely for non-admins.
   - **Call sheets** — printable per-person schedule (per-day call/release, role, event), with crew avatars.
   - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), calculated client-side in the admin-only Crew tab, shown per row, and totaled per person across the workbook, with a printable business-office pay report. The deployed `workbook-pay` Edge Function remains available for the future raw-rate security hardening.
-  - **Intercom Grid** (admin only) — event-scoped assignments pulled from the workbook crew roster. Duplicate rows for the same person collapse; workbook-wide crew appear on every attached event while event-specific crew stay scoped to their event. Each person gets a wired/wireless/no-intercom assignment and per-channel **Momentary / Latch / Off** settings. Workbook Settings owns global pack capacities, the reusable master channel list, and per-role starting defaults; an event can add or remove its own channel columns without changing the master list. Over-capacity pack counts are flagged.
+  - **Intercom Grid** — event-scoped assignments pulled from the workbook crew roster and visible to every workbook user. Non-admins receive a read-only grid; admins can assign wired/wireless/no-intercom packs, set each channel's talk behavior to **Off / Momentary / Latch / Latch-Momentary**, independently set its receive behavior to **Off / Listen / Listen on Talk**, and add or remove event channel columns. **Program** is treated as a simple audio-feed checkbox with no talk or listen mode. Workbook Settings owns global pack capacities, the reusable master channel list, and per-role starting defaults. Over-capacity pack counts are flagged.
   - **Input List** — a room-aware workbook document built from reusable sections, configurable columns, and a drag-ordered connection inventory. Room-defined infrastructure is shown read-only while production-specific inputs, outputs, devices, people, destinations, and monitor assignments autosave in the workbook. Connections sharing a floor box stay grouped across input types; the hidden type value drives print-safe row shading for audio input, audio output, monitor output, network, fiber, and BNC.
-  - **Supplies** (admin only) — a workbook-wide shopping list for consumables, décor, and miscellaneous purchases. Each row stores item, description, quantity, unit price, optional department, and purchase link; the tab calculates line totals and a workbook estimate.
+  - **Supplies** — a workbook-wide shopping list for consumables, décor, and miscellaneous purchases, visible read-only to non-admins and editable by admins. Each row stores item, description, quantity, unit price, optional department, and purchase link; the tab calculates line totals and a workbook estimate.
   - **Send Update** — snapshots the schedule, diffs it against the last sent version, and produces a copyable change summary for occasional crew.
-  - **Workbook print packet** — one Print / PDF control with selectable pages for the detail schedule, room Input Lists, Supplies shopping list, event Intercom Grids, per-person call sheets, and the admin-only business-office pay report. Packets print on Letter portrait pages; Input List sections use two balanced tables side by side to preserve readable type without wasting paper.
+  - **Workbook print packet** — one Print / PDF control with selectable pages for the detail schedule, room Input Lists, Supplies shopping list, event Intercom Grids, and per-person call sheets. Admins also receive the business-office pay report option; it is absent from non-admin print controls and rejected by the export path for non-admins. Packets print on Letter portrait pages; Input List sections use two balanced tables side by side to preserve readable type without wasting paper.
 - GitHub Pages deployment
 
 ## What Is Live vs Pending
@@ -237,10 +237,10 @@ Completed (previously listed as pending):
   - `workbook_input_list_values` — production-specific values keyed to a workbook, room connection row, and workbook-entry column
 - **Intercom configuration + event grids (migration `050`):**
   - `intercom_pack_types` — account-level wired/wireless availability counts (future specific equipment can attach without replacing the pack type)
-  - `intercom_channels` — reusable master channel list
-  - `role_intercom_defaults` / `role_intercom_default_channels` — per-role starting pack and Momentary/Latch channel settings
+  - `intercom_channels` — reusable master channel list, including an explicit Program-feed marker
+  - `role_intercom_defaults` / `role_intercom_default_channels` — per-role starting pack, talk mode, listen mode, and Program-feed settings
   - `workbook_intercom_channels` — event-scoped channel columns, linked to a master channel or created for one event only
-  - `workbook_intercom_assignments` / `workbook_intercom_channel_assignments` — event-scoped crew pack and channel-button assignments
+  - `workbook_intercom_assignments` / `workbook_intercom_channel_assignments` — event-scoped crew packs plus independent talk/listen state or Program-feed enablement per channel (expanded by migration `058`)
 - `workbook_schedule_versions` — immutable JSON snapshots produced by "Send Update" (versioned change checkpoints)
 - `events` also carries `workbook_id`, `workbook_location_id` (now → account `locations`), and `event_end_time` columns for workbook attachment
 
@@ -310,6 +310,9 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260730160000_053_workbook_input_lists.sql`
 - `supabase/migrations/20260730190000_054_group_input_list_connections.sql`
 - `supabase/migrations/20260731140000_055_workbook_crew_manual_order.sql`
+- `supabase/migrations/20260731143000_056_workbook_crew_display_names.sql`
+- `supabase/migrations/20260731144500_057_workbook_supplies_whole_quantities.sql`
+- `supabase/migrations/20260731151500_058_intercom_talk_listen_program_modes.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

@@ -332,7 +332,7 @@ function supplyPayload(input: SupplyItemInput) {
     department_id: input.departmentId,
     item_name: input.itemName.trim(),
     description: input.description?.trim() || null,
-    quantity: Math.max(0, input.quantity),
+    quantity: Math.max(0, Math.round(input.quantity)),
     unit_price: Math.max(0, input.unitPrice),
     purchase_url: input.purchaseUrl,
     updated_at: new Date().toISOString(),
