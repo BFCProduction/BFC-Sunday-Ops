@@ -4,7 +4,8 @@ import { getValidPcoToken, pcoReauthBody, type PcoSessionTokens } from '../_shar
 
 // Mirrors the assigned Production-team people from every PCO-linked event in a
 // workbook into workbook_crew. PCO owns assignment membership; Sunday Ops
-// preserves local call/release, pay, and role-override fields on existing rows.
+// preserves local call/release, pay, role overrides, and manually overridden
+// row ordering on existing rows.
 
 const ALLOWED_ORIGINS = [
   'https://bfcproduction.github.io',
@@ -32,6 +33,26 @@ function json(cors: Record<string, string>, status: number, body: unknown) {
 
 function normalized(value: string | null | undefined) {
   return (value ?? '').trim().toLocaleLowerCase()
+}
+
+function roleKey(value: string | null | undefined) {
+  return normalized(value)
+    .replace(/\btechnical director\b/g, 'td')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function pcoRoleMatchKeys(value: string | null | undefined) {
+  const raw = value?.trim() ?? ''
+  const separator = raw.indexOf(':')
+  const keys = [roleKey(raw)]
+
+  // PCO positions commonly include their team/department (for example,
+  // "Audio: A1"). Production Config roles intentionally omit that prefix in
+  // some cases, so also try the position portion after the first colon.
+  if (separator >= 0) keys.push(roleKey(raw.slice(separator + 1)))
+
+  return [...new Set(keys.filter(Boolean))]
 }
 
 interface WorkbookEvent {
@@ -88,6 +109,8 @@ interface ExistingCrewRow {
   pco_plan_person_id: string | null
   pco_person_id: string | null
   pco_role_name: string | null
+  sort_order: number
+  sort_order_overridden: boolean
 }
 
 async function fetchPlanPeople(
@@ -245,7 +268,7 @@ Deno.serve(async request => {
     supabase.from('users').select('id, pco_id'),
     supabase.from('roles').select('id, name'),
     supabase.from('workbook_crew').select(
-      'id, event_id, user_id, person_name, role_id, source, pco_plan_person_id, pco_person_id, pco_role_name',
+      'id, event_id, user_id, person_name, role_id, source, pco_plan_person_id, pco_person_id, pco_role_name, sort_order, sort_order_overridden',
     ).eq('workbook_id', workbookId),
   ])
 
@@ -255,7 +278,16 @@ Deno.serve(async request => {
     .map(row => row.pco_service_type_id as string | null)
     .filter((id): id is string => Boolean(id))
   const userByPcoId = new Map((users ?? []).map(user => [String(user.pco_id), String(user.id)]))
-  const roleByName = new Map((roles ?? []).map(role => [normalized(role.name), String(role.id)]))
+  const roleByName = new Map<string, string | null>()
+  for (const role of roles ?? []) {
+    const key = roleKey(role.name)
+    const id = String(role.id)
+    // Never guess when two configured roles collapse to the same canonical
+    // name. Leaving the PCO role unmatched is safer than assigning its pay rate
+    // to the wrong position.
+    if (!roleByName.has(key)) roleByName.set(key, id)
+    else if (roleByName.get(key) !== id) roleByName.set(key, null)
+  }
   const crewRows = (existingCrew ?? []) as ExistingCrewRow[]
 
   let added = 0
@@ -294,13 +326,19 @@ Deno.serve(async request => {
     const activePlanPersonIds = new Set(planPeople.map(member => member.id))
     const eventCrew = crewRows.filter(row => row.event_id === event.id)
     const claimedRowIds = new Set<string>()
+    const preserveLocalOrder = eventCrew.some(row => row.sort_order_overridden)
+    let nextLocalSortOrder = Math.max(-1, ...eventCrew.map(row => row.sort_order))
 
     for (const [sortOrder, member] of planPeople.entries()) {
       const personName = member.attributes.name?.trim() || 'Unnamed PCO person'
       const pcoPersonId = member.relationships?.person?.data?.id ?? null
       const pcoRoleName = member.attributes.team_position_name?.trim() || null
       const mappedUserId = pcoPersonId ? userByPcoId.get(pcoPersonId) ?? null : null
-      const mappedRoleId = pcoRoleName ? roleByName.get(normalized(pcoRoleName)) ?? null : null
+      const mappedRoleId = pcoRoleName
+        ? pcoRoleMatchKeys(pcoRoleName)
+          .map(key => roleByName.get(key))
+          .find((id): id is string => Boolean(id)) ?? null
+        : null
       if (pcoRoleName && !mappedRoleId) unmatchedRoles.add(pcoRoleName)
 
       let existing = eventCrew.find(row => row.pco_plan_person_id === member.id)
@@ -330,7 +368,6 @@ Deno.serve(async request => {
         pco_status: member.attributes.status,
         pco_photo_url: member.attributes.photo_thumbnail,
         pco_synced_at: now,
-        sort_order: sortOrder,
         updated_at: now,
       }
 
@@ -340,6 +377,7 @@ Deno.serve(async request => {
           .from('workbook_crew')
           .update({
             ...importedFields,
+            ...(!existing.sort_order_overridden ? { sort_order: sortOrder } : {}),
             ...(!existing.role_id && mappedRoleId ? { role_id: mappedRoleId } : {}),
           })
           .eq('id', existing.id)
@@ -349,11 +387,14 @@ Deno.serve(async request => {
           updated++
         }
       } else {
+        const insertedSortOrder = preserveLocalOrder ? ++nextLocalSortOrder : sortOrder
         const { error } = await supabase
           .from('workbook_crew')
           .insert({
             ...importedFields,
             role_id: mappedRoleId,
+            sort_order: insertedSortOrder,
+            sort_order_overridden: preserveLocalOrder,
             call_time: null,
             release_time: null,
             is_paid: false,

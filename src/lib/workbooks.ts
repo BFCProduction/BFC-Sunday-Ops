@@ -201,10 +201,26 @@ export async function loadWorkbookCrew(workbookId: string): Promise<WorkbookCrew
     .select('*')
     .eq('workbook_id', workbookId)
     .order('scheduled_date', { ascending: true })
-    .order('call_time', { ascending: true, nullsFirst: false })
     .order('sort_order', { ascending: true })
+    .order('call_time', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
   if (error) throw error
   return (data ?? []) as WorkbookCrewMember[]
+}
+
+export async function reorderWorkbookCrew(orderedIds: string[]): Promise<void> {
+  const results = await Promise.all(orderedIds.map((id, sortOrder) =>
+    supabase
+      .from('workbook_crew')
+      .update({
+        sort_order: sortOrder,
+        sort_order_overridden: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id),
+  ))
+  const failed = results.find(result => result.error)
+  if (failed?.error) throw failed.error
 }
 
 function crewPayload(input: CrewMemberInput) {
@@ -224,7 +240,27 @@ function crewPayload(input: CrewMemberInput) {
 }
 
 export async function createCrewMember(input: CrewMemberInput): Promise<void> {
-  const { error } = await supabase.from('workbook_crew').insert(crewPayload(input))
+  let orderQuery = supabase
+    .from('workbook_crew')
+    .select('sort_order')
+    .eq('workbook_id', input.workbookId)
+    .eq('scheduled_date', input.scheduledDate)
+
+  orderQuery = input.eventId
+    ? orderQuery.eq('event_id', input.eventId)
+    : orderQuery.is('event_id', null)
+
+  const { data: lastRows, error: orderError } = await orderQuery
+    .order('sort_order', { ascending: false })
+    .limit(1)
+  if (orderError) throw orderError
+
+  const sortOrder = Number(lastRows?.[0]?.sort_order ?? -1) + 1
+  const { error } = await supabase.from('workbook_crew').insert({
+    ...crewPayload(input),
+    sort_order: sortOrder,
+    sort_order_overridden: true,
+  })
   if (error) throw error
 }
 
@@ -245,6 +281,20 @@ export async function updateCrewMemberTime(
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
+  if (error) throw error
+}
+
+export async function updateCrewMemberDetails(
+  id: string,
+  updates: { roleId?: string | null; isPaid?: boolean },
+): Promise<void> {
+  const payload: { role_id?: string | null; is_paid?: boolean; updated_at: string } = {
+    updated_at: new Date().toISOString(),
+  }
+  if (updates.roleId !== undefined) payload.role_id = updates.roleId
+  if (updates.isPaid !== undefined) payload.is_paid = updates.isPaid
+
+  const { error } = await supabase.from('workbook_crew').update(payload).eq('id', id)
   if (error) throw error
 }
 

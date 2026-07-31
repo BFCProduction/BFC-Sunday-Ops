@@ -300,6 +300,7 @@ export interface WorkbookCrewMember {
   release_time: string | null
   is_paid: boolean
   sort_order: number
+  sort_order_overridden: boolean
   source: 'manual' | 'pco'
   pco_plan_person_id: string | null
   pco_person_id: string | null

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-31 — Workbook crew role matching and typography
+
+- Fixed PCO crew-role matching for department-prefixed positions such as `Audio: A1`, `Lighting: Designer`, and `Video: Technical Director`. These now resolve to the configured Sunday Ops roles `A1`, `Lighting Designer`, and `Video TD`, allowing paid assignments to use the correct hourly rate after the next PCO crew sync.
+- Paid assignments with no matched local role or a zero hourly rate now show an explicit warning instead of a misleading `$0.00` value.
+- Unmatched PCO positions now display as **Not assigned** in the Role column instead of showing PCO role text that looks like a successful local role assignment.
+- Crew rows now start in Planning Center assignment order and can be reordered by dragging within each event. Manual ordering is persisted and protected from later PCO syncs by migration `055_workbook_crew_manual_order`; manually added or newly synced rows append without disturbing an existing custom order.
+- Replaced per-person edit pencils with one page-level **Edit crew / Done** mode. The default roster is fully read-only; edit mode exposes inline role, call, release, and Paid/Volunteer controls plus drag handles, Add Crew, and manual-row deletion. Inline changes autosave, so bulk roster cleanup no longer requires opening a modal for every person.
+- Call, Release, Hours, and Pay values on the Crew tab now use the app's normal font instead of the monospace font.
+
 ## 2026-07-30 — Workbook Input Lists and Crew Workflow Cleanup
 
 - Added an Input List tab to every workbook. Room-defined infrastructure is displayed as plain read-only values while workbook-entry cells autosave production-specific source, device, person, destination, and monitor assignments.
