@@ -446,7 +446,8 @@ Only consider a custom PDF renderer after the first release is evaluated. Before
 - **July 31, 2026 — local implementation:** Replaced the per-document accordion with one direct viewer for the active document. Tabs still select document type, and types with multiple documents now use a compact selector.
 - Preserved the existing desktop PDF viewer, mobile Google Docs Viewer, external-open links, Drive sync indicators, upload/link modal, and delete controls.
 - Verified the production build and scoped lint, document switching, empty states, and the admin add flow. Browser checks covered `1280×720`, `390×844`, and `320×568`; no page-level horizontal overflow was present.
-- **Still required before marking Complete:** deploy and verify with crew access in the live product, including pinch/zoom and drawing on the supported physical devices.
+- **Deployed July 31, 2026:** Commit `e365203` passed the GitHub Pages workflow. The live site served the new bundle and loaded without browser console errors.
+- **Still required before marking Complete:** verify with crew access in the live product, including pinch/zoom and drawing on the supported physical devices.
 
 ---
 
@@ -473,7 +474,8 @@ Only consider a custom PDF renderer after the first release is evaluated. Before
 - **July 31, 2026 — local implementation:** Removed the Quick Actions section and its now-unused UI imports. The existing progress, schedule, Run of Show, and high-priority issue alert retain their prior order and spacing, with no replacement widget added.
 - Confirmed Checklist, Issues, Event Data, and Evaluation remain in desktop and mobile navigation. Event Data continues to follow the existing `includeInAnalytics` visibility rule.
 - Scoped lint and the production build pass. Browser checks at `1280×720` and `390×844` confirmed there is no page-level horizontal overflow, no residual Quick Actions heading or container, and working navigation from both layouts.
-- **Still required before marking Complete:** deploy and confirm the simplified overview with crew access in the live product.
+- **Deployed July 31, 2026:** Commit `e365203` passed the GitHub Pages workflow. The live bundle no longer contains the Quick Actions UI.
+- **Still required before marking Complete:** confirm the simplified overview with crew access in the live product.
 
 ---
 
