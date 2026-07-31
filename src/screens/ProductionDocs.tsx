@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   FileText, Music, LayoutList, Paperclip, Plus, Trash2,
-  ChevronDown, ChevronUp, ExternalLink, RefreshCw, X, Upload, Link2,
+  ExternalLink, RefreshCw, X, Upload, Link2,
 } from 'lucide-react'
 import { useSunday } from '../context/SundayContext'
 import { useAdmin } from '../context/adminState'
@@ -268,17 +268,15 @@ function AddDocModal({ eventId, defaultDocType, onAdded, onClose }: AddDocModalP
   )
 }
 
-// ── Doc Card ──────────────────────────────────────────────────────────────────
+// ── Document Viewer ───────────────────────────────────────────────────────────
 
-interface DocCardProps {
+interface DocumentViewerProps {
   doc: ProductionDoc
-  defaultExpanded?: boolean
   isAdmin: boolean
   onDelete: (id: string) => void
 }
 
-function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardProps) {
-  const [expanded,   setExpanded]   = useState(defaultExpanded)
+function DocumentViewer({ doc, isAdmin, onDelete }: DocumentViewerProps) {
   const [deleting,   setDeleting]   = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
   const isMobile = useIsMobileViewport()
@@ -314,24 +312,17 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
   }
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden mb-3">
-      {/* Card header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-gray-50">
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="flex-1 flex items-center gap-2 text-left min-w-0"
-        >
-          {expanded
-            ? <ChevronUp   className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          }
+    <div className="border-y border-gray-200 bg-white md:border md:rounded-xl md:overflow-hidden">
+      {/* Compact document toolbar */}
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50">
+        <div className="flex-1 flex items-center gap-2 min-w-0">
           <span className="text-sm font-medium text-gray-900 truncate">{doc.title}</span>
           {doc.source === 'drive_sync' && (
             <span className="flex-shrink-0 text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
               synced
             </span>
           )}
-        </button>
+        </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
           {/* Open in Drive */}
@@ -390,7 +381,7 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
       </div>
 
       {/* Viewer */}
-      {expanded && viewUrl && (
+      {viewUrl && (
         <div
           className="border-t border-gray-200"
           style={{ overscrollBehavior: 'contain', touchAction: doc.storage_path && isMobile ? 'pan-x pan-y' : undefined }}
@@ -398,14 +389,18 @@ function DocCard({ doc, defaultExpanded = false, isAdmin, onDelete }: DocCardPro
           <iframe
             src={iframeSrc ?? undefined}
             className="w-full border-0 block"
-            style={{ height: 'calc(100vh - 190px)', overscrollBehavior: 'contain' }}
+            style={{
+              height: isMobile ? 'calc(100dvh - 250px)' : 'calc(100dvh - 220px)',
+              minHeight: isMobile ? '420px' : '560px',
+              overscrollBehavior: 'contain',
+            }}
             title={doc.title}
             sandbox={isSheet ? 'allow-scripts allow-same-origin allow-popups' : undefined}
           />
         </div>
       )}
 
-      {expanded && !viewUrl && (
+      {!viewUrl && (
         <div className="px-4 py-6 text-center text-sm text-gray-400 border-t border-gray-100">
           No viewable URL —{' '}
           <a href={doc.gdrive_url ?? '#'} className="text-blue-500 underline" target="_blank" rel="noopener noreferrer">
@@ -424,28 +419,35 @@ export function ProductionDocs() {
   const { isAdmin } = useAdmin()
   useMobileViewerViewportLock()
 
-  const [docs,         setDocs]         = useState<ProductionDoc[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [activeTab,    setActiveTab]    = useState<DocTypeId>('stage_plot')
-  const [showAddModal, setShowAddModal] = useState(false)
+  const [docs,          setDocs]          = useState<ProductionDoc[]>([])
+  const [loadedEventId, setLoadedEventId] = useState<string | null>(null)
+  const [activeTab,     setActiveTab]     = useState<DocTypeId>('stage_plot')
+  const [selectedDocs,  setSelectedDocs]  = useState<Partial<Record<DocTypeId, string>>>({})
+  const [showAddModal,  setShowAddModal]  = useState(false)
 
   useEffect(() => {
     if (!activeEventId) return
-    setLoading(true)
+    let cancelled = false
+
     supabase
       .from('production_docs')
       .select('*')
       .eq('event_id', activeEventId)
       .order('uploaded_at', { ascending: true })
       .then(({ data }) => {
+        if (cancelled) return
         setDocs((data ?? []) as ProductionDoc[])
-        setLoading(false)
+        setLoadedEventId(activeEventId)
       })
+
+    return () => { cancelled = true }
   }, [activeEventId])
 
   function handleAdded(doc: ProductionDoc) {
     setDocs(prev => [...prev, doc])
-    setActiveTab(doc.doc_type as DocTypeId)
+    const docType = doc.doc_type as DocTypeId
+    setActiveTab(docType)
+    setSelectedDocs(prev => ({ ...prev, [docType]: doc.id }))
   }
 
   function handleDeleted(id: string) {
@@ -457,6 +459,7 @@ export function ProductionDocs() {
   ) as Record<DocTypeId, ProductionDoc[]>
 
   const activeDocs = docsByType[activeTab] ?? []
+  const activeDoc = activeDocs.find(doc => doc.id === selectedDocs[activeTab]) ?? activeDocs[0] ?? null
 
   const lastSynced = docs
     .filter(d => d.synced_at)
@@ -468,6 +471,8 @@ export function ProductionDocs() {
       })
     : '—'
 
+  const loading = Boolean(activeEventId) && loadedEventId !== activeEventId
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -478,8 +483,8 @@ export function ProductionDocs() {
 
   return (
     <div className="fade-in">
-      {/* Sticky header + tab bar — matches ServiceData pattern */}
-      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-5 pt-4 pb-3">
+      {/* Header + document-type tabs */}
+      <div className="bg-white border-b border-gray-200 px-5 pt-4 pb-3">
         <div className="flex items-start justify-between gap-4 mb-2.5">
           <div>
             <h2 className="text-gray-900 font-bold text-lg">Production Docs</h2>
@@ -505,36 +510,38 @@ export function ProductionDocs() {
         </div>
 
         {/* Horizontal doc-type tabs */}
-        <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5 w-fit">
-          {DOC_TYPES.map(t => {
-            const count = docsByType[t.id].length
-            const isActive = activeTab === t.id
-            return (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
-                  isActive ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {t.label}
-                {count > 0 && (
-                  <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none ${
-                    isActive ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'
-                  }`}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            )
-          })}
+        <div className="overflow-x-auto">
+          <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5 w-max">
+            {DOC_TYPES.map(t => {
+              const count = docsByType[t.id].length
+              const isActive = activeTab === t.id
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id)}
+                  className={`flex items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
+                    isActive ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {t.label}
+                  {count > 0 && (
+                    <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none ${
+                      isActive ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
-      {/* Doc list for active tab */}
-      <div className="p-5">
+      {/* Direct viewer for active tab */}
+      <div className="py-4 md:p-5">
         {activeDocs.length === 0 ? (
-          <div className="border border-dashed border-gray-200 rounded-xl px-4 py-10 text-center">
+          <div className="mx-4 md:mx-0 border border-dashed border-gray-200 rounded-xl px-4 py-10 text-center">
             <p className="text-sm text-gray-400">
               No {DOC_TYPES.find(t => t.id === activeTab)?.label.toLowerCase()} attached yet
             </p>
@@ -543,15 +550,37 @@ export function ProductionDocs() {
             </p>
           </div>
         ) : (
-          activeDocs.map((doc, i) => (
-            <DocCard
-              key={doc.id}
-              doc={doc}
-              defaultExpanded={i === 0}
-              isAdmin={isAdmin}
-              onDelete={handleDeleted}
-            />
-          ))
+          <>
+            {activeDocs.length > 1 && activeDoc && (
+              <div className="flex items-center gap-2 px-4 mb-3 md:px-0">
+                <label htmlFor="production-doc-selector" className="text-xs font-semibold text-gray-500 flex-shrink-0">
+                  Document
+                </label>
+                <select
+                  id="production-doc-selector"
+                  value={activeDoc.id}
+                  onChange={event => setSelectedDocs(prev => ({
+                    ...prev,
+                    [activeTab]: event.target.value,
+                  }))}
+                  className="min-w-0 max-w-md flex-1 border border-gray-200 rounded-lg bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {activeDocs.map(doc => (
+                    <option key={doc.id} value={doc.id}>{doc.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {activeDoc && (
+              <DocumentViewer
+                key={activeDoc.id}
+                doc={activeDoc}
+                isAdmin={isAdmin}
+                onDelete={handleDeleted}
+              />
+            )}
+          </>
         )}
       </div>
 

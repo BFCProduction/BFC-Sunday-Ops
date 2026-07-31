@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-31 — Production Docs and Event Overview simplification
+
+- Production Docs now opens the active document directly instead of placing every file inside an accordion. Document-type tabs remain, and tabs with multiple files use one compact document selector rather than stacking several full viewers.
+- Preserved desktop PDF controls, the mobile Google Docs Viewer, external-open links, Drive sync indicators, and the existing admin upload, link, and delete workflows.
+- Removed the redundant Quick Actions section from Event Overview. Checklist, Issues, Event Data, and Evaluation remain available through desktop and mobile navigation; the progress, schedule, Run of Show, and high-priority issue alert retain their established order.
+- Added `docs/product-roadmap.md` as the durable record of confirmed product decisions, dependencies, acceptance criteria, and future-session handoffs.
+- Production build and scoped lint passed. The updated screens were checked at desktop and mobile viewport sizes without mutating production event data; live crew/device verification remains a post-deploy check.
+
 ## 2026-07-31 — Workbook crew role matching and typography
 
 - Fixed PCO crew-role matching for department-prefixed positions such as `Audio: A1`, `Lighting: Designer`, and `Video: Technical Director`. These now resolve to the configured Sunday Ops roles `A1`, `Lighting Designer`, and `Video TD`, allowing paid assignments to use the correct hourly rate after the next PCO crew sync.

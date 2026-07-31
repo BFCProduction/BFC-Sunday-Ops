@@ -2,9 +2,13 @@
 
 Internal Sunday-morning ops app for the BFC production team.
 
-This project is intentionally a shared team tool, not a per-user or multi-account system. The main distinction is between normal operators using the app during a service and admins managing checklist items and ProPresenter runtime definitions.
+This project currently uses a shared-team access model whose main distinction is between operators and admins. The product roadmap expands that foundation toward Crew/Operator, Manager, Analytics Viewer, and Administrator access, including invited users who do not have Planning Center accounts.
 
 Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproduction.github.io/BFC-Sunday-Ops/)
+
+## Product Roadmap
+
+The durable product direction, confirmed decisions, technical foundations, and future-session handoff guide live in [`docs/product-roadmap.md`](docs/product-roadmap.md).
 
 ## Current Scope
 
@@ -29,7 +33,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 - **PCO Run of Show** — the dashboard pulls the ordered plan items from the linked PCO plan and displays them as a scrollable Run of Show card with computed start times, type icons, song keys, durations, and item descriptions
 - **PCO sync** — updates existing manually-created events with PCO plan metadata (name, date); no longer auto-creates Sunday Ops events
 - **Mobile floating pill nav** — bottom navigation on mobile is a dark floating pill (80% width, centered) with white active state and a blue dot indicator
-- **Production Docs** — per-event stage plots, input lists, run sheets, and other files; Google Drive auto-sync via a service account + filename convention; manual upload (PDF) or Drive/Sheets link via admin UI; horizontal tab bar, full-width inline viewer on desktop, Google Docs Viewer on mobile for pinch-to-zoom
+- **Production Docs** — per-event stage plots, input lists, run sheets, and other files; Google Drive auto-sync via a service account + filename convention; manual upload (PDF) or Drive/Sheets link via admin UI; document-type tabs open the active document directly, with a compact selector when a type contains multiple files; full-width native PDF viewing on desktop and Google Docs Viewer on mobile preserve zoom and drawing support where available
 - **Workbooks** — a scheduling layer above events for multi-event / multi-day productions (conferences, assemblies). Reachable from the sidebar, mobile nav, and Home; writes are admin-gated. Includes:
   - **Workbook library + focused workspace** — Workbooks opens to a dedicated library for choosing or creating a production. Opening a workbook uses the full content width, with an **All Workbooks** control to return to the library instead of a permanent workbook-switching rail.
   - **Workbook Settings** in Settings (admin-only): a tabbed configuration area for Locations, Departments, Roles (+ hourly rate), schedule-item Types, Intercom, and room Input Lists. Ordered lists use drag-and-drop and workbook selectors respect the saved order.
@@ -111,7 +115,7 @@ Live now:
 
 - **Event-native cleanup pass** (`src/lib/supabase.ts`, `src/screens/Checklist.tsx`, `src/screens/Home.tsx`, `src/components/layout/SessionPicker.tsx`) — standalone event creation now seeds checklist items directly with unified `events.id`, regular Sunday services now use event-scoped checklist snapshots, the active app shell no longer exposes a separate legacy `eventId`/`sessionType` context, and dead legacy UI files (`EventChecklist`, `SpecialEventManager`, retired Service Data reporting tab) have been removed.
 
-- **Dashboard layout** — compact progress strip (dial + overall bar + role bars) spans the full width at the top; Today's Schedule (25%) and Run of Show (75%) sit side by side below it; Quick Actions below that. Stacks vertically on mobile.
+- **Dashboard layout** — compact progress strip (dial + overall bar + role bars) spans the full width at the top; Event Schedule (25%) and Run of Show (75%) sit side by side below it, followed by the high-priority issue alert when needed. Navigation remains in the desktop sidebar and mobile tab bar. The layout stacks vertically on mobile.
 
 - **PCO Run of Show** (`supabase/functions/pco-plan-items/`):
   - Fetches ordered plan items from the linked PCO plan.

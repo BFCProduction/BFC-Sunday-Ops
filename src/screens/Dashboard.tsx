@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ChevronRight, ClipboardCheck, BarChart2, Star, Music, Type, Film, Layers } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Music, Type, Film, Layers } from 'lucide-react'
 import { ensureEventChecklistSeeded, supabase } from '../lib/supabase'
 import { CHECKLIST_ROLE_OPTIONS, ROLE_COLORS } from '../data/checklist'
 import { useSunday } from '../context/SundayContext'
@@ -8,7 +8,6 @@ import { ApiError, fetchPcoPlanTimes, fetchPcoPlanItems, type PcoPlanTimeResult,
 import { initiatePCOLogin } from '../lib/pcoAuth'
 import { getChurchDateString } from '../lib/churchTime'
 import { Card } from '../components/ui/Card'
-import { SectionLabel } from '../components/ui/SectionLabel'
 import type { EventChecklistItem, Issue } from '../types'
 
 type Screen = 'dashboard' | 'checklist' | 'issues' | 'data' | 'evaluation'
@@ -443,28 +442,6 @@ export function Dashboard({ setScreen }: DashboardProps) {
           </button>
         )}
 
-        {/* Quick Actions */}
-        <div>
-          <SectionLabel>Quick Actions</SectionLabel>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: 'Event Checklist',   sub: 'Check off items', icon: ClipboardCheck, screen: 'checklist' as Screen },
-              { label: 'Log Issue',          sub: 'Capture a problem', icon: AlertTriangle,  screen: 'issues'    as Screen },
-              { label: 'Event Data',         sub: 'Attendance & runtimes', icon: BarChart2,  screen: 'data'      as Screen },
-              { label: 'Evaluation',         sub: 'Capture follow-up', icon: Star,       screen: 'evaluation' as Screen },
-            ].map(a => {
-              const Icon = a.icon
-              return (
-                <button key={a.label} onClick={() => setScreen(a.screen)}
-                  className="bg-white border border-gray-200 rounded-xl p-4 text-left hover:border-blue-200 hover:bg-blue-50 active:scale-95 transition-all group shadow-sm">
-                  <Icon className="w-5 h-5 text-gray-400 group-hover:text-blue-600 mb-2 transition-colors" strokeWidth={1.8} />
-                  <p className="text-gray-900 text-sm font-semibold group-hover:text-blue-700 transition-colors">{a.label}</p>
-                  <p className="text-gray-400 text-[11px] mt-0.5">{a.sub}</p>
-                </button>
-              )
-            })}
-          </div>
-        </div>
       </div>
     </div>
   )
