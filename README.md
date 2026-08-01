@@ -10,7 +10,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 
 The durable product direction, confirmed decisions, technical foundations, and future-session handoff guide live in [`docs/product-roadmap.md`](docs/product-roadmap.md).
 
-The current read-only authorization and policy review, including the staged containment order, lives in [`docs/security-inventory.md`](docs/security-inventory.md). Its identified controls are not yet implemented unless a later changelog entry says otherwise.
+The current authorization and policy review, including per-finding deployment status and the staged containment order, lives in [`docs/security-inventory.md`](docs/security-inventory.md). SEC-01 is deployed and verified; the remaining findings are explicitly identified there as pending work.
 
 ## Current Scope
 
@@ -622,6 +622,16 @@ Setup notes:
 - If `MONDAY_STATUS_COLUMN_ID` is provided, the function will try to set that status column to the issue severity label.
 
 Current production state as of July 31, 2026: migrations `059`, `060`, and `061`, the protected Edge Function, the automatic-mirroring Pages frontend, the Monday `Sunday Ops Issue ID` text column, and its Supabase function secret are deployed. The function is active with JWT verification enabled and rejects unauthenticated requests with `401`. An authenticated production smoke test saved the Sunday Ops issue before delivery, exposed an initial failed state, retried the same issue after the photo-table permission repair, and reconciled to exactly one Monday item with one update. The retained smoke-test issue is resolved in Sunday Ops.
+
+Production verification covered the complete delivery path:
+
+- an unauthenticated function request returned `401` without mutating an issue;
+- an authenticated issue was saved in Sunday Ops before external delivery;
+- the failed state and retry control remained visible when the first attempt stopped before Monday;
+- retrying the same issue after migration `061` produced one Monday item and one update with the correct issue ID;
+- the database recorded `synced`, a Monday item ID, no sync error, and a resolved smoke-test record.
+
+Rollback is forward-only: do not edit or delete an applied migration. Disable `VITE_ENABLE_MONDAY_PUSH` and redeploy the frontend before rolling back the function behavior, then use a new migration for any database permission change. Migration `061` repairs the pre-existing Issue Log photo permissions as well as server-side photo lookup, so it should remain in place unless photo access is intentionally being redesigned.
 
 The browser saves the Sunday Ops issue first and sends only its ID to the function. The function requires an unexpired `x-session-token`, claims one delivery attempt, fetches canonical issue/photo data with the service role, and creates:
 - a Monday item named from the issue title

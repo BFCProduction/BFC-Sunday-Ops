@@ -803,11 +803,13 @@ This sequence expresses dependencies, not calendar estimates.
 
 ### Release 3 — Issues become a Sunday Ops system
 
-- Automatic reliable Monday.com mirroring
+- Automatic reliable Monday.com mirroring **(I1 complete and production-verified July 31, 2026)**
 - Global Issues center
 - Manager permission for issue management
 - Sync status, retry, and duplicate prevention
 - Observe which follow-up work still requires Monday.com
+
+Current handoff: SEC-02 financial-data containment is the next trust release. After the permission skeleton is agreed, I2 Global Issues is the next issue-management product slice; I1 should be reopened only for a regression or newly approved scope.
 
 ### Release 4 — Direct users and permission enforcement
 
@@ -849,7 +851,7 @@ Use this table to start a focused session without reopening the entire audit.
 | Production Docs implementation | Confirmed decisions; P1 | `ProductionDocs.tsx`, production-doc schema/storage | Direct-view implementation plus desktop/mobile verification |
 | Event Overview cleanup | Confirmed decisions; P2 | `Dashboard.tsx`, Sidebar, MobileTabs | Remove Quick Actions without inventing a new dashboard model |
 | Run of Show design | P3 | Printed example, `Dashboard.tsx`, PCO plan-item response | Approved design brief and wireframe; no code required initially |
-| Automatic Monday mirror | I1; F2 immediate containment | `IssueLog.tsx`, `push-monday-issue` function, issue schema | Secure, retryable, idempotent sync for every issue |
+| Automatic Monday mirror (completed July 31, 2026) | I1; F2 immediate containment | `IssueLog.tsx`, `push-monday-issue` function, issue schema | Regression or incident verification only; implementation is production-verified |
 | Global Issues center | I2; permission model | Issue schema, App/Sidebar navigation, event Issue Log | Product spec or first global management slice |
 | Monday.com replacement | I3 | Global Issues usage and actual Monday workflows | Gap analysis and native issue-management specification |
 | Data Truth Audit | F1 | Migrations, `reportData.ts`, service records, operational scripts | Read-only reconciliation report and canonical-source map |
@@ -910,3 +912,11 @@ Sunday Ops has reached the intended next level when:
 - Completed the read-only F2 policy, caller, Edge Function, RPC, Storage, and financial-data inventory.
 - Documented the identity mismatch between the custom Planning Center session and direct Supabase anon requests.
 - Prioritized Monday.com authorization, financial isolation, high-impact administrative writes, restricted reads, and signed identity as staged containment releases.
+
+### July 31, 2026 — I1 production completion and session handoff
+
+- Deployed the secure automatic-mirroring frontend, migrations `059` and `060`, the protected `push-monday-issue` Edge Function, and the Monday `Sunday Ops Issue ID` column/secret.
+- The authenticated smoke test correctly preserved a Sunday Ops issue when server-side photo lookup initially failed. Production logs identified the missing `issue_photos` privilege before any Monday request was made.
+- Added and deployed migration `061_issue_photos_permissions`, retried the same issue, and verified exactly one Monday item with one update and the correct issue UUID. The database finished in `synced` state with no error, and the retained smoke-test issue was resolved.
+- Updated the README, changelog, roadmap, and security inventory to record the deployed state, verification evidence, rollback order, and next work.
+- **Next session:** begin SEC-02 financial-data containment. Do not restart I1 unless investigating a regression or implementing newly approved scope.
