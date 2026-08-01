@@ -322,6 +322,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260731151500_058_intercom_talk_listen_program_modes.sql`
 - `supabase/migrations/20260731170000_059_monday_issue_sync.sql`
 - `supabase/migrations/20260731174500_060_monday_sync_legacy_insert_compat.sql`
+- `supabase/migrations/20260801030000_061_issue_photos_permissions.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -615,12 +616,12 @@ Setup notes:
 - Set `VITE_ENABLE_MONDAY_PUSH=true` before building the frontend.
 - Add the Monday and Supabase service secrets shown above to your Supabase project for the edge function.
 - Add a Monday **Text** column named `Sunday Ops Issue ID` and set `MONDAY_ISSUE_ID_COLUMN_ID` to that column's API ID. The function fails closed when this durable idempotency column is missing.
-- Apply migration `059_monday_issue_sync` before deploying the updated Edge Function or frontend.
+- Apply migrations `059_monday_issue_sync`, `060_monday_sync_legacy_insert_compat`, and `061_issue_photos_permissions` before deploying the updated Edge Function or frontend.
 - Deploy the Edge Function after the migration and secrets, then deploy the frontend.
 - Add `VITE_ENABLE_MONDAY_PUSH` as a GitHub Actions secret so the Pages build can enable the UI.
 - If `MONDAY_STATUS_COLUMN_ID` is provided, the function will try to set that status column to the issue severity label.
 
-Current production state as of July 31, 2026: migrations `059` and `060`, the protected Edge Function, the Monday `Sunday Ops Issue ID` text column, and its Supabase function secret are configured. The function is active with JWT verification enabled and still rejects unauthenticated requests with `401`; the automatic-mirroring frontend and authenticated end-to-end smoke test remain pending.
+Current production state as of July 31, 2026: migrations `059`, `060`, and `061`, the protected Edge Function, the automatic-mirroring Pages frontend, the Monday `Sunday Ops Issue ID` text column, and its Supabase function secret are deployed. The function is active with JWT verification enabled and rejects unauthenticated requests with `401`. An authenticated production smoke test saved the Sunday Ops issue before delivery, exposed an initial failed state, retried the same issue after the photo-table permission repair, and reconciled to exactly one Monday item with one update. The retained smoke-test issue is resolved in Sunday Ops.
 
 The browser saves the Sunday Ops issue first and sends only its ID to the function. The function requires an unexpired `x-session-token`, claims one delivery attempt, fetches canonical issue/photo data with the service role, and creates:
 - a Monday item named from the issue title

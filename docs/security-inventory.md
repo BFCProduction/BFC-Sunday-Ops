@@ -1,6 +1,6 @@
 # Sunday Ops Security Inventory
 
-**Status:** Read-only inventory complete; SEC-01 Supabase containment deployed, final integration rollout pending
+**Status:** Read-only inventory complete; SEC-01 containment verified in production
 
 **Reviewed:** July 31, 2026
 
@@ -18,7 +18,7 @@ The interface hides administrative and financial controls appropriately, but man
 
 The highest-priority findings are:
 
-1. At audit time, `push-monday-issue` could use the Monday.com credential without validating the Sunday Ops session. The protected replacement is now deployed and verified to reject missing sessions.
+1. At audit time, `push-monday-issue` could use the Monday.com credential without validating the Sunday Ops session. The protected replacement now rejects missing sessions and has passed an authenticated production sync/retry test.
 2. Raw hourly rates, paid/volunteer flags, and supply prices are readable through the public database client. The browser also has enough data to reproduce crew-pay calculations.
 3. Workbook, production configuration, template, issue, document, and other administrative writes rely largely on `isAdmin` checks in React while their database policies allow anon writes.
 4. Evaluation responses and the analytics view are publicly queryable even though the interface presents them as admin-only.
@@ -98,7 +98,7 @@ CORS does not authorize non-browser callers. The public Supabase anon key used a
 
 **Containment:** Require an unexpired Sunday Ops session, allow only POST, accept only an issue ID, fetch the issue and photos server-side, and make retry behavior idempotent before enabling automatic mirroring for every issue.
 
-**Deployment status:** Migration `059_monday_issue_sync`, compatibility migration `060`, and the protected Edge Function are deployed. Migration `060` preserves the live frontend's explicit `pushed_to_monday: false` insert while keeping authoritative sync status, Monday item ID, attempts, errors, and timestamps unavailable to browser roles. The function requires an unexpired session, accepts only an issue ID, and returned `401` during a production probe without `x-session-token`. Creation combines Monday.com's native idempotency key with the configured `Sunday Ops Issue ID` text column so a lost create response can be reconciled without another item. The board column and `MONDAY_ISSUE_ID_COLUMN_ID` function secret are configured; frontend deployment and the authenticated sync/retry smoke test remain pending.
+**Deployment status:** Migrations `059_monday_issue_sync`, `060_monday_sync_legacy_insert_compat`, and `061_issue_photos_permissions`, the protected Edge Function, and the automatic-mirroring frontend are deployed. Migration `060` preserves the browser's explicit `pushed_to_monday: false` insert while keeping authoritative sync status, Monday item ID, attempts, errors, and timestamps unavailable to browser roles. Migration `061` restores the intended browser photo operations and grants the Edge Function's service role access to photo paths. The function requires an unexpired session, accepts only an issue ID, and returned `401` during a production probe without `x-session-token`. Creation combines Monday.com's native idempotency key with the configured `Sunday Ops Issue ID` text column so a lost create response can be reconciled without another item. An authenticated production failure/retry test reconciled the same Sunday Ops issue to exactly one Monday item and one update.
 
 ### SEC-02 — Financial inputs are publicly retrievable
 
@@ -218,7 +218,7 @@ No database or Storage dataset reviewed here qualifies as an intentional interne
 | `user-admin` | Unexpired admin session | Service-role user reads/updates | Correctly protected |
 | `summary-email-admin` | Unexpired admin session | Service-role email configuration | Correctly protected |
 | `workbook-pay` | Unexpired admin session | Service-role financial reads | Correct boundary, but browser still reads raw inputs |
-| `push-monday-issue` | Unexpired Sunday Ops session | Monday credential + service-role issue update | Protected replacement and integration config deployed; frontend pending |
+| `push-monday-issue` | Unexpired Sunday Ops session | Monday credential + service-role issue update | Protected replacement deployed and authenticated sync/retry verified |
 | `admin-session` | Shared password; no durable session | Boolean password check | Retire after deployment check |
 
 ---
@@ -227,9 +227,9 @@ No database or Storage dataset reviewed here qualifies as an intentional interne
 
 ### Release A — External credential containment
 
-1. Protect `push-monday-issue` with the existing custom session. **Supabase containment deployed.**
-2. Fetch canonical issue/photo data server-side instead of trusting caller fields. **Implemented locally.**
-3. Add method enforcement, sync state, retry safety, and idempotency. **Implemented locally.**
+1. Protect `push-monday-issue` with the existing custom session. **Deployed and verified.**
+2. Fetch canonical issue/photo data server-side instead of trusting caller fields. **Deployed and verified.**
+3. Add method enforcement, sync state, retry safety, and idempotency. **Deployed and verified.**
 4. Confirm and retire `admin-session` if unused.
 
 This release is the prerequisite for I1 automatic Monday.com mirroring.
@@ -283,4 +283,4 @@ Do not revoke broad policies across all domains in one release. The current clie
 
 ## Immediate next release
 
-Migrations `059` and `060`, the protected `push-monday-issue` function, and the Monday `Sunday Ops Issue ID` column/secret are deployed. The unauthorized production probe returned `401` without a record mutation. Deploy the frontend and complete an authenticated end-to-end mirror and retry smoke test. After that release, SEC-02's financial-data boundary is the next containment implementation.
+Migrations `059`, `060`, and `061`, the protected `push-monday-issue` function, the Monday `Sunday Ops Issue ID` column/secret, and the automatic-mirroring frontend are deployed. The unauthorized probe returned `401` without a record mutation, and the authenticated production sync/retry test reconciled to exactly one Monday item. SEC-02's financial-data boundary is the next containment implementation.

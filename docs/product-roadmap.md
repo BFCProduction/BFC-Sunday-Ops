@@ -345,7 +345,7 @@ The recommended destination is the first model, with the second used only as a c
 - A read-only live check with the shipped public client confirmed nonzero visibility for raw role-rate, workbook paid-status, supply-price, evaluation, analytics, and production-document data. Protected user and report-recipient controls rejected the same client.
 - Confirmed that the custom Planning Center session is validated by protected Edge Functions but is not an identity Supabase RLS can recognize for direct browser requests.
 - No production records, policies, functions, or Storage objects were changed during the inventory.
-- **Immediate next release:** migrations `059` and `060`, the protected `push-monday-issue` function, and the Monday `Sunday Ops Issue ID` column/secret are deployed. Deploy and verify the automatic-mirroring frontend. After the authenticated sync/retry smoke test, move raw financial fields behind a server-enforced permission boundary before broader policy tightening.
+- **July 31, 2026 release complete:** migrations `059`, `060`, and `061`, the protected `push-monday-issue` function, the Monday `Sunday Ops Issue ID` column/secret, and the automatic-mirroring frontend are deployed. The authenticated sync/retry smoke test reconciled to exactly one Monday item. Move raw financial fields behind a server-enforced permission boundary next, before broader policy tightening.
 
 ### Rollout safety
 
@@ -525,7 +525,7 @@ The current PCO Run of Show is presented inside a `Card` with a `480px` nested s
 
 ## Workstream I1 — Reliable automatic Monday.com mirroring
 
-**Status:** Supabase containment and Monday configuration deployed / frontend pending
+**Status:** Complete and verified in production
 
 **Role in roadmap:** Transitional infrastructure, not the long-term issue system
 
@@ -561,7 +561,9 @@ The current PCO Run of Show is presented inside a `Card` with a `480px` nested s
 - **Supabase deployed July 31, 2026:** Applied migration `059` to `BFC Production Sunday Op Hub` and deployed `push-monday-issue` with JWT verification enabled. The remote sync columns returned successfully, and a POST without `x-session-token` returned `401` without a production record mutation.
 - Deployed migration `060_monday_sync_legacy_insert_compat` to preserve issue creation by the currently deployed frontend, which explicitly inserts `pushed_to_monday: false`. Server-only control remains in force for authoritative sync status, Monday item ID, attempts, errors, and timestamps.
 - Added the Monday `Sunday Ops Issue ID` text column and configured `MONDAY_ISSUE_ID_COLUMN_ID` in Supabase. The configuration restart produced active function version 19; all five Monday settings are present, and the unauthenticated probe still returns `401`.
-- **Still required before marking Complete:** deploy the Pages frontend and run an authenticated end-to-end issue/sync/retry smoke test.
+- Deployed the automatic-mirroring Pages frontend. The authenticated production smoke test confirmed save-first behavior and visible failure/retry state.
+- The first smoke attempt stopped before Monday because `service_role` lacked `issue_photos` privileges. Added and deployed migration `061_issue_photos_permissions`, verified both browser and service-role reads, and retried the same issue.
+- **Production verification complete:** Sunday Ops recorded the issue as synced, the Monday board filter returned exactly one matching item with one update containing the correct issue UUID, and the retained smoke-test issue was marked resolved.
 
 ---
 

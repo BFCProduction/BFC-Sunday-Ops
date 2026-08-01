@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-07-31 — Secure automatic Monday.com issue mirroring (Supabase and Monday configured; frontend pending)
+## 2026-07-31 — Secure automatic Monday.com issue mirroring
 
 - Removed the operator checkbox and Low-severity exclusion. When the integration is enabled, every new issue is saved in Sunday Ops first and then mirrored automatically.
 - Added migration `059_monday_issue_sync` with durable pending/syncing/synced/failed delivery state, preserved `not_requested` history, stale-attempt recovery, and service-role-only control of sync metadata.
@@ -11,7 +11,9 @@
 - Applied migration `059` to the linked production Supabase project and deployed `push-monday-issue` with JWT verification enabled. A read-only schema probe passed, and a request without `x-session-token` returned `401` without creating or editing an issue.
 - Added and deployed migration `060_monday_sync_legacy_insert_compat`, preserving the currently deployed frontend's explicit `pushed_to_monday: false` insert while keeping the authoritative sync status, Monday item ID, attempts, errors, and timestamps unavailable to browser roles.
 - Added the Monday board's `Sunday Ops Issue ID` text column and configured `MONDAY_ISSUE_ID_COLUMN_ID` in Supabase. The configuration restart produced active function version 19, all five Monday settings are present, and an unauthenticated production probe still returned `401`.
-- The remaining release order is frontend deployment, then authenticated end-to-end sync and retry smoke tests.
+- Deployed the automatic-mirroring frontend through GitHub Pages and confirmed the authenticated production UI saves issues before attempting external delivery.
+- Added and deployed migration `061_issue_photos_permissions`, which explicitly grants browser photo management to `anon`/`authenticated` and server-side photo-path access to `service_role`. The production smoke test surfaced the missing service-role grant before any Monday request was made.
+- Retried the same failed production issue after the permission repair. Sunday Ops recorded `synced`, the Monday board contained exactly one matching item with one update and the correct issue UUID, and the retained smoke-test issue was marked resolved.
 
 ## 2026-07-31 — Security inventory and containment plan
 
