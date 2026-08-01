@@ -132,7 +132,7 @@ This is a concise orientation, not a substitute for inspecting the current code.
 - Event Overview: checklist progress, event schedule, PCO Run of Show, high-priority issue alert, and Quick Actions.
 - Production Docs: event-scoped PDFs and Drive/Sheets documents.
 - Checklist: event-native operational checklist with realtime completion; currently a successful feature.
-- Issue Log: event-scoped issues, photos, severity, resolution, and optional Monday.com push.
+- Issue Log: event-scoped issues, photos, severity, resolution, and automatic Monday.com mirroring when enabled.
 - Event Data: attendance, runtime, loudness, weather, and history.
 - Evaluation: anonymous event submissions and admin-only response review.
 - Workbooks: multi-event scheduling, crew, intercom, input lists, supplies, updates, and print packets.
@@ -293,7 +293,7 @@ Produce a table for every domain containing:
 
 ## Workstream F2 — Identity, permissions, and security
 
-**Status:** Foundation / Ready for architecture and staged implementation
+**Status:** Foundation / Security inventory complete; staged containment ready
 
 **Why it matters:** Analytics-only accounts, Manager access, financial privacy, global issue management, and trustworthy administration all depend on it.
 
@@ -338,6 +338,14 @@ The recommended destination is the first model, with the second used only as a c
 - Move raw workbook rates and financial calculations behind server-enforced permissions.
 - Inventory public/anonymous database policies and classify each as intentional public read, authenticated operation, or security gap.
 - Restrict the highest-risk writes first; do not tighten all policies in one untested release.
+
+### Security inventory validation
+
+- **July 31, 2026 — read-only inventory:** Completed the database, Storage, Edge Function, RPC, browser-caller, and financial-data review in [`security-inventory.md`](security-inventory.md).
+- A read-only live check with the shipped public client confirmed nonzero visibility for raw role-rate, workbook paid-status, supply-price, evaluation, analytics, and production-document data. Protected user and report-recipient controls rejected the same client.
+- Confirmed that the custom Planning Center session is validated by protected Edge Functions but is not an identity Supabase RLS can recognize for direct browser requests.
+- No production records, policies, functions, or Storage objects were changed during the inventory.
+- **Immediate next release:** migrations `059` and `060`, the protected `push-monday-issue` function, and the Monday `Sunday Ops Issue ID` column/secret are deployed. Deploy and verify the automatic-mirroring frontend. After the authenticated sync/retry smoke test, move raw financial fields behind a server-enforced permission boundary before broader policy tightening.
 
 ### Rollout safety
 
@@ -405,7 +413,7 @@ Document and automate, as far as practical:
 
 ## Workstream P1 — Production Docs embedded experience
 
-**Status:** Ready
+**Status:** Deployed / live crew-device validation pending
 
 **Priority:** First visible product improvement
 
@@ -517,7 +525,7 @@ The current PCO Run of Show is presented inside a `Card` with a `480px` nested s
 
 ## Workstream I1 — Reliable automatic Monday.com mirroring
 
-**Status:** Ready
+**Status:** Supabase containment and Monday configuration deployed / frontend pending
 
 **Role in roadmap:** Transitional infrastructure, not the long-term issue system
 
@@ -540,6 +548,20 @@ The current PCO Run of Show is presented inside a `Card` with a `480px` nested s
 - A Monday outage is visible but does not block Sunday Ops.
 - Retrying the same issue creates no duplicate item.
 - Unauthorized callers cannot create Monday.com items.
+
+### Implementation validation
+
+- **July 31, 2026 — implementation:** Removed the operator checkbox and severity exclusion. With the integration enabled, every new issue is saved first and then mirrored automatically.
+- Added migration `059_monday_issue_sync` with durable `not_requested`, `pending`, `syncing`, `synced`, and `failed` states. Existing unsent history remains `not_requested`; new rows default to `pending`.
+- Restricted anon issue INSERT/UPDATE privileges to operational fields so only the service role can set sync state, attempt tokens, errors, timestamps, or the Monday item ID.
+- The Edge Function now requires an unexpired Sunday Ops session, accepts only an issue ID, fetches canonical issue/photo data server-side, atomically claims work, rejects concurrent claims, reclaims attempts after five minutes, and reuses a stored or externally discoverable Monday item on retry.
+- Monday item creation uses a deterministic API idempotency key and a required `Sunday Ops Issue ID` text column, closing the lost-response window where an external item could exist before Sunday Ops stored its ID.
+- Pending and failed issue cards expose retry controls; Monday.com failure does not roll back or delete the Sunday Ops issue.
+- The production build and scoped frontend lint pass with Monday mirroring enabled. Deno type-check/lint passes, and five focused tests cover validation, content construction, claimable retry state, existing-item reuse, and durable external-ID values.
+- **Supabase deployed July 31, 2026:** Applied migration `059` to `BFC Production Sunday Op Hub` and deployed `push-monday-issue` with JWT verification enabled. The remote sync columns returned successfully, and a POST without `x-session-token` returned `401` without a production record mutation.
+- Deployed migration `060_monday_sync_legacy_insert_compat` to preserve issue creation by the currently deployed frontend, which explicitly inserts `pushed_to_monday: false`. Server-only control remains in force for authoritative sync status, Monday item ID, attempts, errors, and timestamps.
+- Added the Monday `Sunday Ops Issue ID` text column and configured `MONDAY_ISSUE_ID_COLUMN_ID` in Supabase. The configuration restart produced active function version 19; all five Monday settings are present, and the unauthenticated probe still returns `401`.
+- **Still required before marking Complete:** deploy the Pages frontend and run an authenticated end-to-end issue/sync/retry smoke test.
 
 ---
 
@@ -880,3 +902,9 @@ Sunday Ops has reached the intended next level when:
 - Added Workbook Event as a distinct product mode requiring discovery.
 - Confirmed permission presets with Financial Access kept separate.
 - Deferred full app and push notifications to a later evaluation-engagement chapter.
+
+### July 31, 2026 — Security inventory
+
+- Completed the read-only F2 policy, caller, Edge Function, RPC, Storage, and financial-data inventory.
+- Documented the identity mismatch between the custom Planning Center session and direct Supabase anon requests.
+- Prioritized Monday.com authorization, financial isolation, high-impact administrative writes, restricted reads, and signed identity as staged containment releases.

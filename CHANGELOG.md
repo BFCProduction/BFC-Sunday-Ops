@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-07-31 — Secure automatic Monday.com issue mirroring (Supabase and Monday configured; frontend pending)
+
+- Removed the operator checkbox and Low-severity exclusion. When the integration is enabled, every new issue is saved in Sunday Ops first and then mirrored automatically.
+- Added migration `059_monday_issue_sync` with durable pending/syncing/synced/failed delivery state, preserved `not_requested` history, stale-attempt recovery, and service-role-only control of sync metadata.
+- Protected `push-monday-issue` with the existing Sunday Ops session. The function now accepts only an issue ID, fetches canonical issue/photo data server-side, restricts requests to POST, and rejects unauthorized callers.
+- Added atomic attempt claims, Monday's deterministic `Idempotency-Key`, stored-item reuse, and a required `Sunday Ops Issue ID` board column so concurrent, timed-out, and later retry paths reconcile to one Monday item.
+- Added visible delivery states and retry controls to open and resolved issue cards. Monday.com failure remains non-fatal to the Sunday Ops issue.
+- Added five focused Deno tests for input validation, Monday content construction, retry state, item reuse, and external-ID column values. Production build, scoped ESLint, and Deno check/lint pass.
+- Applied migration `059` to the linked production Supabase project and deployed `push-monday-issue` with JWT verification enabled. A read-only schema probe passed, and a request without `x-session-token` returned `401` without creating or editing an issue.
+- Added and deployed migration `060_monday_sync_legacy_insert_compat`, preserving the currently deployed frontend's explicit `pushed_to_monday: false` insert while keeping the authoritative sync status, Monday item ID, attempts, errors, and timestamps unavailable to browser roles.
+- Added the Monday board's `Sunday Ops Issue ID` text column and configured `MONDAY_ISSUE_ID_COLUMN_ID` in Supabase. The configuration restart produced active function version 19, all five Monday settings are present, and an unauthenticated production probe still returned `401`.
+- The remaining release order is frontend deployment, then authenticated end-to-end sync and retry smoke tests.
+
+## 2026-07-31 — Security inventory and containment plan
+
+- Completed a read-only inventory of Supabase database and Storage policies, browser data paths, Edge Function caller validation, public RPCs, and workbook financial-data handling.
+- Documented the custom Planning Center session versus Supabase anon-role boundary and classified each public data domain as an authenticated operation, transitional compatibility path, or security gap.
+- Confirmed representative deployed read exposure without printing record values or making production writes.
+- Prioritized Monday.com function authorization, raw financial-data isolation, high-impact administrative writes, restricted analytics/evaluation reads, and signed application identity as staged containment releases.
+- Added `docs/security-inventory.md` and updated the F2 roadmap status. This entry records discovery only; it does not claim that the identified permission changes have shipped.
+
 ## 2026-07-31 — Production Docs and Event Overview simplification
 
 - Production Docs now opens the active document directly instead of placing every file inside an accordion. Document-type tabs remain, and tabs with multiple files use one compact document selector rather than stacking several full viewers.

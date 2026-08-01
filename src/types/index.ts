@@ -22,6 +22,12 @@ export interface Issue {
   severity: 'Low' | 'Medium' | 'High' | 'Critical'
   monday_item_id: string | null
   pushed_to_monday: boolean
+  monday_sync_status: 'not_requested' | 'pending' | 'syncing' | 'synced' | 'failed'
+  monday_sync_error: string | null
+  monday_sync_attempt_id: string | null
+  monday_sync_started_at: string | null
+  monday_sync_attempted_at: string | null
+  monday_synced_at: string | null
   created_at: string
   resolved_at: string | null
 }

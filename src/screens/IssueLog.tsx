@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle2, ImagePlus, Plus, Trash2, X, ZoomIn } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ImagePlus, Plus, RefreshCw, Trash2, X, ZoomIn } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { syncIssueToMonday } from '../lib/issues'
 import { Card } from '../components/ui/Card'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
@@ -50,6 +51,74 @@ async function uploadPhotos(issueId: string, files: File[]): Promise<string | nu
 function getPublicUrl(storagePath: string): string {
   const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath)
   return data.publicUrl
+}
+
+function getMondaySyncStatus(issue: Issue): Issue['monday_sync_status'] {
+  if (issue.monday_sync_status) return issue.monday_sync_status
+  return issue.pushed_to_monday ? 'synced' : 'not_requested'
+}
+
+function MondaySyncControl({
+  issue,
+  retrying,
+  onRetry,
+}: {
+  issue: Issue
+  retrying: boolean
+  onRetry: (issue: Issue) => void
+}) {
+  const status = retrying ? 'syncing' : getMondaySyncStatus(issue)
+
+  if (status === 'synced') {
+    return (
+      <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 text-[10px] text-blue-700 font-medium">
+        <CheckCircle2 className="w-3 h-3" />
+        Synced to Monday.com
+      </span>
+    )
+  }
+
+  if (status === 'syncing') {
+    return (
+      <span className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1 text-[10px] text-amber-700 font-medium">
+        <RefreshCw className="w-3 h-3 animate-spin" />
+        Syncing with Monday.com
+      </span>
+    )
+  }
+
+  const isFailed = status === 'failed'
+  const label = !MONDAY_PUSH_ENABLED
+    ? 'Awaiting Monday.com integration'
+    : isFailed
+      ? 'Monday.com sync failed'
+      : status === 'not_requested'
+        ? 'Not mirrored to Monday.com'
+        : 'Monday.com sync pending'
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span
+        className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-[10px] font-medium ${
+          isFailed
+            ? 'bg-red-50 border-red-200 text-red-700'
+            : 'bg-amber-50 border-amber-200 text-amber-700'
+        }`}
+        title={issue.monday_sync_error ?? undefined}
+      >
+        {label}
+      </span>
+      {MONDAY_PUSH_ENABLED && (
+        <button
+          type="button"
+          onClick={() => onRetry(issue)}
+          className="text-[10px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-2"
+        >
+          {status === 'not_requested' ? 'Send now' : 'Retry'}
+        </button>
+      )}
+    </div>
+  )
 }
 
 // ─── Photo strip ────────────────────────────────────────────────────────────
@@ -133,7 +202,7 @@ function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function IssueLog({ sundayId, eventId }: IssueLogProps) {
-  const { isAdmin } = useAdmin()
+  const { isAdmin, sessionToken } = useAdmin()
   const { timezone } = useSunday()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -143,7 +212,6 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
   const [severity, setSeverity] = useState<Issue['severity']>('Medium')
-  const [createTask, setCreateTask] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [confirmDelete, setConfirmDelete] = useState<Issue | null>(null)
@@ -152,6 +220,7 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
   const [notice, setNotice] = useState('')
   const [unassignedHistoricalCount, setUnassignedHistoricalCount] = useState(0)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [retryingIssueId, setRetryingIssueId] = useState<string | null>(null)
 
   // ── Load issues ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -219,7 +288,6 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
     setTitle('')
     setDesc('')
     setSeverity('Medium')
-    setCreateTask(false)
     setPendingFiles([])
     setPendingPreviews([])
     setShowForm(false)
@@ -259,18 +327,52 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
       created_at: new Date().toISOString(),
     }
     setNotice('')
-    const pushToMonday = MONDAY_PUSH_ENABLED && createTask && severity !== 'Low'
-    saveIssue(newIssue as Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday' | 'resolved_at'>, pushToMonday)
+    void saveIssue(newIssue)
   }
 
-  const saveIssue = async (
-    issue: Omit<Issue, 'id' | 'monday_item_id' | 'pushed_to_monday' | 'resolved_at'>,
-    pushToMonday: boolean,
-  ) => {
+  const refreshIssue = async (issueId: string) => {
+    const { data, error } = await supabase
+      .from('issues')
+      .select('*')
+      .eq('id', issueId)
+      .single()
+    if (error) throw error
+    const refreshed = data as Issue
+    setIssues(prev => prev.map(issue => issue.id === issueId ? refreshed : issue))
+    return refreshed
+  }
+
+  const retryMondaySync = async (issue: Issue) => {
+    if (!sessionToken) {
+      setNotice('Your Sunday Ops session is unavailable. Sign in again before retrying.')
+      return
+    }
+
+    setRetryingIssueId(issue.id)
+    setNotice('')
+    try {
+      await syncIssueToMonday(sessionToken, issue.id)
+      await refreshIssue(issue.id)
+      setNotice('Issue synced to Monday.com.')
+    } catch (error) {
+      await refreshIssue(issue.id).catch(() => {})
+      setNotice(error instanceof Error ? error.message : 'Monday.com sync failed. Please retry.')
+    } finally {
+      setRetryingIssueId(null)
+    }
+  }
+
+  const saveIssue = async (issue: {
+    sunday_id?: string
+    event_id?: string
+    title: string
+    description: string
+    severity: Issue['severity']
+    created_at: string
+  }) => {
     setSaving(true)
-    const { data, error } = await supabase.from('issues').insert({
-      ...issue, pushed_to_monday: false,
-    }).select().single()
+    const notices: string[] = []
+    const { data, error } = await supabase.from('issues').insert(issue).select().single()
     if (error) {
       setSaving(false)
       setNotice(error.message)
@@ -282,11 +384,10 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
     const filesToUpload = [...pendingFiles]
     resetForm()
 
-    let photoUrls: string[] = []
     if (filesToUpload.length > 0 && data) {
       const uploadErr = await uploadPhotos(data.id, filesToUpload)
       if (uploadErr) {
-        setNotice(`Issue saved, but photo upload failed: ${uploadErr}. Check that the 'issue-photos' storage bucket is public.`)
+        notices.push(`Photo upload failed: ${uploadErr}.`)
       }
       // Reload photos for this issue
       const { data: newPhotos } = await supabase
@@ -296,61 +397,28 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
         .order('uploaded_at', { ascending: true })
       if (newPhotos) {
         setPhotos(prev => ({ ...prev, [data.id]: newPhotos as IssuePhoto[] }))
-        photoUrls = (newPhotos as IssuePhoto[]).map(p => getPublicUrl(p.storage_path))
       }
     }
 
-    if (pushToMonday && data) {
+    if (MONDAY_PUSH_ENABLED && data) {
+      setRetryingIssueId(data.id)
       try {
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/push-monday-issue`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            issue_id: data.id,
-            title: issue.title,
-            description: issue.description,
-            severity: issue.severity,
-            photo_urls: photoUrls,
-          }),
-        })
-
-        const result = await response.json().catch(() => ({}))
-        const mondayItemId = typeof result?.itemId === 'string' ? result.itemId : null
-
-        // Belt-and-suspenders: edge function also updates pushed_to_monday server-side.
-        const { error: markError } = await supabase.from('issues').update({
-          pushed_to_monday: true,
-          monday_item_id: mondayItemId,
-        }).eq('id', data.id)
-
-        if (markError) {
-          console.error('Failed to update pushed_to_monday in DB:', markError.message)
-        }
-
-        // Re-fetch the issue so state reflects whatever the DB actually has.
-        // Handles cases where only one of the two DB updates (edge fn vs. frontend)
-        // succeeded, and avoids "Logged only" showing after navigating away and back.
-        const { data: refreshed } = await supabase
-          .from('issues')
-          .select('*')
-          .eq('id', data.id)
-          .single()
-
-        setIssues(prev => prev.map(entry =>
-          entry.id === data.id
-            ? refreshed ? (refreshed as Issue) : { ...entry, pushed_to_monday: true, monday_item_id: mondayItemId }
-            : entry
-        ))
-      } catch (err) {
-        // Only fires on network-level failure (can't reach the edge function at all)
-        console.error(err)
-        setNotice('Issue saved. Monday follow-up could not be created — check your connection.')
+        if (!sessionToken) throw new Error('Your Sunday Ops session is unavailable. Sign in again before retrying.')
+        await syncIssueToMonday(sessionToken, data.id)
+        await refreshIssue(data.id)
+      } catch (syncError) {
+        await refreshIssue(data.id).catch(() => {})
+        notices.push(syncError instanceof Error ? syncError.message : 'Monday.com sync failed. Please retry.')
+      } finally {
+        setRetryingIssueId(null)
       }
     }
 
+    setNotice(notices.length > 0
+      ? `Issue saved. ${notices.join(' ')}`
+      : MONDAY_PUSH_ENABLED
+        ? 'Issue saved and synced to Monday.com.'
+        : 'Issue saved.')
     setSaving(false)
   }
 
@@ -505,20 +573,11 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
                 />
               </div>
 
-              {/* Monday follow-up checkbox */}
-              {MONDAY_PUSH_ENABLED && severity !== 'Low' && (
-                <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={createTask}
-                    onChange={e => setCreateTask(e.target.checked)}
-                    className="h-4 w-4 mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <div>
-                    <p className="text-gray-800 text-xs font-semibold">Flag for follow-up before next Sunday</p>
-                    <p className="text-gray-400 text-[10px] mt-0.5">Creates a task in monday.com to address this issue.</p>
-                  </div>
-                </label>
+              {MONDAY_PUSH_ENABLED && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+                  <p className="text-blue-800 text-xs font-semibold">Automatic follow-up</p>
+                  <p className="text-blue-600 text-[10px] mt-0.5">Every issue is saved here first, then mirrored to Monday.com.</p>
+                </div>
               )}
 
               <div className="flex gap-2">
@@ -573,15 +632,11 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
                 />
 
                 <div className="mt-3 flex items-center justify-between">
-                  <div>
-                    {issue.pushed_to_monday ? (
-                      <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 text-[10px] text-blue-700 font-medium">
-                        Flagged for follow-up
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 text-[10px]">Logged only</span>
-                    )}
-                  </div>
+                  <MondaySyncControl
+                    issue={issue}
+                    retrying={retryingIssueId === issue.id}
+                    onRetry={retryMondaySync}
+                  />
                   <button
                     onClick={() => void resolveIssue(issue)}
                     className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1 hover:bg-emerald-100 transition-colors">
@@ -625,6 +680,14 @@ export function IssueLog({ sundayId, eventId }: IssueLogProps) {
                       onDelete={isAdmin ? deletePhoto : undefined}
                       onOpen={setLightboxUrl}
                     />
+
+                    <div className="mt-3">
+                      <MondaySyncControl
+                        issue={issue}
+                        retrying={retryingIssueId === issue.id}
+                        onRetry={retryMondaySync}
+                      />
+                    </div>
                   </Card>
                 ))}
               </div>

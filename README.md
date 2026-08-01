@@ -10,6 +10,8 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 
 The durable product direction, confirmed decisions, technical foundations, and future-session handoff guide live in [`docs/product-roadmap.md`](docs/product-roadmap.md).
 
+The current read-only authorization and policy review, including the staged containment order, lives in [`docs/security-inventory.md`](docs/security-inventory.md). Its identified controls are not yet implemented unless a later changelog entry says otherwise.
+
 ## Current Scope
 
 - Home landing screen with global tool cards, focus event, event timeline, and public "What's New" update feed
@@ -63,8 +65,9 @@ Live now:
 - Issues capture a short title, description, severity, and optional photo attachments.
 - Issue photos upload to Supabase Storage, display as thumbnail strips on each issue card, and open in a full-screen lightbox.
 - Issues can be marked resolved; resolved issues move to a dimmed section and are excluded from the sidebar badge and dashboard alert.
-- High-priority issue follow-up uses neutral operator-facing copy (`Flag for follow-up before next Sunday`), syncing to Monday.com when that integration is enabled.
-- When photos are attached to a flagged issue, the photo URLs are included in the Monday item update.
+- When the Monday.com integration is enabled, every new issue—including Low severity—is saved in Sunday Ops first and then mirrored automatically. Operators do not choose whether to create the follow-up.
+- Monday delivery states are visible as pending, syncing, synced, or failed. A signed-in user can retry pending or failed deliveries without creating a second Monday item.
+- The protected Edge Function fetches the canonical issue and photo records server-side; attached photo URLs are included in the Monday item update.
 - Runtime fields support ProPresenter's native zero-based timer index. `0` is the first clock.
 - Runtime fields can also be manual-only by leaving the ProPresenter host blank.
 - Runtime captured-at timestamps display in the configured church timezone, not the device timezone.
@@ -317,6 +320,8 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260731143000_056_workbook_crew_display_names.sql`
 - `supabase/migrations/20260731144500_057_workbook_supplies_whole_quantities.sql`
 - `supabase/migrations/20260731151500_058_intercom_talk_listen_program_modes.sql`
+- `supabase/migrations/20260731170000_059_monday_issue_sync.sql`
+- `supabase/migrations/20260731174500_060_monday_sync_legacy_insert_compat.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
@@ -384,6 +389,7 @@ MONDAY_API_TOKEN=your_monday_api_token
 MONDAY_BOARD_ID=your_board_id
 MONDAY_GROUP_ID=optional_group_id
 MONDAY_STATUS_COLUMN_ID=optional_status_column_id
+MONDAY_ISSUE_ID_COLUMN_ID=required_text_column_id
 GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL=service-account@project-id.iam.gserviceaccount.com
 GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 GMAIL_DELEGATED_USER=jerry@bethanynaz.org
@@ -601,24 +607,31 @@ Doc type is inferred from the description: "Stage Plot", "Input List" / "IO", "R
 
 ## Monday.com Push
 
-The issue log can push Medium, High, and Critical issues to Monday.com through:
+When enabled, the Issue Log mirrors every newly created issue to Monday.com through:
 
 - `supabase/functions/push-monday-issue`
 
 Setup notes:
 - Set `VITE_ENABLE_MONDAY_PUSH=true` before building the frontend.
 - Add the Monday and Supabase service secrets shown above to your Supabase project for the edge function.
-- Deploy the edge function after adding secrets.
+- Add a Monday **Text** column named `Sunday Ops Issue ID` and set `MONDAY_ISSUE_ID_COLUMN_ID` to that column's API ID. The function fails closed when this durable idempotency column is missing.
+- Apply migration `059_monday_issue_sync` before deploying the updated Edge Function or frontend.
+- Deploy the Edge Function after the migration and secrets, then deploy the frontend.
 - Add `VITE_ENABLE_MONDAY_PUSH` as a GitHub Actions secret so the Pages build can enable the UI.
 - If `MONDAY_STATUS_COLUMN_ID` is provided, the function will try to set that status column to the issue severity label.
 
-The function creates:
+Current production state as of July 31, 2026: migrations `059` and `060`, the protected Edge Function, the Monday `Sunday Ops Issue ID` text column, and its Supabase function secret are configured. The function is active with JWT verification enabled and still rejects unauthenticated requests with `401`; the automatic-mirroring frontend and authenticated end-to-end smoke test remain pending.
+
+The browser saves the Sunday Ops issue first and sends only its ID to the function. The function requires an unexpired `x-session-token`, claims one delivery attempt, fetches canonical issue/photo data with the service role, and creates:
 - a Monday item named from the issue title
 - a Monday update containing the full issue description, internal issue ID, and any attached photo URLs as numbered links
+
+The issue row records `not_requested`, `pending`, `syncing`, `synced`, or `failed`. The function combines a deterministic Monday `Idempotency-Key` with the board's `Sunday Ops Issue ID` column, so it can recover an item even if Sunday Ops never received the original create response. Retrying also reuses a stored `monday_item_id`; concurrent requests cannot claim the same issue, and a stale attempt becomes retryable after five minutes. Existing issues that were never pushed are backfilled as `not_requested` rather than becoming an automatic historical backlog. See Monday.com's official [idempotency guidance](https://developer.monday.com/api-reference/docs/idempotency).
 
 Example function deploy command:
 
 ```bash
+supabase db push
 supabase functions deploy push-monday-issue
 ```
 
