@@ -319,11 +319,19 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                                   ) : (
                                     <div className="relative">
                                       <input
+                                        data-input-list-column={column.id}
                                         value={value}
                                         onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))}
                                         onBlur={() => void persistValue(row.id, column.id)}
                                         onKeyDown={event => {
-                                          if (event.key === 'Enter') event.currentTarget.blur()
+                                          if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                                          event.preventDefault()
+                                          const nextInput = event.currentTarget
+                                            .closest('tr')
+                                            ?.nextElementSibling
+                                            ?.querySelector<HTMLInputElement>(`input[data-input-list-column="${column.id}"]`)
+                                          if (nextInput) nextInput.focus()
+                                          else event.currentTarget.blur()
                                         }}
                                         className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 pr-7 text-sm text-gray-900 outline-none hover:border-gray-200 hover:bg-white/70 focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500"
                                       />
