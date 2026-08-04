@@ -94,8 +94,16 @@ writes go through the `module-admin` Edge Function.
 1. Establish access levels, protected module metadata, PCO folder defaults, and
    financial-data containment.
 2. Convert Production Documents and Input List to module ownership and add the
-   Workbook Event switcher. **Implemented in Phase 2.**
+   Workbook Event switcher. **Implemented and deployed in Phase 2.**
 3. Convert Crew, Supplies, and Intercom, then remove the old publication UI and
    superseded compatibility paths after production verification.
 
 All migrations are forward-only and preserve existing operational records.
+
+**Phase 2 deployment status:** Migration `066_phase_2_module_content` and the
+`module-admin` / `module-content` Edge Functions were deployed on August 4,
+2026. The production migration assigned all 143 existing Production Documents
+to 45 Event modules and moved all 356 existing Workbook Input List cells into
+one Workbook module. Post-deploy probes confirmed that authenticated Event and
+Workbook module reads succeed, while anonymous reads of both content paths and
+requests without a Sunday Ops session are rejected.

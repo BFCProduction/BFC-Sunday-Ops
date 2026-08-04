@@ -118,6 +118,15 @@ Anon CRUD policies cover workbook scheduling, crew, supplies, intercom, Input Li
 
 **Containment:** Move the highest-impact admin mutations behind verified functions in small domain releases. Start with configuration, workbook publishing, destructive issue/document operations, and rate management. Preserve realtime and operational capture while each domain is migrated.
 
+**Deployment status:** Phase 2 moved module metadata, Input List contents, and
+Production Document mutations behind the session-verified `module-admin` and
+`module-content` functions. Manager permissions are enforced server-side for
+module lifecycle and document deletion; User sessions may still edit live
+module contents. Direct anonymous access to `production_docs`,
+`module_input_list_values`, and the retired Workbook value path is revoked.
+Crew, Supplies, Intercom, workbook publishing, and remaining configuration
+domains still require the staged containment work described below.
+
 ### SEC-04 — Restricted analytics and evaluation data are publicly readable
 
 **Severity:** High
@@ -133,6 +142,13 @@ Anon CRUD policies cover workbook scheduling, crew, supplies, intercom, Input Li
 `publish_workbook_schedule` is executable by anon/authenticated and accepts arbitrary workbook, publisher, and snapshot values. The three Input List reorder functions are also public and update every supplied ID without a caller or ownership check.
 
 **Containment:** Revoke anon execution and expose permission-checked equivalents. Validate that all supplied records belong to the intended workbook or configuration scope.
+
+**Deployment status:** Phase 2 revoked anonymous execution of the legacy
+Workbook Input List value and location-link save RPCs. Their module-aware
+replacements are service-role-only and are reached through `module-content`,
+which verifies the Sunday Ops session and validates the target module. The
+Input List structure reorder functions and `publish_workbook_schedule` remain
+to be protected in a later domain release.
 
 ### SEC-06 — Operational data and personnel schedules are internet-queryable
 
@@ -192,7 +208,7 @@ The classification describes the intended product operation, not the current tec
 | `runtime_fields`, `runtime_values`, `weather_config` | Broad CRUD | Operational values are authenticated; configuration writes are security gaps | Split capture from configuration management |
 | `analytics_records` | Read | Security gap | Require View Analytics |
 | `import_runs` | Read | Security gap; no active browser need found | Revoke anon read unless an approved status surface needs it |
-| `production_docs` | Broad CRUD | Crew read; upload/delete is a security gap | Protect mutations; decide public URL versus signed URL |
+| `production_docs` | Denied to anon; protected module API | Authenticated module content | Preserve verified reads/writes; finish Storage policy classification |
 | `event_templates`, `event_template_items` | Broad CRUD | Read may support creation; writes are security gaps | Protect template management |
 | `app_config` | Broad CRUD | Limited read is authenticated; writes are security gaps | Expose safe config read; protect management and secrets |
 | `locations`, `departments`, `schedule_item_types` | Broad CRUD | Crew read; writes are security gaps | Safe read model plus protected configuration writes |
@@ -201,8 +217,9 @@ The classification describes the intended product operation, not the current tec
 | `workbook_crew` | Broad operational CRUD; compatibility paid flag fixed at false | Authenticated personnel read plus admin-write gaps | Protected paid-status API deployed; protect remaining roster management |
 | `workbook_supplies` | Broad operational CRUD; compatibility price fixed at zero | Crew read and admin-write gap | Protected Admin price API deployed; protect remaining operational writes |
 | Intercom tables | Broad CRUD | Crew read; configuration/assignment writes are security gaps | Preserve read-only crew grid; protect management |
-| Input List tables | Broad CRUD | Crew read/entry needs product decision; config writes are security gaps | Separate room config, workbook entry, and management permissions |
-| `publish_workbook_schedule` and reorder RPCs | Execute | Security gap | Revoke and replace with permission-checked functions |
+| Input List structure/config tables | Broad read and configuration access | Crew read plus management security gaps | Preserve room reads; protect structure and reorder management |
+| `module_input_list_values`, legacy Workbook values, and cell-link writes | Denied to anon; protected module API | Authenticated module content | Preserve verified module reads/writes; retire compatibility objects after verification |
+| `publish_workbook_schedule` and structure reorder RPCs | Execute | Security gap | Revoke and replace with permission-checked functions |
 | `issue-photos` Storage | Public list/read/upload; delete state not proven live | Authenticated operation plus write gap | Version policies; protect mutations; assess signed URLs |
 | `production-docs` Storage | Public list/read/upload; delete state not proven live | Authenticated operation plus write gap | Version policies; protect mutations; assess signed URLs |
 
@@ -224,6 +241,8 @@ No database or Storage dataset reviewed here qualifies as an intentional interne
 | `user-admin` | Unexpired admin session | Service-role user reads/updates | Correctly protected |
 | `summary-email-admin` | Unexpired admin session | Service-role email configuration | Correctly protected |
 | `workbook-pay` | Unexpired admin session | Service-role financial reads | Correct boundary, but browser still reads raw inputs |
+| `module-admin` | Unexpired Sunday Ops session; Manager required for module lifecycle; Admin required for defaults | Service-role module metadata writes and PCO folder sync | Phase 2 protected boundary deployed |
+| `module-content` | Unexpired Sunday Ops session; Manager required for document deletion | Service-role Input List and Production Document reads/writes | Phase 2 protected boundary deployed |
 | `push-monday-issue` | Unexpired Sunday Ops session | Monday credential + service-role issue update | Protected replacement deployed and authenticated sync/retry verified |
 | `admin-session` | Removed | None | Retired August 4, 2026 |
 

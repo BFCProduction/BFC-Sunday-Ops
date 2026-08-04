@@ -241,10 +241,11 @@ Completed (previously listed as pending):
 - `workbook_pco_time_meta` — room + department annotation for a read-only PCO plan time, keyed by (`event_id`, `pco_time_id`) (migration `046`)
 - `workbook_crew` — crew roster: person (PCO user / manual guest / open TBD), role, day (+ optional event), call/release times, paid flag (migration `047`)
   - Migration `052` adds PCO assignment identity/source fields so linked-plan crew can sync without duplicating rows or overwriting Sunday Ops call/release/pay details.
-- **Input List room configuration + workbook values (migration `053`):**
+- **Input List room configuration + module values (migrations `053`, `062`, and `066`):**
   - `input_list_sections`, `input_list_columns`, and `input_list_rows` — ordered, location-specific document structure and connection inventory
   - `input_list_room_values` — reusable fixed infrastructure values shown read-only inside workbooks
-  - `workbook_input_list_values` — production-specific values keyed to a workbook, room connection row, and workbook-entry column
+  - `module_input_list_values` — protected production-specific values keyed to an Event or Workbook module, room connection row, and entry column
+  - `workbook_input_list_values` — emptied and access-revoked compatibility table retained during the Phase 2 verification window
   - `input_list_cell_links` — reusable location-wide target/source relationships that resolve against the active workbook (migration `062`)
 - **Intercom configuration + event grids (migration `050`):**
   - `intercom_pack_types` — account-level wired/wireless availability counts (future specific equipment can attach without replacing the pack type)
@@ -257,11 +258,13 @@ Completed (previously listed as pending):
 
 Functions:
 - `publish_workbook_schedule(workbook_id, published_by, snapshot)` — snapshots the current schedule as the next numbered version (used by "Send Update")
-- `save_input_list_cell_links_bulk(location_id, cells)` / `save_workbook_input_list_values_bulk(workbook_id, cells)` — atomically save drag-filled link or value ranges and their Undo operations
+- `save_module_input_list_values_bulk(module_instance_id, cells)` / `save_input_list_cell_links_bulk(location_id, cells)` — service-role-only bulk saves reached through the verified module content API
 
 Edge Functions (workbook):
 - `workbook-pay` — admin-only (verifies the PCO session token + `is_admin`); computes crew pay for a workbook and returns it only to verified admins. Deployed; wired in for the raw-rate lockdown (crew pay is currently computed client-side in the admin-only Crew tab).
 - `pco-workbook-crew` — admin-only; mirrors non-declined assignments from the **Production** team on every attached event's linked PCO plan into `workbook_crew` while preserving workbook-local call/release, pay, and role overrides.
+- `module-admin` — verified module discovery plus Manager/Admin lifecycle controls and Admin-only PCO-folder defaults.
+- `module-content` — verified Input List and Production Document reads/writes for Event and Workbook modules; document deletion requires Manager access.
 
 Views:
 - `analytics_records` — view over `service_records` that remaps legacy service-type values, exposes event identity/time/labels, and powers Analytics screens. As of migration `043`, it filters to events with `include_in_analytics = true` plus legacy `service_records` rows that have no `event_id` (pre-events historical data).
@@ -329,6 +332,10 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260731174500_060_monday_sync_legacy_insert_compat.sql`
 - `supabase/migrations/20260801030000_061_issue_photos_permissions.sql`
 - `supabase/migrations/20260804190000_062_input_list_cell_links.sql`
+- `supabase/migrations/20260804210000_063_user_access_levels.sql`
+- `supabase/migrations/20260804211500_064_module_foundation.sql`
+- `supabase/migrations/20260804213000_065_financial_data_boundary.sql`
+- `supabase/migrations/20260804233000_066_phase_2_module_content.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 
