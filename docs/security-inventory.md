@@ -1,8 +1,8 @@
 # Sunday Ops Security Inventory
 
-**Status:** Read-only inventory complete; SEC-01 containment verified in production
+**Status:** Inventory complete; SEC-01, SEC-02, and SEC-09 containment verified in production
 
-**Reviewed:** July 31, 2026
+**Reviewed:** August 4, 2026
 
 **Scope:** Supabase database and storage policies, browser data paths, Edge Function caller validation, RPC access, and financial-data handling
 
@@ -19,7 +19,7 @@ The interface hides administrative and financial controls appropriately, but man
 The highest-priority findings are:
 
 1. At audit time, `push-monday-issue` could use the Monday.com credential without validating the Sunday Ops session. The protected replacement now rejects missing sessions and has passed an authenticated production sync/retry test.
-2. Raw hourly rates, paid/volunteer flags, and supply prices are readable through the public database client. The browser also has enough data to reproduce crew-pay calculations.
+2. At audit time, raw hourly rates, paid/volunteer flags, and supply prices were readable through the public database client. They now live in service-role-only tables behind verified Admin functions; public compatibility fields are constrained to safe values.
 3. Workbook, production configuration, template, issue, document, and other administrative writes rely largely on `isAdmin` checks in React while their database policies allow anon writes.
 4. Evaluation responses and the analytics view are publicly queryable even though the interface presents them as admin-only.
 5. Public RPCs can publish workbook schedules or reorder Input List configuration without validating a Sunday Ops user or permission.
@@ -108,6 +108,8 @@ CORS does not authorize non-browser callers. The public Supabase anon key used a
 
 **Containment:** Split operational role/crew data from financial fields. Revoke anon access to raw rates and paid-status data; return pay only from a session-validated server boundary. Decide whether supply prices require Financial Access before locking that field down.
 
+**Deployment status:** Migration `065_financial_data_boundary` moved role rates, crew paid status, and supply prices into service-role-only tables, copied every existing record, and constrained the public compatibility fields to zero/false. `financial-admin` now handles protected reads and mutations, and `workbook-pay` reads only the protected values. Live negative tests confirmed anon reads are rejected and no nonzero financial value remains in the public compatibility fields; authenticated Admin tests confirmed the protected API succeeds. Supply prices are classified as Admin-only financial data for the current role model.
+
 ### SEC-03 — Administrative writes are primarily UI-gated
 
 **Severity:** High
@@ -156,6 +158,8 @@ The `issue-photos` and `production-docs` buckets are public so the browser can r
 
 **Containment:** Create one shared verification pattern, document the permission required by every function, and decide whether PCO synchronization is a normal signed-in action or a management action.
 
+**Deployment status:** Phase 1 introduced the shared `app-auth` verifier and migrated `event-admin`, `summary-email-admin`, `user-admin`, `workbook-pay`, `module-admin`, and `financial-admin` to it. The remaining PCO functions will be consolidated as their domain permissions are migrated.
+
 ### SEC-09 — Legacy shared-password function remains present
 
 **Severity:** Low
@@ -163,6 +167,8 @@ The `issue-photos` and `production-docs` buckets are public so the browser can r
 `admin-session` compares a shared password and returns only `{ ok: true }`. No current source caller was found, and it does not create a durable authorized session.
 
 **Containment:** Confirm it is undeployed or unused, then remove the function and its secret from the deployment inventory.
+
+**Deployment status:** No source caller was found. The function was removed from the repository and deleted from the linked Supabase project on August 4, 2026.
 
 ---
 
@@ -190,10 +196,10 @@ The classification describes the intended product operation, not the current tec
 | `event_templates`, `event_template_items` | Broad CRUD | Read may support creation; writes are security gaps | Protect template management |
 | `app_config` | Broad CRUD | Limited read is authenticated; writes are security gaps | Expose safe config read; protect management and secrets |
 | `locations`, `departments`, `schedule_item_types` | Broad CRUD | Crew read; writes are security gaps | Safe read model plus protected configuration writes |
-| `roles` | Broad CRUD including rate | Critical financial security gap | Public-safe role view without rates; protected financial API |
+| `roles` | Operational CRUD; compatibility rate fixed at zero | Protected financial data; operational writes remain transitional | Protected rate API deployed; protect remaining configuration writes |
 | `workbooks`, schedule items/assignments/versions, PCO time metadata | Broad CRUD | Crew read; management/publish writes are security gaps | View/Manage Workbooks split with protected publish |
-| `workbook_crew` | Broad CRUD including names, schedules, paid flag | Authenticated personnel read plus financial/admin gaps | Safe roster read; protect management and pay fields |
-| `workbook_supplies` | Broad CRUD including prices | Crew read and admin-write gap; financial classification open | Protect writes; decide Financial Access treatment for prices |
+| `workbook_crew` | Broad operational CRUD; compatibility paid flag fixed at false | Authenticated personnel read plus admin-write gaps | Protected paid-status API deployed; protect remaining roster management |
+| `workbook_supplies` | Broad operational CRUD; compatibility price fixed at zero | Crew read and admin-write gap | Protected Admin price API deployed; protect remaining operational writes |
 | Intercom tables | Broad CRUD | Crew read; configuration/assignment writes are security gaps | Preserve read-only crew grid; protect management |
 | Input List tables | Broad CRUD | Crew read/entry needs product decision; config writes are security gaps | Separate room config, workbook entry, and management permissions |
 | `publish_workbook_schedule` and reorder RPCs | Execute | Security gap | Revoke and replace with permission-checked functions |
@@ -219,7 +225,7 @@ No database or Storage dataset reviewed here qualifies as an intentional interne
 | `summary-email-admin` | Unexpired admin session | Service-role email configuration | Correctly protected |
 | `workbook-pay` | Unexpired admin session | Service-role financial reads | Correct boundary, but browser still reads raw inputs |
 | `push-monday-issue` | Unexpired Sunday Ops session | Monday credential + service-role issue update | Protected replacement deployed and authenticated sync/retry verified |
-| `admin-session` | Shared password; no durable session | Boolean password check | Retire after deployment check |
+| `admin-session` | Removed | None | Retired August 4, 2026 |
 
 ---
 
@@ -230,17 +236,17 @@ No database or Storage dataset reviewed here qualifies as an intentional interne
 1. Protect `push-monday-issue` with the existing custom session. **Deployed and verified.**
 2. Fetch canonical issue/photo data server-side instead of trusting caller fields. **Deployed and verified.**
 3. Add method enforcement, sync state, retry safety, and idempotency. **Deployed and verified.**
-4. Confirm and retire `admin-session` if unused.
+4. Confirm and retire `admin-session` if unused. **Deployed and verified.**
 
 This release is the prerequisite for I1 automatic Monday.com mirroring.
 
 ### Release B — Financial boundary
 
-1. Split `loadRoles()` into a public-safe operational shape and a protected financial shape.
-2. Stop direct browser access to `roles.hourly_rate` and pay-relevant crew fields.
-3. Wire pay displays and exports to `workbook-pay` or its permission-aware successor.
-4. Move rate edits behind a verified admin/Financial Access function.
-5. Decide whether supply prices are financial or broadly operational.
+1. Split `loadRoles()` into a public-safe operational shape and a protected financial shape. **Deployed and verified.**
+2. Stop direct browser access to `roles.hourly_rate` and pay-relevant crew fields. **Deployed and verified.**
+3. Wire pay displays and exports to `workbook-pay` or its permission-aware successor. **Deployed and verified.**
+4. Move rate edits behind a verified Admin function. **Deployed and verified.**
+5. Treat supply prices as Admin-only financial data. **Deployed and verified.**
 
 ### Release C — High-impact administrative writes
 

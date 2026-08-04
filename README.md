@@ -10,7 +10,7 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 
 The durable product direction, confirmed decisions, technical foundations, and future-session handoff guide live in [`docs/product-roadmap.md`](docs/product-roadmap.md).
 
-The current authorization and policy review, including per-finding deployment status and the staged containment order, lives in [`docs/security-inventory.md`](docs/security-inventory.md). SEC-01 is deployed and verified; the remaining findings are explicitly identified there as pending work.
+The current authorization and policy review, including per-finding deployment status and the staged containment order, lives in [`docs/security-inventory.md`](docs/security-inventory.md). SEC-01, SEC-02, and SEC-09 are deployed and verified; the remaining findings are explicitly identified there as pending work.
 
 The confirmed Event/Workbook module ownership model, access levels, PCO-folder defaults, and phased migration rules live in [`docs/module-architecture.md`](docs/module-architecture.md).
 
