@@ -11,7 +11,7 @@ interface MobileTabsProps {
 
 const tabs = [
   { id: 'home'       as Screen, label: 'Home',       icon: Home            },
-  { id: 'docs'       as Screen, label: 'Docs',       icon: FolderOpen      },
+  { id: 'docs'       as Screen, label: 'Modules',    icon: FolderOpen      },
   { id: 'checklist'  as Screen, label: 'Check',      icon: ClipboardCheck  },
   { id: 'issues'     as Screen, label: 'Issues',     icon: AlertTriangle   },
   { id: 'data'       as Screen, label: 'Data',       icon: BarChart2       },

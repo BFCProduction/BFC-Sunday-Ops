@@ -44,6 +44,20 @@ export interface ModuleConfiguration {
   }>
 }
 
+export interface WorkbookModuleEvent {
+  id: string
+  name: string
+  event_date: string
+  event_time: string | null
+}
+
+export interface ModuleScopeResponse {
+  definitions: ModuleDefinition[]
+  workbook_modules: ModuleInstance[]
+  event_modules: ModuleInstance[]
+  events?: WorkbookModuleEvent[]
+}
+
 export function fetchModuleConfiguration(sessionToken: string) {
   return moduleRequest<ModuleConfiguration>(sessionToken, {
     query: new URLSearchParams({ configuration: 'true' }),
@@ -79,9 +93,18 @@ export function applyEventModuleDefaults(sessionToken: string, eventId: string) 
 }
 
 export function fetchEventModules(sessionToken: string, eventId: string, includeArchived = false) {
-  return moduleRequest<{ event_modules: ModuleInstance[] }>(sessionToken, {
+  return moduleRequest<ModuleScopeResponse>(sessionToken, {
     query: new URLSearchParams({
       event_id: eventId,
+      ...(includeArchived ? { include_archived: 'true' } : {}),
+    }),
+  })
+}
+
+export function fetchWorkbookModules(sessionToken: string, workbookId: string, includeArchived = false) {
+  return moduleRequest<ModuleScopeResponse>(sessionToken, {
+    query: new URLSearchParams({
+      workbook_id: workbookId,
       ...(includeArchived ? { include_archived: 'true' } : {}),
     }),
   })
@@ -112,5 +135,17 @@ export function createModule(
 export function setModuleArchived(sessionToken: string, moduleId: string, archived: boolean) {
   return moduleRequest<{ module: ModuleInstance }>(sessionToken, {
     body: { action: archived ? 'archive' : 'restore', module_id: moduleId },
+  })
+}
+
+export function renameModule(sessionToken: string, moduleId: string, title: string) {
+  return moduleRequest<{ module: ModuleInstance }>(sessionToken, {
+    body: { action: 'rename', module_id: moduleId, title },
+  })
+}
+
+export function reorderModules(sessionToken: string, orderedIds: string[]) {
+  return moduleRequest<{ ok: true }>(sessionToken, {
+    body: { action: 'reorder', ordered_ids: orderedIds },
   })
 }

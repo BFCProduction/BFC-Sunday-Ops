@@ -27,7 +27,7 @@ interface SidebarProps {
 
 const eventNavItems = [
   { id: 'dashboard'   as Screen, label: 'Event Overview', icon: LayoutDashboard },
-  { id: 'docs'        as Screen, label: 'Production Docs', icon: FolderOpen      },
+  { id: 'docs'        as Screen, label: 'Modules',         icon: FolderOpen      },
   { id: 'checklist'   as Screen, label: 'Checklist',       icon: ClipboardCheck  },
   { id: 'issues'      as Screen, label: 'Issue Log',       icon: AlertTriangle   },
   { id: 'data'        as Screen, label: 'Event Data',      icon: BarChart2       },

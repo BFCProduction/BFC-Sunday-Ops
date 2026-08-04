@@ -304,13 +304,46 @@ async function findEventIds(date, serviceSlugs) {
 // ── Already synced check ──────────────────────────────────────────────────────
 
 async function alreadySynced(eventId, driveFileId) {
+  const moduleInstanceId = await findOrCreateProductionDocumentsModule(eventId)
   const { data } = await supabase
     .from('production_docs')
     .select('id')
-    .eq('event_id', eventId)
+    .eq('module_instance_id', moduleInstanceId)
     .eq('gdrive_file_id', driveFileId)
     .maybeSingle()
   return !!data
+}
+
+async function findOrCreateProductionDocumentsModule(eventId) {
+  const { data: existing, error: lookupError } = await supabase
+    .from('module_instances')
+    .select('id')
+    .eq('event_id', eventId)
+    .eq('module_key', 'production_documents')
+    .order('status', { ascending: true })
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (lookupError) throw new Error(`Module lookup failed: ${lookupError.message}`)
+  if (existing) return existing.id
+
+  const { data: event } = await supabase
+    .from('events')
+    .select('workbook_location_id')
+    .eq('id', eventId)
+    .maybeSingle()
+  const { data: created, error: createError } = await supabase
+    .from('module_instances')
+    .insert({
+      module_key: 'production_documents',
+      event_id: eventId,
+      location_id: event?.workbook_location_id ?? null,
+    })
+    .select('id')
+    .single()
+  if (createError || !created) throw new Error(`Module creation failed: ${createError?.message ?? 'No module returned'}`)
+  return created.id
 }
 
 // ── Download from Drive ───────────────────────────────────────────────────────
@@ -457,16 +490,18 @@ async function uploadToStorage(eventId, driveFileId, buffer, contentType, ext) {
 // ── Insert production_docs row ────────────────────────────────────────────────
 
 async function upsertDocRecord(eventId, driveFileId, webViewLink, storagePath, docType, title) {
+  const moduleInstanceId = await findOrCreateProductionDocumentsModule(eventId)
   // Check for an existing row so we can update rather than conflict-upsert
   // (PostgREST doesn't support ON CONFLICT with partial unique indexes)
   const { data: existing } = await supabase
     .from('production_docs')
     .select('id')
-    .eq('event_id', eventId)
+    .eq('module_instance_id', moduleInstanceId)
     .eq('gdrive_file_id', driveFileId)
     .maybeSingle()
 
   const payload = {
+    module_instance_id: moduleInstanceId,
     event_id:       eventId,
     gdrive_file_id: driveFileId,
     gdrive_url:     webViewLink,

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, BookOpen, CalendarDays, CalendarPlus,
+  AlertTriangle, ArrowLeft, ArrowRight, Blocks, BookOpen, CalendarDays, CalendarPlus,
   Check, Columns3, Copy, Filter, History, LayoutGrid,
   Link2, List, MapPin, Pencil, Plus, Printer, RadioTower, Save,
-  Send, ShoppingCart, TableProperties, Trash2, Users, X,
+  Send, ShoppingCart, Trash2, Users, X,
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
@@ -55,10 +55,11 @@ import { CrewTab } from '../components/workbook/CrewTab'
 import { IntercomGrid } from '../components/workbook/IntercomGrid'
 import { SuppliesTab } from '../components/workbook/SuppliesTab'
 import { WorkbookPrintModal } from '../components/workbook/WorkbookPrintModal'
-import { InputListTab } from '../components/workbook/InputListTab'
+import { ModuleWorkspace } from '../components/modules/ModuleWorkspace'
 import { QuickCreateModal } from '../components/layout/QuickCreateModal'
 import { workbookScheduleDiff, type DiffScheduleItem, type DiffEvent } from '../lib/workbookDiff'
-import { loadWorkbookInputListDocuments } from '../lib/inputLists'
+import { loadModuleInputListDocuments } from '../lib/inputLists'
+import { fetchWorkbookModules } from '../lib/modules'
 import { fetchWorkbookFinancialData } from '../lib/financialAdmin'
 import type {
   CrewRole,
@@ -913,7 +914,7 @@ function EventSetupRow({
 }
 
 export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
-  const { isAdmin, sessionToken, user } = useAdmin()
+  const { isAdmin, isManager, sessionToken, user } = useAdmin()
   const { navigateToEvent, timezone } = useSunday()
   const [workbooks, setWorkbooks] = useState<Workbook[]>([])
   const [activeWorkbookId, setActiveWorkbookId] = useState('')
@@ -928,7 +929,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [pcoMeta, setPcoMeta] = useState<Record<string, PcoTimeMeta>>({})
   const [assigningPcoRow, setAssigningPcoRow] = useState<DisplayRow | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
-  const [tab, setTab] = useState<'schedule' | 'events' | 'crew' | 'intercom' | 'inputList' | 'supplies'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'events' | 'modules' | 'crew' | 'intercom' | 'supplies'>('schedule')
   const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
   const [loading, setLoading] = useState(true)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
@@ -1338,13 +1339,48 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       const pay = permittedSections.includes('crewPay')
         ? buildWorkbookPayLines(crew, users, crewRoles)
         : { lines: [], totalHours: 0, totalPay: 0 }
-      const inputListDocuments = permittedSections.includes('inputLists')
-        ? await loadWorkbookInputListDocuments(
-            activeWorkbook.id,
-            locations,
-            linkedEvents.map(event => event.workbookLocationId).filter((id): id is string => Boolean(id)),
+      let inputListDocuments: Awaited<ReturnType<typeof loadModuleInputListDocuments>> = []
+      if (permittedSections.includes('inputLists') && sessionToken) {
+        const moduleData = await fetchWorkbookModules(sessionToken, activeWorkbook.id)
+        const eventById = new Map(linkedEvents.map(event => [event.id, event]))
+        const moduleEntries = [
+          ...moduleData.workbook_modules
+            .filter(module => module.module_key === 'input_list')
+            .map(module => ({
+              module,
+              ownerLabel: 'Workbook Shared',
+              preferredLocationIds: linkedEvents
+                .map(event => event.workbookLocationId)
+                .filter((id): id is string => Boolean(id)),
+            })),
+          ...moduleData.event_modules
+            .filter(module => module.module_key === 'input_list')
+            .map(module => {
+              const linkedEvent = module.event_id ? eventById.get(module.event_id) : null
+              return {
+                module,
+                ownerLabel: linkedEvent?.name ?? 'Event',
+                preferredLocationIds: linkedEvent?.workbookLocationId ? [linkedEvent.workbookLocationId] : [],
+              }
+            }),
+        ]
+        const documents = await Promise.all(moduleEntries.map(async entry => {
+          const moduleLocations = entry.module.location_id
+            ? locations.filter(location => location.id === entry.module.location_id)
+            : locations
+          const result = await loadModuleInputListDocuments(
+            sessionToken,
+            entry.module.id,
+            moduleLocations,
+            entry.preferredLocationIds,
           )
-        : []
+          return result.map(document => ({
+            ...document,
+            locationName: `${entry.ownerLabel} · ${document.locationName}`,
+          }))
+        }))
+        inputListDocuments = documents.flat()
+      }
 
       let intercomEvents: IntercomPrintEvent[] = []
       if (permittedSections.includes('intercom')) {
@@ -1574,7 +1610,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 {([
                   ['schedule', 'Schedule', CalendarDays],
                   ['events', 'Events', Link2],
-                  ['inputList', 'Input List', TableProperties],
+                  ['modules', 'Modules', Blocks],
                 ] as const).map(([id, label, Icon]) => (
                   <button key={id} onClick={() => setTab(id)} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === id ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
                     <Icon className="h-4 w-4" /> {label}
@@ -1828,12 +1864,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
               />
             )}
 
-            {tab === 'inputList' && (
-              <InputListTab
-                workbook={activeWorkbook}
+            {tab === 'modules' && sessionToken && (
+              <ModuleWorkspace
+                sessionToken={sessionToken}
+                isManager={isManager}
                 locations={locations}
+                workbook={activeWorkbook}
                 linkedEvents={linkedEvents}
-                editable={isAdmin}
               />
             )}
 

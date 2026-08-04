@@ -8,8 +8,13 @@ import type {
   InputListSection,
   InputListSectionColumn,
   Location,
-  WorkbookInputListValue,
+  ModuleInputListValue,
 } from '../types'
+import {
+  fetchModuleContent,
+  saveModuleInputListLinks,
+  saveModuleInputListValues as saveProtectedModuleInputListValues,
+} from './moduleContent'
 
 export { INPUT_LIST_CONNECTION_TYPES } from './inputListConnectionTypes'
 
@@ -38,11 +43,14 @@ export interface InputListCellLinkChange {
   source_column_id: string | null
 }
 
-export interface WorkbookInputListValueChange {
+export interface ModuleInputListValueChange {
   row_id: string
   column_id: string
   value: string
 }
+
+/** @deprecated Use ModuleInputListValueChange. */
+export type WorkbookInputListValueChange = ModuleInputListValueChange
 
 export function inputListCellKey(rowId: string, columnId: string) {
   return `${rowId}:${columnId}`
@@ -79,7 +87,7 @@ export function incrementTrailingNumber(value: string, offset: number): string {
 
 export function buildResolvedInputListValueMap(
   sections: InputListSection[],
-  workbookValues: Pick<WorkbookInputListValue, 'row_id' | 'column_id' | 'value'>[],
+  workbookValues: Pick<ModuleInputListValue, 'row_id' | 'column_id' | 'value'>[],
   links: Pick<InputListCellLink, 'target_row_id' | 'target_column_id' | 'source_row_id' | 'source_column_id'>[],
 ): Map<string, string> {
   const workbookValueByKey = new Map(workbookValues.map(value => [
@@ -365,13 +373,12 @@ export async function saveInputListRoomValue(
   if (error) throw error
 }
 
-export async function loadWorkbookInputListValues(workbookId: string): Promise<WorkbookInputListValue[]> {
-  const { data, error } = await supabase
-    .from('workbook_input_list_values')
-    .select('*')
-    .eq('workbook_id', workbookId)
-  if (error) throw error
-  return (data ?? []) as WorkbookInputListValue[]
+export async function loadModuleInputListValues(
+  sessionToken: string,
+  moduleInstanceId: string,
+): Promise<ModuleInputListValue[]> {
+  const content = await fetchModuleContent(sessionToken, moduleInstanceId)
+  return content.input_list_values
 }
 
 export async function loadInputListCellLinks(locationId: string): Promise<InputListCellLink[]> {
@@ -383,62 +390,42 @@ export async function loadInputListCellLinks(locationId: string): Promise<InputL
   return (data ?? []) as InputListCellLink[]
 }
 
-export async function saveWorkbookInputListValue(
-  workbookId: string,
+export async function saveModuleInputListValue(
+  sessionToken: string,
+  moduleInstanceId: string,
   rowId: string,
   columnId: string,
   value: string,
 ): Promise<void> {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    const { error } = await supabase
-      .from('workbook_input_list_values')
-      .delete()
-      .eq('workbook_id', workbookId)
-      .eq('row_id', rowId)
-      .eq('column_id', columnId)
-    if (error) throw error
-    return
-  }
-
-  const { error } = await supabase
-    .from('workbook_input_list_values')
-    .upsert({
-      workbook_id: workbookId,
-      row_id: rowId,
-      column_id: columnId,
-      value: trimmed,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'workbook_id,row_id,column_id' })
-  if (error) throw error
+  await saveProtectedModuleInputListValues(sessionToken, moduleInstanceId, [{
+    row_id: rowId,
+    column_id: columnId,
+    value: value.trim(),
+  }])
 }
 
-export async function saveWorkbookInputListValuesBulk(
-  workbookId: string,
-  cells: WorkbookInputListValueChange[],
+export async function saveModuleInputListValuesBulk(
+  sessionToken: string,
+  moduleInstanceId: string,
+  cells: ModuleInputListValueChange[],
 ): Promise<void> {
   if (cells.length === 0) return
-  const { error } = await supabase.rpc('save_workbook_input_list_values_bulk', {
-    target_workbook_id: workbookId,
-    cells,
-  })
-  if (error) throw error
+  await saveProtectedModuleInputListValues(sessionToken, moduleInstanceId, cells)
 }
 
 export async function saveInputListCellLinksBulk(
+  sessionToken: string,
+  moduleInstanceId: string,
   locationId: string,
   cells: InputListCellLinkChange[],
 ): Promise<void> {
   if (cells.length === 0) return
-  const { error } = await supabase.rpc('save_input_list_cell_links_bulk', {
-    target_location_id: locationId,
-    cells,
-  })
-  if (error) throw error
+  await saveModuleInputListLinks(sessionToken, moduleInstanceId, locationId, cells)
 }
 
-export async function loadWorkbookInputListDocuments(
-  workbookId: string,
+export async function loadModuleInputListDocuments(
+  sessionToken: string,
+  moduleInstanceId: string,
   locations: Location[],
   preferredLocationIds: string[] = [],
 ): Promise<InputListPrintDocument[]> {
@@ -450,7 +437,7 @@ export async function loadWorkbookInputListDocuments(
       ])
       return { location, sections, links }
     })),
-    loadWorkbookInputListValues(workbookId),
+    loadModuleInputListValues(sessionToken, moduleInstanceId),
   ])
   const preferred = new Set(preferredLocationIds)
 

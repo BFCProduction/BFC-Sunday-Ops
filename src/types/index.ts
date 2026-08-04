@@ -245,7 +245,8 @@ export interface EventChecklistCompletion {
 
 export interface ProductionDoc {
   id: string
-  event_id: string
+  module_instance_id: string
+  event_id: string | null
   doc_type: 'stage_plot' | 'input_list' | 'run_sheet' | 'other'
   title: string
   storage_path: string | null      // Supabase Storage path (production-docs bucket)
@@ -431,13 +432,16 @@ export interface InputListSection {
   rows: InputListRoomRow[]
 }
 
-export interface WorkbookInputListValue {
-  workbook_id: string
+export interface ModuleInputListValue {
+  module_instance_id: string
   row_id: string
   column_id: string
   value: string
   updated_at: string
 }
+
+/** @deprecated Phase 2 content is keyed by module_instance_id. */
+export type WorkbookInputListValue = ModuleInputListValue
 
 export interface InputListCellLink {
   location_id: string

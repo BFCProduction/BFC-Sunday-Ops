@@ -88,6 +88,13 @@ Deno.serve(async request => {
         return json(cors, 403, { error: 'Manager access required to view archived modules' })
       }
 
+      const { data: definitions, error: definitionsError } = await supabase
+        .from('module_definitions')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order')
+      if (definitionsError) throw definitionsError
+
       let query = supabase
         .from('module_instances')
         .select('*, module_definitions(*)')
@@ -98,7 +105,11 @@ Deno.serve(async request => {
       if (eventId) {
         const { data, error } = await query.eq('event_id', eventId)
         if (error) throw error
-        return json(cors, 200, { workbook_modules: [], event_modules: data ?? [] })
+        return json(cors, 200, {
+          definitions: definitions ?? [],
+          workbook_modules: [],
+          event_modules: data ?? [],
+        })
       }
 
       const [{ data: workbookModules, error: workbookError }, { data: events, error: eventsError }] = await Promise.all([
@@ -123,6 +134,7 @@ Deno.serve(async request => {
       }
 
       return json(cors, 200, {
+        definitions: definitions ?? [],
         workbook_modules: workbookModules ?? [],
         events: events ?? [],
         event_modules: eventModules,
@@ -192,6 +204,19 @@ Deno.serve(async request => {
       }
       if (body.location_id != null && !locationId) return json(cors, 400, { error: 'Invalid location_id' })
 
+      let orderQuery = supabase
+        .from('module_instances')
+        .select('sort_order')
+        .eq('status', 'active')
+        .order('sort_order', { ascending: false })
+        .limit(1)
+      orderQuery = eventId
+        ? orderQuery.eq('event_id', eventId)
+        : orderQuery.eq('workbook_id', workbookId)
+      const { data: lastRows, error: orderError } = await orderQuery
+      if (orderError) throw orderError
+      const sortOrder = Number(lastRows?.[0]?.sort_order ?? -1) + 1
+
       const { data, error } = await supabase
         .from('module_instances')
         .insert({
@@ -200,12 +225,27 @@ Deno.serve(async request => {
           event_id: eventId,
           workbook_id: workbookId,
           location_id: locationId,
+          sort_order: sortOrder,
           created_by: user.id,
         })
         .select('*, module_definitions(*)')
         .single()
       if (error) throw error
       return json(cors, 201, { module: data })
+    }
+
+    if (action === 'rename') {
+      const moduleId = asUuid(body.module_id)
+      const title = typeof body.title === 'string' ? body.title.trim() : ''
+      if (!moduleId) return json(cors, 400, { error: 'A valid module_id is required' })
+      const { data, error } = await supabase
+        .from('module_instances')
+        .update({ title: title || null })
+        .eq('id', moduleId)
+        .select('*, module_definitions(*)')
+        .single()
+      if (error) throw error
+      return json(cors, 200, { module: data })
     }
 
     if (action === 'archive' || action === 'restore') {

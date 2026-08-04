@@ -3,10 +3,14 @@ import {
   FileText, Music, LayoutList, Paperclip, Plus, Trash2,
   ExternalLink, RefreshCw, X, Upload, Link2,
 } from 'lucide-react'
-import { useSunday } from '../context/SundayContext'
-import { useAdmin } from '../context/adminState'
 import { supabase } from '../lib/supabase'
-import type { ProductionDoc } from '../types'
+import {
+  addModuleDocumentLink,
+  deleteModuleDocument,
+  fetchModuleContent,
+  uploadModuleDocument,
+} from '../lib/moduleContent'
+import type { ModuleInstance, ProductionDoc } from '../types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -87,13 +91,14 @@ function extractDriveFileId(url: string): string | null {
 // ── Add Document Modal ────────────────────────────────────────────────────────
 
 interface AddDocModalProps {
-  eventId: string
+  moduleId: string
+  sessionToken: string
   defaultDocType: DocTypeId
   onAdded: (doc: ProductionDoc) => void
   onClose: () => void
 }
 
-function AddDocModal({ eventId, defaultDocType, onAdded, onClose }: AddDocModalProps) {
+function AddDocModal({ moduleId, sessionToken, defaultDocType, onAdded, onClose }: AddDocModalProps) {
   const [title,   setTitle]   = useState('')
   const [docType, setDocType] = useState<DocTypeId>(defaultDocType)
   const [mode,    setMode]    = useState<'upload' | 'link'>('upload')
@@ -111,22 +116,12 @@ function AddDocModal({ eventId, defaultDocType, onAdded, onClose }: AddDocModalP
     try {
       if (mode === 'upload') {
         if (!file) { setError('Choose a file to upload'); setSaving(false); return }
-
-        const ext  = file.name.split('.').pop() ?? 'pdf'
-        const path = `${eventId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-
-        const { error: uploadErr } = await supabase.storage
-          .from('production-docs')
-          .upload(path, file, { contentType: file.type, upsert: false })
-        if (uploadErr) throw uploadErr
-
-        const { data, error: insertErr } = await supabase
-          .from('production_docs')
-          .insert({ event_id: eventId, doc_type: docType, title: title.trim(), storage_path: path, source: 'manual' })
-          .select()
-          .single()
-        if (insertErr) throw insertErr
-        onAdded(data as ProductionDoc)
+        const document = await uploadModuleDocument(sessionToken, moduleId, {
+          title: title.trim(),
+          docType,
+          file,
+        })
+        onAdded(document)
 
       } else {
         if (!linkUrl.trim()) { setError('Paste a Google Drive or Sheets URL'); setSaving(false); return }
@@ -134,20 +129,13 @@ function AddDocModal({ eventId, defaultDocType, onAdded, onClose }: AddDocModalP
         const sheetId = extractSheetId(linkUrl)
         const fileId  = sheetId ?? extractDriveFileId(linkUrl)
 
-        const { data, error: insertErr } = await supabase
-          .from('production_docs')
-          .insert({
-            event_id:       eventId,
-            doc_type:       docType,
-            title:          title.trim(),
-            gdrive_file_id: fileId,
-            gdrive_url:     linkUrl.trim(),
-            source:         'manual',
-          })
-          .select()
-          .single()
-        if (insertErr) throw insertErr
-        onAdded(data as ProductionDoc)
+        const document = await addModuleDocumentLink(sessionToken, moduleId, {
+          title: title.trim(),
+          docType,
+          driveFileId: fileId,
+          driveUrl: linkUrl.trim(),
+        })
+        onAdded(document)
       }
 
       onClose()
@@ -272,11 +260,13 @@ function AddDocModal({ eventId, defaultDocType, onAdded, onClose }: AddDocModalP
 
 interface DocumentViewerProps {
   doc: ProductionDoc
-  isAdmin: boolean
+  moduleId: string
+  sessionToken: string
+  canManage: boolean
   onDelete: (id: string) => void
 }
 
-function DocumentViewer({ doc, isAdmin, onDelete }: DocumentViewerProps) {
+function DocumentViewer({ doc, moduleId, sessionToken, canManage, onDelete }: DocumentViewerProps) {
   const [deleting,   setDeleting]   = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
   const isMobile = useIsMobileViewport()
@@ -301,10 +291,7 @@ function DocumentViewer({ doc, isAdmin, onDelete }: DocumentViewerProps) {
   async function handleDelete() {
     setDeleting(true)
     try {
-      if (doc.storage_path) {
-        await supabase.storage.from('production-docs').remove([doc.storage_path])
-      }
-      await supabase.from('production_docs').delete().eq('id', doc.id)
+      await deleteModuleDocument(sessionToken, moduleId, doc.id)
       onDelete(doc.id)
     } catch {
       setDeleting(false)
@@ -350,7 +337,7 @@ function DocumentViewer({ doc, isAdmin, onDelete }: DocumentViewerProps) {
             </a>
           )}
           {/* Delete */}
-          {isAdmin && (
+          {canManage && (
             confirmDel ? (
               <div className="flex items-center gap-1">
                 <button
@@ -414,34 +401,47 @@ function DocumentViewer({ doc, isAdmin, onDelete }: DocumentViewerProps) {
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
-export function ProductionDocs() {
-  const { activeEventId, sessionDate, serviceTypeName } = useSunday()
-  const { isAdmin } = useAdmin()
+interface ProductionDocumentsModuleProps {
+  module: ModuleInstance
+  sessionToken: string
+  editable: boolean
+  canManage: boolean
+  contextLabel?: string
+}
+
+export function ProductionDocumentsModule({
+  module,
+  sessionToken,
+  editable,
+  canManage,
+  contextLabel,
+}: ProductionDocumentsModuleProps) {
   useMobileViewerViewportLock()
 
   const [docs,          setDocs]          = useState<ProductionDoc[]>([])
-  const [loadedEventId, setLoadedEventId] = useState<string | null>(null)
+  const [loadedModuleId, setLoadedModuleId] = useState<string | null>(null)
   const [activeTab,     setActiveTab]     = useState<DocTypeId>('stage_plot')
   const [selectedDocs,  setSelectedDocs]  = useState<Partial<Record<DocTypeId, string>>>({})
   const [showAddModal,  setShowAddModal]  = useState(false)
+  const [loadError,     setLoadError]     = useState('')
 
   useEffect(() => {
-    if (!activeEventId) return
     let cancelled = false
-
-    supabase
-      .from('production_docs')
-      .select('*')
-      .eq('event_id', activeEventId)
-      .order('uploaded_at', { ascending: true })
-      .then(({ data }) => {
+    fetchModuleContent(sessionToken, module.id)
+      .then(content => {
         if (cancelled) return
-        setDocs((data ?? []) as ProductionDoc[])
-        setLoadedEventId(activeEventId)
+        setLoadError('')
+        setDocs(content.documents)
+        setLoadedModuleId(module.id)
+      })
+      .catch(err => {
+        if (cancelled) return
+        setLoadError(err instanceof Error ? err.message : 'Unable to load Production Documents.')
+        setLoadedModuleId(module.id)
       })
 
     return () => { cancelled = true }
-  }, [activeEventId])
+  }, [module.id, sessionToken])
 
   function handleAdded(doc: ProductionDoc) {
     setDocs(prev => [...prev, doc])
@@ -465,13 +465,7 @@ export function ProductionDocs() {
     .filter(d => d.synced_at)
     .sort((a, b) => (b.synced_at! > a.synced_at! ? 1 : -1))[0]?.synced_at
 
-  const dateLabel = sessionDate
-    ? new Date(sessionDate + 'T12:00:00').toLocaleDateString('en-US', {
-        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-      })
-    : '—'
-
-  const loading = Boolean(activeEventId) && loadedEventId !== activeEventId
+  const loading = loadedModuleId !== module.id
 
   if (loading) {
     return (
@@ -481,14 +475,18 @@ export function ProductionDocs() {
     )
   }
 
+  if (loadError) {
+    return <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
+  }
+
   return (
     <div className="fade-in">
       {/* Header + document-type tabs */}
       <div className="bg-white border-b border-gray-200 px-5 pt-4 pb-3">
         <div className="flex items-start justify-between gap-4 mb-2.5">
           <div>
-            <h2 className="text-gray-900 font-bold text-lg">Production Docs</h2>
-            <p className="text-sm text-gray-500">{serviceTypeName} · {dateLabel}</p>
+            <h2 className="text-gray-900 font-bold text-lg">{module.title?.trim() || 'Production Documents'}</h2>
+            {contextLabel && <p className="text-sm text-gray-500">{contextLabel}</p>}
             {lastSynced && (
               <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
                 <RefreshCw className="w-3 h-3" />
@@ -498,7 +496,7 @@ export function ProductionDocs() {
               </p>
             )}
           </div>
-          {isAdmin && (
+          {editable && (
             <button
               onClick={() => setShowAddModal(true)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors flex-shrink-0"
@@ -546,7 +544,7 @@ export function ProductionDocs() {
               No {DOC_TYPES.find(t => t.id === activeTab)?.label.toLowerCase()} attached yet
             </p>
             <p className="text-[11px] text-gray-300 mt-1">
-              Drive sync runs hourly · admins can add files manually above
+              Drive sync runs hourly · signed-in users can add files manually above
             </p>
           </div>
         ) : (
@@ -576,7 +574,9 @@ export function ProductionDocs() {
               <DocumentViewer
                 key={activeDoc.id}
                 doc={activeDoc}
-                isAdmin={isAdmin}
+                moduleId={module.id}
+                sessionToken={sessionToken}
+                canManage={canManage}
                 onDelete={handleDeleted}
               />
             )}
@@ -586,7 +586,8 @@ export function ProductionDocs() {
 
       {showAddModal && (
         <AddDocModal
-          eventId={activeEventId}
+          moduleId={module.id}
+          sessionToken={sessionToken}
           defaultDocType={activeTab}
           onAdded={handleAdded}
           onClose={() => setShowAddModal(false)}

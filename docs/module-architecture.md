@@ -77,6 +77,12 @@ remain unchanged until a Manager explicitly applies the current defaults.
 metadata. Each module type keeps its structured content in domain-specific
 tables instead of a generic JSON payload.
 
+Phase 2 stores Input List cells in `module_input_list_values` and links
+Production Document rows to `production_docs.module_instance_id`. Both content
+paths require a verified Sunday Ops session. Existing Workbook Input List cells
+and Event Production Documents are assigned to canonical modules by a
+forward-only migration; Event content is not copied into Workbook storage.
+
 `pco_folders` stores the Planning Center hierarchy plus deterministic
 `service-type:<PCO ID>` fallbacks for the three principal top-level groupings, and
 `module_folder_defaults` maps a Folder to its default Event modules. Module
@@ -88,7 +94,7 @@ writes go through the `module-admin` Edge Function.
 1. Establish access levels, protected module metadata, PCO folder defaults, and
    financial-data containment.
 2. Convert Production Documents and Input List to module ownership and add the
-   Workbook Event switcher.
+   Workbook Event switcher. **Implemented in Phase 2.**
 3. Convert Crew, Supplies, and Intercom, then remove the old publication UI and
    superseded compatibility paths after production verification.
 

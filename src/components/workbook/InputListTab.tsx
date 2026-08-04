@@ -28,14 +28,14 @@ import {
   inputListRowLabel,
   loadInputListCellLinks,
   loadInputListConfiguration,
-  loadWorkbookInputListValues,
+  loadModuleInputListValues,
   saveInputListCellLinksBulk,
-  saveWorkbookInputListValue,
-  saveWorkbookInputListValuesBulk,
+  saveModuleInputListValue,
+  saveModuleInputListValuesBulk,
 } from '../../lib/inputLists'
 import type {
   InputListCellLinkChange,
-  WorkbookInputListValueChange,
+  ModuleInputListValueChange,
 } from '../../lib/inputLists'
 import type {
   InputListCellLink,
@@ -44,15 +44,15 @@ import type {
   InputListSection,
   InputListSectionColumn,
   Location,
-  Session,
-  Workbook,
 } from '../../types'
 
 interface InputListTabProps {
-  workbook: Workbook
+  moduleInstanceId: string
+  moduleTitle?: string | null
   locations: Location[]
-  linkedEvents: Session[]
+  preferredLocationIds?: string[]
   editable: boolean
+  sessionToken: string
 }
 
 function roomValue(row: InputListRoomRow, columnId: string) {
@@ -104,7 +104,7 @@ type UndoAction =
   | {
     kind: 'values'
     label: string
-    changes: WorkbookInputListValueChange[]
+    changes: ModuleInputListValueChange[]
   }
   | {
     kind: 'links'
@@ -224,10 +224,22 @@ const CONNECTION_TYPE_STYLES: Record<InputListConnectionType, {
   },
 }
 
-export function InputListTab({ workbook, locations, linkedEvents, editable }: InputListTabProps) {
+const INPUT_LIST_COLUMN_WIDTHS = {
+  room: { min: 100, max: 160 },
+  workbook: { min: 125, max: 210 },
+} as const
+
+export function InputListTab({
+  moduleInstanceId,
+  moduleTitle,
+  locations,
+  preferredLocationIds = [],
+  editable,
+  sessionToken,
+}: InputListTabProps) {
   const eventLocationIds = useMemo(
-    () => [...new Set(linkedEvents.map(event => event.workbookLocationId).filter((id): id is string => Boolean(id)))],
-    [linkedEvents],
+    () => [...new Set(preferredLocationIds.filter(Boolean))],
+    [preferredLocationIds],
   )
   const orderedLocations = useMemo(() => {
     const preferred = new Set(eventLocationIds)
@@ -365,7 +377,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
     setError('')
     Promise.all([
       loadInputListConfiguration(locationId),
-      loadWorkbookInputListValues(workbook.id),
+      loadModuleInputListValues(sessionToken, moduleInstanceId),
       loadInputListCellLinks(locationId),
     ])
       .then(([nextSections, nextValues, nextLinks]) => {
@@ -392,7 +404,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
       })
 
     return () => { active = false }
-  }, [locationId, workbook.id])
+  }, [locationId, moduleInstanceId, sessionToken])
 
   async function persistValue(rowId: string, columnId: string) {
     const key = inputListCellKey(rowId, columnId)
@@ -400,7 +412,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
     setSavedKey('')
     setError('')
     try {
-      await saveWorkbookInputListValue(workbook.id, rowId, columnId, values[key] ?? '')
+      await saveModuleInputListValue(sessionToken, moduleInstanceId, rowId, columnId, values[key] ?? '')
       setSavedKey(key)
       window.setTimeout(() => setSavedKey(current => current === key ? '' : current), 1600)
     } catch (err) {
@@ -420,7 +432,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
   }
 
   async function persistWorkbookValueChanges(
-    changes: WorkbookInputListValueChange[],
+    changes: ModuleInputListValueChange[],
     undoLabel: string,
   ): Promise<boolean> {
     if (changes.length === 0) return false
@@ -431,7 +443,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
     setBulkSaving(true)
     setError('')
     try {
-      await saveWorkbookInputListValuesBulk(workbook.id, changes)
+      await saveModuleInputListValuesBulk(sessionToken, moduleInstanceId, changes)
       setValues(current => {
         const next = { ...current }
         for (const change of changes) {
@@ -573,7 +585,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
     const fillSelection = selectedCellCount > 1
       && clipboardRows.length === 1
       && clipboardColumnCount === 1
-    const changes: WorkbookInputListValueChange[] = []
+    const changes: ModuleInputListValueChange[] = []
     let protectedCount = 0
     let outsideCount = 0
 
@@ -652,7 +664,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
 
   async function deleteSelectedCells() {
     if (!selectionContext || bulkSaving) return
-    const changes: WorkbookInputListValueChange[] = []
+    const changes: ModuleInputListValueChange[] = []
     let protectedCount = 0
     for (let rowIndex = selectionContext.firstRow; rowIndex <= selectionContext.lastRow; rowIndex += 1) {
       const row = selectionContext.section.rows[rowIndex]
@@ -719,7 +731,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
     setBulkSaving(true)
     setError('')
     try {
-      await saveInputListCellLinksBulk(locationId, changes)
+      await saveInputListCellLinksBulk(sessionToken, moduleInstanceId, locationId, changes)
       setLinks(current => applyLinkChanges(current, locationId, changes))
       setUndoAction({ kind: 'links', label: undoLabel, changes: previous })
       const key = inputListCellKey(changes[0].target_row_id, changes[0].target_column_id)
@@ -801,7 +813,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
     setBulkSaving(true)
     setError('')
     try {
-      await saveWorkbookInputListValuesBulk(workbook.id, [{
+      await saveModuleInputListValuesBulk(sessionToken, moduleInstanceId, [{
         row_id: sourceRow.id,
         column_id: column.id,
         value: sourceValue,
@@ -942,7 +954,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
     setError('')
     try {
       if (action.kind === 'values') {
-        await saveWorkbookInputListValuesBulk(workbook.id, action.changes)
+        await saveModuleInputListValuesBulk(sessionToken, moduleInstanceId, action.changes)
         setValues(current => {
           const next = { ...current }
           for (const change of action.changes) {
@@ -951,7 +963,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
           return next
         })
       } else {
-        await saveInputListCellLinksBulk(locationId, action.changes)
+        await saveInputListCellLinksBulk(sessionToken, moduleInstanceId, locationId, action.changes)
         setLinks(current => applyLinkChanges(current, locationId, action.changes))
       }
       setUndoAction(null)
@@ -985,12 +997,12 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
           <div>
             <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
               <TableProperties className="h-4 w-4 text-blue-600" />
-              Input List
+              {moduleTitle?.trim() || 'Input List'}
             </p>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-gray-500">
-              Room infrastructure is set in Workbook Settings. Fill in the workbook-specific source,
+              Room infrastructure is set in Workbook Settings. Fill in the module-specific source,
               destination, device, and monitor assignments here. Type = to link a cell for every
-              {selectedLocation ? ` ${selectedLocation.name}` : ''} workbook, drag the blue fill handle to continue a numbered series,
+              {selectedLocation ? ` ${selectedLocation.name}` : ''} input list, drag the blue fill handle to continue a numbered series,
               or drag across cells to copy, paste, or delete them together.
             </p>
           </div>
@@ -1012,7 +1024,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
         </div>
         {eventLocationIds.length > 0 && selectedLocation && eventLocationIds.includes(selectedLocation.id) && (
           <p className="mt-2.5 text-[11px] font-medium text-blue-600">
-            {selectedLocation.name} is assigned to an attached event in this workbook.
+            {selectedLocation.name} is assigned to this module's Event or Workbook context.
           </p>
         )}
         {usedConnectionTypes.length > 0 && (
@@ -1082,6 +1094,14 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
         sections.map(section => {
           const isCollapsed = collapsed.has(section.id)
           const visibleColumns = section.columns.filter(inputListColumnIsVisible)
+          const columnWidths = visibleColumns.map(column =>
+            INPUT_LIST_COLUMN_WIDTHS[column.value_source])
+          const maximumTableWidth = columnWidths.reduce((total, width) => total + width.max, 0)
+          const minimumWidthScale = columnWidths.reduce(
+            (scale, width) => Math.max(scale, width.min / width.max),
+            0,
+          )
+          const minimumTableWidth = Math.ceil(maximumTableWidth * minimumWidthScale)
           return (
             <Card key={section.id} className="overflow-hidden">
               <button
@@ -1105,13 +1125,28 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                   <p className="px-5 py-6 text-sm text-gray-500">This section does not have any room connections yet.</p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="min-w-full border-collapse text-left">
+                    <table
+                      className="table-fixed border-collapse text-left"
+                      style={{
+                        width: `clamp(${minimumTableWidth}px, 100%, ${maximumTableWidth}px)`,
+                      }}
+                    >
+                      <colgroup>
+                        {visibleColumns.map((column, columnIndex) => (
+                          <col
+                            key={column.id}
+                            style={{
+                              width: `${(columnWidths[columnIndex].max / maximumTableWidth) * 100}%`,
+                            }}
+                          />
+                        ))}
+                      </colgroup>
                       <thead className="bg-gray-50">
                         <tr>
                           {visibleColumns.map(column => (
                             <th
                               key={column.id}
-                              className={`${column.value_source === 'room' ? 'min-w-[100px]' : 'min-w-[125px]'} border-b border-r border-gray-200 px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400 last:border-r-0`}
+                              className="border-b border-r border-gray-200 px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400 last:border-r-0"
                             >
                               {column.name}
                             </th>
@@ -1298,7 +1333,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
             </div>
 
             <div className="border-b border-amber-100 bg-amber-50 px-5 py-3 text-xs leading-relaxed text-amber-800">
-              This is a <strong>{selectedLocation.name}-wide link</strong>. It will apply to this cell in every workbook that uses this location.
+              This is a <strong>{selectedLocation.name}-wide link</strong>. It will apply to this cell in every Input List module that uses this location.
             </div>
 
             <div className="min-h-0 flex-1 p-5">
@@ -1384,7 +1419,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
               <div>
                 <h2 id="input-list-fill-title" className="text-base font-bold text-gray-900">Fill location-wide links?</h2>
                 <p className="mt-1 text-sm leading-relaxed text-gray-600">
-                  This will create {pendingLinkFill.changes.length} links from {pendingLinkFill.firstTargetLabel} through {pendingLinkFill.lastTargetLabel} for every workbook using {selectedLocation.name}.
+                  This will create {pendingLinkFill.changes.length} links from {pendingLinkFill.firstTargetLabel} through {pendingLinkFill.lastTargetLabel} for every Input List module using {selectedLocation.name}.
                 </p>
               </div>
             </div>

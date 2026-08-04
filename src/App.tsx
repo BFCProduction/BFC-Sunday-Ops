@@ -20,7 +20,7 @@ import { ServiceData }    from './screens/ServiceData'
 import { Evaluation }     from './screens/Evaluation'
 import { Analytics }      from './screens/Analytics'
 import { Settings }       from './screens/Settings'
-import { ProductionDocs } from './screens/ProductionDocs'
+import { EventModules } from './screens/EventModules'
 import { Workbooks }      from './screens/Workbooks'
 import type { Session }   from './types'
 
@@ -224,7 +224,7 @@ function AppMain() {
             {screen === 'evaluation' && <Evaluation />}
             {screen === 'analytics'  && <Analytics />}
             {screen === 'settings'   && <Settings />}
-            {screen === 'docs'       && <ProductionDocs />}
+            {screen === 'docs'       && <EventModules event={session} />}
             {screen === 'workbooks'  && <Workbooks allSessions={allSessions} onSessionsChange={setAllSessions} setScreen={setScreen} />}
           </main>
         </div>

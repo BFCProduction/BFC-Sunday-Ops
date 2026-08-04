@@ -19,7 +19,7 @@ const OPTIONS: Array<{
   description: string
 }> = [
   { id: 'schedule', label: 'Detail schedule', description: 'The complete chronological workbook schedule.' },
-  { id: 'inputLists', label: 'Input lists', description: 'Room connections and workbook-specific input, output, and monitor assignments.' },
+  { id: 'inputLists', label: 'Input lists', description: 'Workbook Shared and attached Event Input List modules, grouped by owner and room.' },
   { id: 'supplies', label: 'Supplies shopping list', description: 'Items, quantities, departments, purchase links, and estimated totals.' },
   { id: 'intercom', label: 'Intercom grids', description: 'One event-specific crew, pack, and channel grid per event.' },
   { id: 'callSheets', label: 'Crew call sheets', description: 'One printable call sheet per assigned crew member.' },
