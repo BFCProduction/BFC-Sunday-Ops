@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  ClipboardEvent as ReactClipboardEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react'
 import {
   Check,
   ChevronDown,
@@ -85,6 +89,17 @@ interface PendingLinkFill {
   lastTargetLabel: string
 }
 
+interface GridCellAddress {
+  sectionId: string
+  rowIndex: number
+  columnIndex: number
+}
+
+interface CellSelection {
+  anchor: GridCellAddress
+  focus: GridCellAddress
+}
+
 type UndoAction =
   | {
     kind: 'values'
@@ -123,6 +138,60 @@ function applyLinkChanges(
         updated_at: now,
       })),
   ]
+}
+
+function selectionContains(selection: CellSelection, address: GridCellAddress) {
+  if (selection.anchor.sectionId !== address.sectionId) return false
+  const firstRow = Math.min(selection.anchor.rowIndex, selection.focus.rowIndex)
+  const lastRow = Math.max(selection.anchor.rowIndex, selection.focus.rowIndex)
+  const firstColumn = Math.min(selection.anchor.columnIndex, selection.focus.columnIndex)
+  const lastColumn = Math.max(selection.anchor.columnIndex, selection.focus.columnIndex)
+  return address.rowIndex >= firstRow
+    && address.rowIndex <= lastRow
+    && address.columnIndex >= firstColumn
+    && address.columnIndex <= lastColumn
+}
+
+function escapeClipboardCell(value: string) {
+  return /[\t\r\n"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+}
+
+function parseClipboardGrid(text: string) {
+  const rows: string[][] = []
+  let row: string[] = []
+  let value = ''
+  let quoted = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]
+    if (character === '"' && quoted) {
+      if (text[index + 1] === '"') {
+        value += '"'
+        index += 1
+      } else quoted = false
+    } else if (character === '"' && value === '') {
+      quoted = true
+    } else if (character === '"') {
+      value += character
+    } else if (!quoted && character === '\t') {
+      row.push(value)
+      value = ''
+    } else if (!quoted && (character === '\n' || character === '\r')) {
+      if (character === '\r' && text[index + 1] === '\n') index += 1
+      row.push(value)
+      rows.push(row)
+      row = []
+      value = ''
+    } else {
+      value += character
+    }
+  }
+
+  row.push(value)
+  rows.push(row)
+  if (rows.length > 1 && rows.at(-1)?.length === 1 && rows.at(-1)?.[0] === ''
+    && /[\r\n]$/.test(text)) rows.pop()
+  return rows
 }
 
 const CONNECTION_TYPE_STYLES: Record<InputListConnectionType, {
@@ -183,6 +252,9 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
   const [linkEditor, setLinkEditor] = useState<LinkEditorState | null>(null)
   const [pendingLinkFill, setPendingLinkFill] = useState<PendingLinkFill | null>(null)
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null)
+  const [cellSelection, setCellSelection] = useState<CellSelection | null>(null)
+  const [selectionNotice, setSelectionNotice] = useState('')
+  const selectionNoticeTimer = useRef<number | null>(null)
   const usedConnectionTypes = useMemo(
     () => INPUT_LIST_CONNECTION_TYPES.filter(option =>
       sections.some(section => section.rows.some(row => row.connection_type === option.key))),
@@ -251,11 +323,34 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
   const selectedLinkCandidate = linkEditor
     ? cellOptionByKey.get(linkEditor.selectedSourceKey) ?? null
     : null
+  const selectionContext = useMemo(() => {
+    if (!cellSelection) return null
+    const section = sections.find(candidate => candidate.id === cellSelection.anchor.sectionId)
+    if (!section) return null
+    const columns = section.columns.filter(inputListColumnIsVisible)
+    if (columns.length === 0 || section.rows.length === 0) return null
+    return {
+      section,
+      columns,
+      firstRow: Math.max(0, Math.min(cellSelection.anchor.rowIndex, cellSelection.focus.rowIndex)),
+      lastRow: Math.min(section.rows.length - 1, Math.max(cellSelection.anchor.rowIndex, cellSelection.focus.rowIndex)),
+      firstColumn: Math.max(0, Math.min(cellSelection.anchor.columnIndex, cellSelection.focus.columnIndex)),
+      lastColumn: Math.min(columns.length - 1, Math.max(cellSelection.anchor.columnIndex, cellSelection.focus.columnIndex)),
+    }
+  }, [cellSelection, sections])
+  const selectedCellCount = selectionContext
+    ? (selectionContext.lastRow - selectionContext.firstRow + 1)
+      * (selectionContext.lastColumn - selectionContext.firstColumn + 1)
+    : 0
 
   useEffect(() => {
     if (orderedLocations.some(location => location.id === locationId)) return
     setLocationId(eventLocationIds[0] ?? orderedLocations[0]?.id ?? '')
   }, [eventLocationIds, locationId, orderedLocations])
+
+  useEffect(() => () => {
+    if (selectionNoticeTimer.current !== null) window.clearTimeout(selectionNoticeTimer.current)
+  }, [])
 
   useEffect(() => {
     if (!locationId) {
@@ -282,6 +377,8 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
         ])))
         setLinks(nextLinks)
         setActiveCellKey('')
+        setCellSelection(null)
+        setSelectionNotice('')
         setLinkEditor(null)
         setPendingLinkFill(null)
         setUndoAction(null)
@@ -311,6 +408,294 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
     } finally {
       setSavingKey('')
     }
+  }
+
+  function showSelectionNotice(message: string) {
+    setSelectionNotice(message)
+    if (selectionNoticeTimer.current !== null) window.clearTimeout(selectionNoticeTimer.current)
+    selectionNoticeTimer.current = window.setTimeout(() => {
+      setSelectionNotice('')
+      selectionNoticeTimer.current = null
+    }, 2600)
+  }
+
+  async function persistWorkbookValueChanges(
+    changes: WorkbookInputListValueChange[],
+    undoLabel: string,
+  ): Promise<boolean> {
+    if (changes.length === 0) return false
+    const previous = changes.map(change => ({
+      ...change,
+      value: values[inputListCellKey(change.row_id, change.column_id)] ?? '',
+    }))
+    setBulkSaving(true)
+    setError('')
+    try {
+      await saveWorkbookInputListValuesBulk(workbook.id, changes)
+      setValues(current => {
+        const next = { ...current }
+        for (const change of changes) {
+          next[inputListCellKey(change.row_id, change.column_id)] = change.value
+        }
+        return next
+      })
+      setUndoAction({ kind: 'values', label: undoLabel, changes: previous })
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save the selected input-list cells.')
+      return false
+    } finally {
+      setBulkSaving(false)
+    }
+  }
+
+  function beginCellSelection(
+    event: ReactPointerEvent<HTMLTableCellElement>,
+    section: InputListSection,
+    rowIndex: number,
+    columnIndex: number,
+    rowSpan = 1,
+  ) {
+    if (event.button !== 0 || bulkSaving || linkEditor || pendingLinkFill) return
+
+    const rowAtPointer = (cell: HTMLElement, baseRowIndex: number, span: number, clientY: number) => {
+      if (span <= 1) return baseRowIndex
+      const bounds = cell.getBoundingClientRect()
+      const offset = Math.floor(((clientY - bounds.top) / Math.max(bounds.height, 1)) * span)
+      return Math.min(baseRowIndex + span - 1, Math.max(baseRowIndex, baseRowIndex + offset))
+    }
+    const startAddress: GridCellAddress = {
+      sectionId: section.id,
+      rowIndex: rowAtPointer(event.currentTarget, rowIndex, rowSpan, event.clientY),
+      columnIndex,
+    }
+    const anchor = event.shiftKey && cellSelection?.anchor.sectionId === section.id
+      ? cellSelection.anchor
+      : startAddress
+    let focus = startAddress
+    setCellSelection({ anchor, focus })
+    setSelectionNotice('')
+
+    if (!(event.target instanceof HTMLInputElement)
+      && !(event.target instanceof HTMLButtonElement)) event.currentTarget.focus()
+
+    const handleMove = (pointerEvent: PointerEvent) => {
+      const cell = document
+        .elementFromPoint(pointerEvent.clientX, pointerEvent.clientY)
+        ?.closest<HTMLElement>('[data-input-list-grid-cell="true"]')
+      if (!cell || cell.dataset.sectionId !== section.id) return
+      const nextBaseRow = Number(cell.dataset.rowIndex)
+      const nextColumn = Number(cell.dataset.columnIndex)
+      const nextRowSpan = Number(cell.dataset.rowSpan ?? '1')
+      if (!Number.isInteger(nextBaseRow) || !Number.isInteger(nextColumn)) return
+      const nextFocus: GridCellAddress = {
+        sectionId: section.id,
+        rowIndex: rowAtPointer(cell, nextBaseRow, nextRowSpan, pointerEvent.clientY),
+        columnIndex: nextColumn,
+      }
+      if (nextFocus.rowIndex === focus.rowIndex && nextFocus.columnIndex === focus.columnIndex) return
+      pointerEvent.preventDefault()
+      focus = nextFocus
+      setCellSelection({ anchor, focus })
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', cleanup)
+      window.removeEventListener('pointercancel', cleanup)
+    }
+
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', cleanup, { once: true })
+    window.addEventListener('pointercancel', cleanup, { once: true })
+  }
+
+  function focusGridCell(address: GridCellAddress, key: string) {
+    setActiveCellKey(key)
+    setCellSelection(current => current && selectionContains(current, address)
+      ? current
+      : { anchor: address, focus: address })
+  }
+
+  function cellIsSelected(sectionId: string, rowIndex: number, columnIndex: number, rowSpan = 1) {
+    if (!selectionContext || selectionContext.section.id !== sectionId) return false
+    return columnIndex >= selectionContext.firstColumn
+      && columnIndex <= selectionContext.lastColumn
+      && rowIndex <= selectionContext.lastRow
+      && rowIndex + rowSpan - 1 >= selectionContext.firstRow
+  }
+
+  function cellHasSelectionFocus(sectionId: string, rowIndex: number, columnIndex: number, rowSpan = 1) {
+    if (!cellSelection || cellSelection.focus.sectionId !== sectionId) return false
+    return cellSelection.focus.columnIndex === columnIndex
+      && cellSelection.focus.rowIndex >= rowIndex
+      && cellSelection.focus.rowIndex < rowIndex + rowSpan
+  }
+
+  function handleGridCopy(event: ReactClipboardEvent<HTMLDivElement>) {
+    if (!selectionContext || linkEditor || pendingLinkFill) return
+    if (!(event.target instanceof Element)
+      || !event.target.closest('[data-input-list-grid-cell="true"]')) return
+    const target = event.target
+    if (selectedCellCount === 1 && target instanceof HTMLInputElement
+      && target.selectionStart !== target.selectionEnd) return
+
+    const copiedRows: string[][] = []
+    for (let rowIndex = selectionContext.firstRow; rowIndex <= selectionContext.lastRow; rowIndex += 1) {
+      const row = selectionContext.section.rows[rowIndex]
+      const copiedRow: string[] = []
+      for (let columnIndex = selectionContext.firstColumn; columnIndex <= selectionContext.lastColumn; columnIndex += 1) {
+        const column = selectionContext.columns[columnIndex]
+        const key = inputListCellKey(row.id, column.id)
+        copiedRow.push(column.value_source === 'room'
+          ? roomValue(row, column.id)
+          : resolvedValues.get(key) ?? '')
+      }
+      copiedRows.push(copiedRow)
+    }
+    event.preventDefault()
+    event.clipboardData.setData('text/plain', copiedRows
+      .map(row => row.map(escapeClipboardCell).join('\t'))
+      .join('\n'))
+    showSelectionNotice(`Copied ${selectedCellCount} ${selectedCellCount === 1 ? 'cell' : 'cells'}.`)
+  }
+
+  async function handleGridPaste(event: ReactClipboardEvent<HTMLDivElement>) {
+    if (!selectionContext || linkEditor || pendingLinkFill || bulkSaving) return
+    if (!(event.target instanceof Element)
+      || !event.target.closest('[data-input-list-grid-cell="true"]')) return
+    const clipboardRows = parseClipboardGrid(event.clipboardData.getData('text/plain'))
+    const clipboardColumnCount = Math.max(0, ...clipboardRows.map(row => row.length))
+    const clipboardHasRange = clipboardRows.length > 1 || clipboardColumnCount > 1
+    if (selectedCellCount === 1 && !clipboardHasRange
+      && event.target instanceof HTMLInputElement && !event.target.readOnly) return
+
+    event.preventDefault()
+    const fillSelection = selectedCellCount > 1
+      && clipboardRows.length === 1
+      && clipboardColumnCount === 1
+    const changes: WorkbookInputListValueChange[] = []
+    let protectedCount = 0
+    let outsideCount = 0
+
+    const addChange = (rowIndex: number, columnIndex: number, value: string) => {
+      const row = selectionContext.section.rows[rowIndex]
+      const column = selectionContext.columns[columnIndex]
+      if (!row || !column) {
+        outsideCount += 1
+        return
+      }
+      const key = inputListCellKey(row.id, column.id)
+      if (!editable || column.value_source !== 'workbook' || linkByTarget.has(key)) {
+        protectedCount += 1
+        return
+      }
+      if ((values[key] ?? '') === value) return
+      changes.push({ row_id: row.id, column_id: column.id, value })
+    }
+
+    if (fillSelection) {
+      for (let rowIndex = selectionContext.firstRow; rowIndex <= selectionContext.lastRow; rowIndex += 1) {
+        for (let columnIndex = selectionContext.firstColumn; columnIndex <= selectionContext.lastColumn; columnIndex += 1) {
+          addChange(rowIndex, columnIndex, clipboardRows[0][0])
+        }
+      }
+    } else {
+      clipboardRows.forEach((clipboardRow, rowOffset) => {
+        clipboardRow.forEach((value, columnOffset) => {
+          addChange(
+            selectionContext.firstRow + rowOffset,
+            selectionContext.firstColumn + columnOffset,
+            value,
+          )
+        })
+      })
+    }
+
+    const skippedParts = [
+      protectedCount > 0 ? `${protectedCount} protected ${protectedCount === 1 ? 'cell' : 'cells'} skipped` : '',
+      outsideCount > 0 ? `${outsideCount} outside the table skipped` : '',
+    ].filter(Boolean)
+    if (changes.length === 0) {
+      showSelectionNotice(skippedParts.length > 0 ? `Nothing pasted; ${skippedParts.join(', ')}.` : 'Nothing changed.')
+      return
+    }
+
+    const saved = await persistWorkbookValueChanges(
+      changes,
+      `Pasted ${changes.length} ${changes.length === 1 ? 'cell' : 'cells'}`,
+    )
+    if (!saved) return
+    if (!fillSelection) {
+      setCellSelection({
+        anchor: {
+          sectionId: selectionContext.section.id,
+          rowIndex: selectionContext.firstRow,
+          columnIndex: selectionContext.firstColumn,
+        },
+        focus: {
+          sectionId: selectionContext.section.id,
+          rowIndex: Math.min(
+            selectionContext.section.rows.length - 1,
+            selectionContext.firstRow + clipboardRows.length - 1,
+          ),
+          columnIndex: Math.min(
+            selectionContext.columns.length - 1,
+            selectionContext.firstColumn + clipboardColumnCount - 1,
+          ),
+        },
+      })
+    }
+    showSelectionNotice(skippedParts.length > 0
+      ? `Pasted ${changes.length}; ${skippedParts.join(', ')}.`
+      : `Pasted ${changes.length} ${changes.length === 1 ? 'cell' : 'cells'}.`)
+  }
+
+  async function deleteSelectedCells() {
+    if (!selectionContext || bulkSaving) return
+    const changes: WorkbookInputListValueChange[] = []
+    let protectedCount = 0
+    for (let rowIndex = selectionContext.firstRow; rowIndex <= selectionContext.lastRow; rowIndex += 1) {
+      const row = selectionContext.section.rows[rowIndex]
+      for (let columnIndex = selectionContext.firstColumn; columnIndex <= selectionContext.lastColumn; columnIndex += 1) {
+        const column = selectionContext.columns[columnIndex]
+        const key = inputListCellKey(row.id, column.id)
+        if (!editable || column.value_source !== 'workbook' || linkByTarget.has(key)) {
+          protectedCount += 1
+        } else if ((values[key] ?? '') !== '') {
+          changes.push({ row_id: row.id, column_id: column.id, value: '' })
+        }
+      }
+    }
+
+    if (changes.length === 0) {
+      showSelectionNotice(protectedCount > 0
+        ? `Nothing deleted; ${protectedCount} protected ${protectedCount === 1 ? 'cell was' : 'cells were'} skipped.`
+        : 'The selected cells are already empty.')
+      return
+    }
+    const saved = await persistWorkbookValueChanges(
+      changes,
+      `Deleted ${changes.length} ${changes.length === 1 ? 'cell' : 'cells'}`,
+    )
+    if (saved) showSelectionNotice(protectedCount > 0
+      ? `Deleted ${changes.length}; ${protectedCount} protected ${protectedCount === 1 ? 'cell was' : 'cells were'} skipped.`
+      : `Deleted ${changes.length} ${changes.length === 1 ? 'cell' : 'cells'}.`)
+  }
+
+  function handleGridKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (linkEditor || pendingLinkFill || event.nativeEvent.isComposing) return
+    if (event.key === 'Escape' && cellSelection) {
+      setCellSelection(null)
+      setSelectionNotice('')
+      return
+    }
+    if ((event.key !== 'Delete' && event.key !== 'Backspace') || !selectionContext) return
+    if (!(event.target instanceof Element)
+      || !event.target.closest('[data-input-list-grid-cell="true"]')) return
+    if (selectedCellCount === 1 && event.target instanceof HTMLInputElement
+      && !event.target.readOnly) return
+    event.preventDefault()
+    void deleteSelectedCells()
   }
 
   function previousLinkChanges(changes: InputListCellLinkChange[]): InputListCellLinkChange[] {
@@ -589,9 +974,14 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
   const selectedLocation = orderedLocations.find(location => location.id === locationId) ?? null
 
   return (
-    <div className="space-y-4">
-      <Card className="p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div
+      className="space-y-3"
+      onCopy={handleGridCopy}
+      onPaste={event => void handleGridPaste(event)}
+      onKeyDownCapture={handleGridKeyDown}
+    >
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
               <TableProperties className="h-4 w-4 text-blue-600" />
@@ -600,10 +990,11 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-gray-500">
               Room infrastructure is set in Workbook Settings. Fill in the workbook-specific source,
               destination, device, and monitor assignments here. Type = to link a cell for every
-              {selectedLocation ? ` ${selectedLocation.name}` : ''} workbook, or drag the blue fill handle to continue a numbered series.
+              {selectedLocation ? ` ${selectedLocation.name}` : ''} workbook, drag the blue fill handle to continue a numbered series,
+              or drag across cells to copy, paste, or delete them together.
             </p>
           </div>
-          <label className="min-w-[220px]">
+          <label className="min-w-[200px]">
             <span className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
               <MapPin className="h-3.5 w-3.5" />
               Room
@@ -611,7 +1002,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
             <select
               value={locationId}
               onChange={event => setLocationId(event.target.value)}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {orderedLocations.map(location => (
                 <option key={location.id} value={location.id}>{location.name}</option>
@@ -620,12 +1011,12 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
           </label>
         </div>
         {eventLocationIds.length > 0 && selectedLocation && eventLocationIds.includes(selectedLocation.id) && (
-          <p className="mt-3 text-[11px] font-medium text-blue-600">
+          <p className="mt-2.5 text-[11px] font-medium text-blue-600">
             {selectedLocation.name} is assigned to an attached event in this workbook.
           </p>
         )}
         {usedConnectionTypes.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-gray-100 pt-2.5">
             <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
               Connection colors
             </span>
@@ -640,11 +1031,23 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
       </Card>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</div>
+      )}
+
+      {selectionNotice && (
+        <div aria-live="polite" className="rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm text-gray-600 shadow-sm">
+          {selectionNotice}
+        </div>
+      )}
+
+      {selectedCellCount > 1 && !selectionNotice && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-3.5 py-2 text-xs font-medium text-blue-700">
+          {selectedCellCount} cells selected · Copy with {navigator.platform.includes('Mac') ? '⌘C' : 'Ctrl+C'}, paste with {navigator.platform.includes('Mac') ? '⌘V' : 'Ctrl+V'}, or press Delete.
+        </div>
       )}
 
       {undoAction && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-sm text-blue-800">
           <span>{undoAction.label}.</span>
           <button
             type="button"
@@ -684,7 +1087,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
               <button
                 type="button"
                 onClick={() => toggleSection(section.id)}
-                className="flex w-full items-center gap-2 border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50"
+                className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left hover:bg-gray-50"
               >
                 {isCollapsed
                   ? <ChevronRight className="h-4 w-4 text-gray-400" />
@@ -708,7 +1111,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                           {visibleColumns.map(column => (
                             <th
                               key={column.id}
-                              className={`${column.value_source === 'room' ? 'min-w-[120px]' : 'min-w-[150px]'} border-b border-r border-gray-200 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-gray-400 last:border-r-0`}
+                              className={`${column.value_source === 'room' ? 'min-w-[100px]' : 'min-w-[125px]'} border-b border-r border-gray-200 px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400 last:border-r-0`}
                             >
                               {column.name}
                             </th>
@@ -735,7 +1138,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                               key={row.id}
                               className={`border-b border-gray-100 last:border-b-0 ${CONNECTION_TYPE_STYLES[row.connection_type].row} ${isGroupStart && rowIndex > 0 ? 'border-t-2 border-t-gray-300' : ''}`}
                             >
-                            {visibleColumns.map(column => {
+                            {visibleColumns.map((column, columnIndex) => {
                               if (column.id === groupColumn?.id && !isGroupStart) return null
                               const key = inputListCellKey(row.id, column.id)
                               const literalValue = values[key] ?? ''
@@ -751,11 +1154,27 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                                 ? cellOptionByKey.get(inputListCellKey(cellLink.source_row_id, cellLink.source_column_id))
                                 : null
                               if (column.id === groupColumn?.id && groupRowSpan > 1) {
+                                const isSelected = cellIsSelected(section.id, rowIndex, columnIndex, groupRowSpan)
+                                const hasSelectionFocus = cellHasSelectionFocus(section.id, rowIndex, columnIndex, groupRowSpan)
                                 return (
                                   <td
                                     key={column.id}
                                     rowSpan={groupRowSpan}
-                                    className="whitespace-nowrap border-r-2 border-gray-300 bg-white px-3 py-2 text-center align-middle text-sm font-bold text-gray-900"
+                                    tabIndex={-1}
+                                    aria-selected={isSelected}
+                                    data-input-list-grid-cell="true"
+                                    data-section-id={section.id}
+                                    data-column-index={columnIndex}
+                                    data-row-index={rowIndex}
+                                    data-row-span={groupRowSpan}
+                                    onPointerDown={event => beginCellSelection(
+                                      event,
+                                      section,
+                                      rowIndex,
+                                      columnIndex,
+                                      groupRowSpan,
+                                    )}
+                                    className={`cursor-cell whitespace-nowrap border-r-2 border-gray-300 bg-white px-2 py-1 text-center align-middle text-[13px] font-bold leading-5 text-gray-900 outline-none ${isSelected ? 'relative !bg-blue-100/80 outline outline-1 -outline-offset-1 outline-blue-400' : ''} ${hasSelectionFocus ? 'z-10 !outline-2 !outline-blue-600' : ''}`}
                                   >
                                     {value || '—'}
                                   </td>
@@ -764,14 +1183,20 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                               return (
                                 <td
                                   key={column.id}
+                                  tabIndex={-1}
+                                  aria-selected={cellIsSelected(section.id, rowIndex, columnIndex)}
+                                  data-input-list-grid-cell="true"
                                   data-input-list-fill-cell={editable && column.value_source === 'workbook' ? 'true' : undefined}
                                   data-section-id={section.id}
                                   data-column-id={column.id}
+                                  data-column-index={columnIndex}
                                   data-row-index={rowIndex}
-                                  className={`border-r border-gray-100 p-1.5 last:border-r-0 ${isFillRange ? 'relative z-10 outline outline-2 -outline-offset-2 outline-blue-500' : ''}`}
+                                  data-row-span={1}
+                                  onPointerDown={event => beginCellSelection(event, section, rowIndex, columnIndex)}
+                                  className={`cursor-cell border-r border-gray-100 p-0.5 outline-none last:border-r-0 ${cellIsSelected(section.id, rowIndex, columnIndex) ? 'relative !bg-blue-100/80 outline outline-1 -outline-offset-1 outline-blue-400' : ''} ${cellHasSelectionFocus(section.id, rowIndex, columnIndex) ? 'z-10 !outline-2 !outline-blue-600' : ''} ${isFillRange ? 'relative z-10 outline outline-2 -outline-offset-2 outline-blue-500' : ''}`}
                                 >
                                   {column.value_source === 'room' || !editable ? (
-                                    <span className={`flex min-h-8 items-center gap-1.5 whitespace-nowrap px-2 py-1.5 text-sm ${value ? 'text-gray-800' : 'text-gray-300'}`}>
+                                    <span className={`flex min-h-7 items-center gap-1.5 whitespace-nowrap px-1.5 py-1 text-[13px] leading-5 ${value ? 'text-gray-800' : 'text-gray-300'}`}>
                                       {cellLink && <Link2 className="h-3.5 w-3.5 shrink-0 text-blue-500" />}
                                       {value || '—'}
                                     </span>
@@ -787,7 +1212,11 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                                         onChange={event => {
                                           if (!cellLink) setValues(current => ({ ...current, [key]: event.target.value }))
                                         }}
-                                        onFocus={() => setActiveCellKey(key)}
+                                        onFocus={() => focusGridCell({
+                                          sectionId: section.id,
+                                          rowIndex,
+                                          columnIndex,
+                                        }, key)}
                                         onBlur={() => {
                                           if (!cellLink) void persistValue(row.id, column.id)
                                         }}
@@ -807,7 +1236,7 @@ export function InputListTab({ workbook, locations, linkedEvents, editable }: In
                                           if (nextInput) nextInput.focus()
                                           else event.currentTarget.blur()
                                         }}
-                                        className={`w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 pr-8 text-sm outline-none hover:border-gray-200 hover:bg-white/70 focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 ${cellLink ? 'cursor-default font-medium text-blue-800' : 'text-gray-900'}`}
+                                        className={`h-7 w-full rounded-md border border-transparent bg-transparent px-1.5 pr-6 text-[13px] leading-5 outline-none hover:border-gray-200 hover:bg-white/70 focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 ${cellLink ? 'cursor-default font-medium text-blue-800' : 'text-gray-900'}`}
                                       />
                                       {cellLink ? (
                                         <button
