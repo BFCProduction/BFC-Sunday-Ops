@@ -46,7 +46,7 @@ The current authorization and policy review, including per-finding deployment st
   - **Call sheets** — printable per-person schedule (per-day call/release, role, event), with crew avatars.
   - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), calculated client-side in the admin-only Crew tab, shown per row, and totaled per person across the workbook, with a printable business-office pay report. The deployed `workbook-pay` Edge Function remains available for the future raw-rate security hardening.
   - **Intercom Grid** — event-scoped assignments pulled from the workbook crew roster and visible to every workbook user. Non-admins receive a read-only grid; admins can assign wired/wireless/no-intercom packs, set each channel's talk behavior to **Off / Momentary / Latch / Latch-Momentary**, independently set its receive behavior to **Off / Listen / Listen on Talk**, and add or remove event channel columns. **Program** is treated as a simple audio-feed checkbox with no talk or listen mode. Workbook Settings owns global pack capacities, the reusable master channel list, and per-role starting defaults. Over-capacity pack counts are flagged.
-  - **Input List** — a room-aware workbook document built from reusable sections, configurable columns, and a drag-ordered connection inventory. Room-defined infrastructure is shown read-only while production-specific inputs, outputs, devices, people, destinations, and monitor assignments autosave in the workbook. Connections sharing a floor box stay grouped across input types; the hidden type value drives print-safe row shading for audio input, audio output, monitor output, network, fiber, and BNC.
+  - **Input List** — a room-aware workbook document built from reusable sections, configurable columns, and a drag-ordered connection inventory. Room-defined infrastructure is shown read-only while production-specific inputs, outputs, devices, people, destinations, and monitor assignments autosave in the workbook. Location-wide linked cells can mirror another input-list cell in every workbook, and a spreadsheet-style fill handle continues numbered values or sequential linked-cell references down a column. Connections sharing a floor box stay grouped across input types; the hidden type value drives print-safe row shading for audio input, audio output, monitor output, network, fiber, and BNC.
   - **Supplies** — a workbook-wide shopping list for consumables, décor, and miscellaneous purchases, visible read-only to non-admins and editable by admins. Each row stores item, description, quantity, unit price, optional department, and purchase link; the tab calculates line totals and a workbook estimate.
   - **Send Update** — snapshots the schedule, diffs it against the last sent version, and produces a copyable change summary for occasional crew.
   - **Workbook print packet** — one Print / PDF control with selectable pages for the detail schedule, room Input Lists, Supplies shopping list, event Intercom Grids, and per-person call sheets. Admins also receive the business-office pay report option; it is absent from non-admin print controls and rejected by the export path for non-admins. Packets print on Letter portrait pages; Input List sections use two balanced tables side by side to preserve readable type without wasting paper.
@@ -242,6 +242,7 @@ Completed (previously listed as pending):
   - `input_list_sections`, `input_list_columns`, and `input_list_rows` — ordered, location-specific document structure and connection inventory
   - `input_list_room_values` — reusable fixed infrastructure values shown read-only inside workbooks
   - `workbook_input_list_values` — production-specific values keyed to a workbook, room connection row, and workbook-entry column
+  - `input_list_cell_links` — reusable location-wide target/source relationships that resolve against the active workbook (migration `062`)
 - **Intercom configuration + event grids (migration `050`):**
   - `intercom_pack_types` — account-level wired/wireless availability counts (future specific equipment can attach without replacing the pack type)
   - `intercom_channels` — reusable master channel list, including an explicit Program-feed marker
@@ -253,6 +254,7 @@ Completed (previously listed as pending):
 
 Functions:
 - `publish_workbook_schedule(workbook_id, published_by, snapshot)` — snapshots the current schedule as the next numbered version (used by "Send Update")
+- `save_input_list_cell_links_bulk(location_id, cells)` / `save_workbook_input_list_values_bulk(workbook_id, cells)` — atomically save drag-filled link or value ranges and their Undo operations
 
 Edge Functions (workbook):
 - `workbook-pay` — admin-only (verifies the PCO session token + `is_admin`); computes crew pay for a workbook and returns it only to verified admins. Deployed; wired in for the raw-rate lockdown (crew pay is currently computed client-side in the admin-only Crew tab).
@@ -323,6 +325,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260731170000_059_monday_issue_sync.sql`
 - `supabase/migrations/20260731174500_060_monday_sync_legacy_insert_compat.sql`
 - `supabase/migrations/20260801030000_061_issue_photos_permissions.sql`
+- `supabase/migrations/20260804190000_062_input_list_cell_links.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

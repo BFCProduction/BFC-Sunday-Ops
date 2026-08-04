@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-04 — Input List linked cells and drag fill
+
+- Added location-wide input-list cell links. Typing `=` in a workbook-entry cell opens a searchable source picker and clearly confirms that the rule applies to every workbook using that location.
+- Linked cells resolve against the active workbook, update immediately when their source changes, retain stable row/column references across renames and reordering, and render as resolved values in workbook print packets.
+- Added circular-reference validation and atomic bulk link/value functions in migration `062_input_list_cell_links`.
+- Added a spreadsheet-style fill handle. Numbered values such as `Choir 1` continue as `Choir 2`, `Choir 3`, and so on, while non-numbered values copy unchanged and leading zeroes are preserved.
+- Dragging a location-linked cell continues numbered source references, allowing `Wireless IEM 1 → Wireless 1` to fill through the remaining IEM rows. Location-wide link fills require confirmation.
+- Multi-cell fills and link changes expose an Undo action and save atomically so partial ranges are not left behind.
+
 ## 2026-07-31 — Secure automatic Monday.com issue mirroring
 
 - Removed the operator checkbox and Low-severity exclusion. When the integration is enabled, every new issue is saved in Sunday Ops first and then mirrored automatically.

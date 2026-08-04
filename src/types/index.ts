@@ -391,6 +391,16 @@ export interface WorkbookInputListValue {
   updated_at: string
 }
 
+export interface InputListCellLink {
+  location_id: string
+  target_row_id: string
+  target_column_id: string
+  source_row_id: string
+  source_column_id: string
+  created_at: string
+  updated_at: string
+}
+
 // -- Workbook intercom grid ----------------------------------------------------
 
 export type IntercomPackTypeKey = 'wired' | 'wireless'

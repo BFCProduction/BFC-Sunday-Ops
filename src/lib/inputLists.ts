@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type {
+  InputListCellLink,
   InputListColumnSource,
   InputListConnectionType,
   InputListRoomRow,
@@ -30,8 +31,95 @@ export interface InputListPrintDocument {
   sections: InputListPrintSection[]
 }
 
+export interface InputListCellLinkChange {
+  target_row_id: string
+  target_column_id: string
+  source_row_id: string | null
+  source_column_id: string | null
+}
+
+export interface WorkbookInputListValueChange {
+  row_id: string
+  column_id: string
+  value: string
+}
+
+export function inputListCellKey(rowId: string, columnId: string) {
+  return `${rowId}:${columnId}`
+}
+
 export function inputListColumnIsVisible(column: Pick<InputListSectionColumn, 'name'>): boolean {
   return column.name.trim().toLocaleLowerCase() !== 'type'
+}
+
+export function inputListRowLabel(
+  row: InputListRoomRow,
+  columns: InputListSectionColumn[],
+): string {
+  const visibleLabels = columns
+    .filter(column => column.value_source === 'room' && inputListColumnIsVisible(column))
+    .map(column => row.room_values.find(value => value.column_id === column.id)?.value.trim() ?? '')
+    .filter(Boolean)
+  if (visibleLabels.length > 0) return visibleLabels.join(' · ')
+
+  const fallbackLabel = columns
+    .filter(column => column.value_source === 'room')
+    .map(column => row.room_values.find(value => value.column_id === column.id)?.value.trim() ?? '')
+    .find(Boolean)
+  return fallbackLabel || `Connection ${row.sort_order + 1}`
+}
+
+export function incrementTrailingNumber(value: string, offset: number): string {
+  const match = value.match(/^(.*?)(\d+)(\s*)$/)
+  if (!match) return value
+  const [, prefix, digits, suffix] = match
+  const nextNumber = Number.parseInt(digits, 10) + offset
+  return `${prefix}${String(nextNumber).padStart(digits.length, '0')}${suffix}`
+}
+
+export function buildResolvedInputListValueMap(
+  sections: InputListSection[],
+  workbookValues: Pick<WorkbookInputListValue, 'row_id' | 'column_id' | 'value'>[],
+  links: Pick<InputListCellLink, 'target_row_id' | 'target_column_id' | 'source_row_id' | 'source_column_id'>[],
+): Map<string, string> {
+  const workbookValueByKey = new Map(workbookValues.map(value => [
+    inputListCellKey(value.row_id, value.column_id),
+    value.value,
+  ]))
+  const baseValues = new Map<string, string>()
+  for (const section of sections) {
+    for (const row of section.rows) {
+      for (const column of section.columns) {
+        const key = inputListCellKey(row.id, column.id)
+        baseValues.set(key, column.value_source === 'room'
+          ? row.room_values.find(value => value.column_id === column.id)?.value ?? ''
+          : workbookValueByKey.get(key) ?? '')
+      }
+    }
+  }
+
+  const linkByTarget = new Map(links.map(link => [
+    inputListCellKey(link.target_row_id, link.target_column_id),
+    link,
+  ]))
+  const resolvedValues = new Map<string, string>()
+  const resolving = new Set<string>()
+
+  function resolve(key: string): string {
+    if (resolvedValues.has(key)) return resolvedValues.get(key) ?? ''
+    if (resolving.has(key)) return '#REF!'
+    resolving.add(key)
+    const link = linkByTarget.get(key)
+    const value = link
+      ? resolve(inputListCellKey(link.source_row_id, link.source_column_id))
+      : baseValues.get(key) ?? ''
+    resolving.delete(key)
+    resolvedValues.set(key, value)
+    return value
+  }
+
+  for (const key of new Set([...baseValues.keys(), ...linkByTarget.keys()])) resolve(key)
+  return resolvedValues
 }
 
 function sortByOrder<T extends { sort_order: number }>(rows: T[]) {
@@ -286,6 +374,15 @@ export async function loadWorkbookInputListValues(workbookId: string): Promise<W
   return (data ?? []) as WorkbookInputListValue[]
 }
 
+export async function loadInputListCellLinks(locationId: string): Promise<InputListCellLink[]> {
+  const { data, error } = await supabase
+    .from('input_list_cell_links')
+    .select('*')
+    .eq('location_id', locationId)
+  if (error) throw error
+  return (data ?? []) as InputListCellLink[]
+}
+
 export async function saveWorkbookInputListValue(
   workbookId: string,
   rowId: string,
@@ -316,8 +413,28 @@ export async function saveWorkbookInputListValue(
   if (error) throw error
 }
 
-function valueKey(rowId: string, columnId: string) {
-  return `${rowId}:${columnId}`
+export async function saveWorkbookInputListValuesBulk(
+  workbookId: string,
+  cells: WorkbookInputListValueChange[],
+): Promise<void> {
+  if (cells.length === 0) return
+  const { error } = await supabase.rpc('save_workbook_input_list_values_bulk', {
+    target_workbook_id: workbookId,
+    cells,
+  })
+  if (error) throw error
+}
+
+export async function saveInputListCellLinksBulk(
+  locationId: string,
+  cells: InputListCellLinkChange[],
+): Promise<void> {
+  if (cells.length === 0) return
+  const { error } = await supabase.rpc('save_input_list_cell_links_bulk', {
+    target_location_id: locationId,
+    cells,
+  })
+  if (error) throw error
 }
 
 export async function loadWorkbookInputListDocuments(
@@ -326,17 +443,15 @@ export async function loadWorkbookInputListDocuments(
   preferredLocationIds: string[] = [],
 ): Promise<InputListPrintDocument[]> {
   const [configurationEntries, workbookValues] = await Promise.all([
-    Promise.all(locations.map(async location => ({
-      location,
-      sections: await loadInputListConfiguration(location.id),
-    }))),
+    Promise.all(locations.map(async location => {
+      const [sections, links] = await Promise.all([
+        loadInputListConfiguration(location.id),
+        loadInputListCellLinks(location.id),
+      ])
+      return { location, sections, links }
+    })),
     loadWorkbookInputListValues(workbookId),
   ])
-
-  const valueByKey = new Map(workbookValues.map(value => [
-    valueKey(value.row_id, value.column_id),
-    value.value,
-  ]))
   const preferred = new Set(preferredLocationIds)
 
   const withValues = new Set<string>()
@@ -348,28 +463,31 @@ export async function loadWorkbookInputListDocuments(
   return configurationEntries
     .filter(entry => entry.sections.length > 0)
     .filter(entry => preferred.size === 0 || preferred.has(entry.location.id) || withValues.has(entry.location.id))
-    .map(entry => ({
-      locationName: entry.location.name,
-      sections: entry.sections.map(section => {
-        const visibleColumns = section.columns.filter(inputListColumnIsVisible)
-        return {
-          name: section.name,
-          columns: visibleColumns.map(column => column.name),
-          groupColumnIndex: (() => {
-            const index = visibleColumns.findIndex(column => column.value_source === 'room')
-            return index >= 0 ? index : null
-          })(),
-          rows: section.rows.map(row => ({
-            connectionType: row.connection_type,
-            groupKey: inputListRowGroupKey(row, section.columns),
-            values: visibleColumns.map(column => {
-              if (column.value_source === 'room') {
-                return row.room_values.find(value => value.column_id === column.id)?.value ?? ''
-              }
-              return valueByKey.get(valueKey(row.id, column.id)) ?? ''
-            }),
-          })),
-        }
-      }),
-    }))
+    .map(entry => {
+      const resolvedValues = buildResolvedInputListValueMap(entry.sections, workbookValues, entry.links)
+      return {
+        locationName: entry.location.name,
+        sections: entry.sections.map(section => {
+          const visibleColumns = section.columns.filter(inputListColumnIsVisible)
+          return {
+            name: section.name,
+            columns: visibleColumns.map(column => column.name),
+            groupColumnIndex: (() => {
+              const index = visibleColumns.findIndex(column => column.value_source === 'room')
+              return index >= 0 ? index : null
+            })(),
+            rows: section.rows.map(row => ({
+              connectionType: row.connection_type,
+              groupKey: inputListRowGroupKey(row, section.columns),
+              values: visibleColumns.map(column => {
+                if (column.value_source === 'room') {
+                  return row.room_values.find(value => value.column_id === column.id)?.value ?? ''
+                }
+                return resolvedValues.get(inputListCellKey(row.id, column.id)) ?? ''
+              }),
+            })),
+          }
+        }),
+      }
+    })
 }
