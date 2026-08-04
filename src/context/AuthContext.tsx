@@ -62,10 +62,14 @@ export function AuthProvider({ children }: Props) {
     setSessionToken(null)
   }
 
+  const accessLevel = user?.access_level ?? (user?.is_admin ? 'admin' : 'user')
+
   return (
     <AuthContext.Provider value={{
       user,
-      isAdmin:      user?.is_admin === true,
+      accessLevel,
+      isManager:    accessLevel === 'manager' || accessLevel === 'admin',
+      isAdmin:      accessLevel === 'admin',
       isLoading,
       sessionToken,
       login,

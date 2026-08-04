@@ -234,13 +234,14 @@ function SortableCrewRow({
 }
 
 function AddCrewModal({
-  workbookId, workbookDays, linkedEvents, users, roles, onSaved, onClose,
+  workbookId, workbookDays, linkedEvents, users, roles, sessionToken, onSaved, onClose,
 }: {
   workbookId: string
   workbookDays: string[]
   linkedEvents: Session[]
   users: AppUser[]
   roles: CrewRole[]
+  sessionToken: string
   onSaved: () => Promise<void>
   onClose: () => void
 }) {
@@ -281,7 +282,7 @@ function AddCrewModal({
     setSaving(true)
     setError('')
     try {
-      await createCrewMember(input)
+      await createCrewMember(input, sessionToken)
       await onSaved()
       onClose()
     } catch (err) {
@@ -599,7 +600,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                           label={`Role for ${workbookCrewPersonName(member, users)}`}
                           options={roleOptions}
                           onSave={async value => {
-                            await updateCrewMemberDetails(member.id, { roleId: value || null })
+                            await updateCrewMemberDetails(member.id, { roleId: value || null }, sessionToken)
                             await onChanged()
                           }}
                         />
@@ -641,7 +642,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                           label={`Pay type for ${workbookCrewPersonName(member, users)}`}
                           options={payTypeOptions}
                           onSave={async value => {
-                            await updateCrewMemberDetails(member.id, { isPaid: value === 'paid' })
+                            await updateCrewMemberDetails(member.id, { isPaid: value === 'paid' }, sessionToken)
                             await onChanged()
                           }}
                         />
@@ -722,13 +723,14 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
         </Card>
       )}
 
-      {isAdmin && showModal && editMode && (
+      {isAdmin && sessionToken && showModal && editMode && (
         <AddCrewModal
           workbookId={workbook.id}
           workbookDays={workbookDays}
           linkedEvents={linkedEvents}
           users={users}
           roles={roles}
+          sessionToken={sessionToken}
           onSaved={onChanged}
           onClose={() => setShowModal(false)}
         />

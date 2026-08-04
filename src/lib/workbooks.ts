@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { deleteAdminSupply, saveAdminSupply, setAdminCrewPaid } from './financialAdmin'
 import type {
   Location,
   Session,
@@ -198,14 +199,14 @@ export interface CrewMemberInput {
 export async function loadWorkbookCrew(workbookId: string): Promise<WorkbookCrewMember[]> {
   const { data, error } = await supabase
     .from('workbook_crew')
-    .select('*')
+    .select('id, workbook_id, event_id, scheduled_date, user_id, person_name, is_open, role_id, call_time, release_time, sort_order, sort_order_overridden, source, pco_plan_person_id, pco_person_id, pco_role_name, pco_status, pco_photo_url, pco_synced_at, created_at, updated_at')
     .eq('workbook_id', workbookId)
     .order('scheduled_date', { ascending: true })
     .order('sort_order', { ascending: true })
     .order('call_time', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true })
   if (error) throw error
-  return (data ?? []) as WorkbookCrewMember[]
+  return (data ?? []).map(member => ({ ...member, is_paid: false })) as WorkbookCrewMember[]
 }
 
 export async function reorderWorkbookCrew(orderedIds: string[]): Promise<void> {
@@ -234,12 +235,11 @@ function crewPayload(input: CrewMemberInput) {
     role_id: input.roleId,
     call_time: input.callTime,
     release_time: input.releaseTime,
-    is_paid: input.isPaid,
     updated_at: new Date().toISOString(),
   }
 }
 
-export async function createCrewMember(input: CrewMemberInput): Promise<void> {
+export async function createCrewMember(input: CrewMemberInput, sessionToken?: string | null): Promise<void> {
   let orderQuery = supabase
     .from('workbook_crew')
     .select('sort_order')
@@ -256,17 +256,23 @@ export async function createCrewMember(input: CrewMemberInput): Promise<void> {
   if (orderError) throw orderError
 
   const sortOrder = Number(lastRows?.[0]?.sort_order ?? -1) + 1
-  const { error } = await supabase.from('workbook_crew').insert({
-    ...crewPayload(input),
-    sort_order: sortOrder,
-    sort_order_overridden: true,
-  })
+  const { data: created, error } = await supabase
+    .from('workbook_crew')
+    .insert({
+      ...crewPayload(input),
+      sort_order: sortOrder,
+      sort_order_overridden: true,
+    })
+    .select('id')
+    .single()
   if (error) throw error
+  if (sessionToken && input.isPaid) await setAdminCrewPaid(sessionToken, created.id, true)
 }
 
-export async function updateCrewMember(id: string, input: CrewMemberInput): Promise<void> {
+export async function updateCrewMember(id: string, input: CrewMemberInput, sessionToken?: string | null): Promise<void> {
   const { error } = await supabase.from('workbook_crew').update(crewPayload(input)).eq('id', id)
   if (error) throw error
+  if (sessionToken) await setAdminCrewPaid(sessionToken, id, input.isPaid)
 }
 
 export async function updateCrewMemberTime(
@@ -287,15 +293,19 @@ export async function updateCrewMemberTime(
 export async function updateCrewMemberDetails(
   id: string,
   updates: { roleId?: string | null; isPaid?: boolean },
+  sessionToken?: string | null,
 ): Promise<void> {
-  const payload: { role_id?: string | null; is_paid?: boolean; updated_at: string } = {
+  const payload: { role_id?: string | null; updated_at: string } = {
     updated_at: new Date().toISOString(),
   }
   if (updates.roleId !== undefined) payload.role_id = updates.roleId
-  if (updates.isPaid !== undefined) payload.is_paid = updates.isPaid
 
   const { error } = await supabase.from('workbook_crew').update(payload).eq('id', id)
   if (error) throw error
+  if (updates.isPaid !== undefined) {
+    if (!sessionToken) throw new Error('Admin session required to change paid status')
+    await setAdminCrewPaid(sessionToken, id, updates.isPaid)
+  }
 }
 
 export async function deleteCrewMember(id: string): Promise<void> {
@@ -318,40 +328,36 @@ export interface SupplyItemInput {
 export async function loadWorkbookSupplies(workbookId: string): Promise<WorkbookSupplyItem[]> {
   const { data, error } = await supabase
     .from('workbook_supplies')
-    .select('*')
+    .select('id, workbook_id, department_id, item_name, description, quantity, purchase_url, sort_order, created_at, updated_at')
     .eq('workbook_id', workbookId)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
   if (error) throw error
-  return (data ?? []) as WorkbookSupplyItem[]
+  return (data ?? []).map(item => ({ ...item, unit_price: 0 })) as WorkbookSupplyItem[]
 }
 
 function supplyPayload(input: SupplyItemInput) {
   return {
-    workbook_id: input.workbookId,
-    department_id: input.departmentId,
-    item_name: input.itemName.trim(),
+    workbookId: input.workbookId,
+    departmentId: input.departmentId,
+    itemName: input.itemName.trim(),
     description: input.description?.trim() || null,
     quantity: Math.max(0, Math.round(input.quantity)),
-    unit_price: Math.max(0, input.unitPrice),
-    purchase_url: input.purchaseUrl,
-    updated_at: new Date().toISOString(),
+    unitPrice: Math.max(0, input.unitPrice),
+    purchaseUrl: input.purchaseUrl,
   }
 }
 
-export async function createSupplyItem(input: SupplyItemInput): Promise<void> {
-  const { error } = await supabase.from('workbook_supplies').insert(supplyPayload(input))
-  if (error) throw error
+export async function createSupplyItem(sessionToken: string, input: SupplyItemInput): Promise<void> {
+  await saveAdminSupply(sessionToken, supplyPayload(input))
 }
 
-export async function updateSupplyItem(id: string, input: SupplyItemInput): Promise<void> {
-  const { error } = await supabase.from('workbook_supplies').update(supplyPayload(input)).eq('id', id)
-  if (error) throw error
+export async function updateSupplyItem(sessionToken: string, id: string, input: SupplyItemInput): Promise<void> {
+  await saveAdminSupply(sessionToken, { id, ...supplyPayload(input) })
 }
 
-export async function deleteSupplyItem(id: string): Promise<void> {
-  const { error } = await supabase.from('workbook_supplies').delete().eq('id', id)
-  if (error) throw error
+export async function deleteSupplyItem(sessionToken: string, id: string): Promise<void> {
+  await deleteAdminSupply(sessionToken, id)
 }
 
 export async function upsertPcoTimeMeta(input: {

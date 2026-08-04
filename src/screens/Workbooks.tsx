@@ -59,6 +59,7 @@ import { InputListTab } from '../components/workbook/InputListTab'
 import { QuickCreateModal } from '../components/layout/QuickCreateModal'
 import { workbookScheduleDiff, type DiffScheduleItem, type DiffEvent } from '../lib/workbookDiff'
 import { loadWorkbookInputListDocuments } from '../lib/inputLists'
+import { fetchWorkbookFinancialData } from '../lib/financialAdmin'
 import type {
   CrewRole,
   Department,
@@ -963,7 +964,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
 
   // Account-level reference data (Production Config), shared across all workbooks.
   useEffect(() => {
-    Promise.all([loadLocations(), loadDepartments(), loadScheduleItemTypes(), loadRoles()])
+    Promise.all([loadLocations(), loadDepartments(), loadScheduleItemTypes(), loadRoles(isAdmin ? sessionToken : null)])
       .then(([loc, dep, typ, rol]) => {
         setLocations(loc)
         setDepartmentOptions(dep)
@@ -971,7 +972,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         setCrewRoles(rol)
       })
       .catch(() => { /* reference data is optional to first paint */ })
-  }, [])
+  }, [isAdmin, sessionToken])
 
   const reloadScheduleTypes = useCallback(async () => {
     setScheduleTypes(await loadScheduleItemTypes())
@@ -1030,11 +1031,17 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     if (!activeWorkbookId) return
     setWorkspaceLoading(true)
     try {
-      const [freshItems, freshCrew, freshSupplies] = await Promise.all([
+      const [freshItems, safeCrew, safeSupplies, financial] = await Promise.all([
         loadWorkbookScheduleItems(activeWorkbookId),
         loadWorkbookCrew(activeWorkbookId),
         loadWorkbookSupplies(activeWorkbookId),
+        isAdmin && sessionToken
+          ? fetchWorkbookFinancialData(sessionToken, activeWorkbookId)
+          : Promise.resolve(null),
       ])
+      const paidByCrew = new Map((financial?.crew_financials ?? []).map(row => [row.crew_id, row.is_paid]))
+      const freshCrew = safeCrew.map(member => ({ ...member, is_paid: paidByCrew.get(member.id) ?? false }))
+      const freshSupplies = financial?.supplies ?? safeSupplies
       setItems(freshItems)
       setCrew(freshCrew)
       setSupplies(freshSupplies)
@@ -1043,15 +1050,29 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     } finally {
       setWorkspaceLoading(false)
     }
-  }, [activeWorkbookId])
+  }, [activeWorkbookId, isAdmin, sessionToken])
 
   const reloadCrew = useCallback(async () => {
-    if (activeWorkbookId) setCrew(await loadWorkbookCrew(activeWorkbookId))
-  }, [activeWorkbookId])
+    if (!activeWorkbookId) return
+    const safeCrew = await loadWorkbookCrew(activeWorkbookId)
+    if (!isAdmin || !sessionToken) {
+      setCrew(safeCrew)
+      return
+    }
+    const financial = await fetchWorkbookFinancialData(sessionToken, activeWorkbookId)
+    const paidByCrew = new Map(financial.crew_financials.map(row => [row.crew_id, row.is_paid]))
+    setCrew(safeCrew.map(member => ({ ...member, is_paid: paidByCrew.get(member.id) ?? false })))
+  }, [activeWorkbookId, isAdmin, sessionToken])
 
   const reloadSupplies = useCallback(async () => {
-    if (activeWorkbookId) setSupplies(await loadWorkbookSupplies(activeWorkbookId))
-  }, [activeWorkbookId])
+    if (!activeWorkbookId) return
+    if (isAdmin && sessionToken) {
+      const financial = await fetchWorkbookFinancialData(sessionToken, activeWorkbookId)
+      setSupplies(financial.supplies)
+      return
+    }
+    setSupplies(await loadWorkbookSupplies(activeWorkbookId))
+  }, [activeWorkbookId, isAdmin, sessionToken])
 
   useEffect(() => {
     if (!activeWorkbookId) {
@@ -1366,6 +1387,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         scheduleRows: rows,
         inputListDocuments,
         supplies,
+        includeSupplyCosts: isAdmin,
         departments: departmentOptions,
         intercomEvents,
         callSheetPeople,
@@ -1821,6 +1843,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 departments={departmentOptions}
                 supplies={supplies}
                 editable={isAdmin}
+                sessionToken={sessionToken}
                 onChanged={reloadSupplies}
               />
             )}

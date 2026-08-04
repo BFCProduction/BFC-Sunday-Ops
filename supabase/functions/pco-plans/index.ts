@@ -1,6 +1,7 @@
 // deno-lint-ignore-file no-import-prefix no-explicit-any
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { getValidPcoToken, pcoReauthBody, type PcoSessionTokens } from '../_shared/pco-token.ts'
+import { syncPcoFolders } from '../_shared/pco-folders.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pco-plans edge function
@@ -242,6 +243,15 @@ Deno.serve(async (req) => {
     }
   } catch (err) {
     console.error('pco-plans: PCO service type discovery threw:', err instanceof Error ? err.message : String(err))
+  }
+
+  // Keep stable folder ownership current whenever the plan picker already has
+  // a valid Services token. Folder sync is deliberately non-fatal: an event can
+  // still be created if PCO temporarily withholds folder metadata.
+  try {
+    await syncPcoFolders(supabase, pcoToken)
+  } catch (err) {
+    console.error('pco-plans: PCO folder sync threw:', err instanceof Error ? err.message : String(err))
   }
 
   const serviceTypes: ServiceType[] = Array.from(byPcoId.values())

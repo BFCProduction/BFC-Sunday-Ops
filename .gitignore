@@ -30,3 +30,8 @@ artifacts/
 
 # Supabase local CLI cache/state
 supabase/.temp/
+
+# Local agent/worktree and scratch directories
+.claude/
+.codex/
+tmp/

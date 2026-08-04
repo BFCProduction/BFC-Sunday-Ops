@@ -7,6 +7,7 @@
 // Config model this belongs to.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase'
+import { deleteAdminRole, fetchAdminRoles, reorderAdminRoles, saveAdminRole } from './financialAdmin'
 import type { Location, Department, CrewRole, ScheduleItemType } from '../types'
 
 type ProductionConfigTable = 'locations' | 'departments' | 'roles' | 'schedule_item_types'
@@ -96,50 +97,43 @@ export interface RoleInput {
   departmentId: string | null
 }
 
-export async function loadRoles(): Promise<CrewRole[]> {
+export async function loadRoles(sessionToken?: string | null): Promise<CrewRole[]> {
+  if (sessionToken) return fetchAdminRoles(sessionToken)
+
   const { data, error } = await supabase
     .from('roles')
-    .select('*')
+    .select('id, name, department_id, sort_order, created_at')
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true })
   if (error) throw error
-  return (data ?? []) as CrewRole[]
+  return (data ?? []).map(role => ({ ...role, hourly_rate: 0 })) as CrewRole[]
 }
 
-export async function createRole(input: RoleInput, sortOrder: number): Promise<CrewRole> {
-  const { data, error } = await supabase
-    .from('roles')
-    .insert({
-      name: input.name.trim(),
-      hourly_rate: input.hourlyRate,
-      department_id: input.departmentId,
-      sort_order: sortOrder,
-    })
-    .select('*')
-    .single()
-  if (error) throw error
-  return data as CrewRole
+export async function createRole(sessionToken: string, input: RoleInput, sortOrder: number): Promise<void> {
+  await saveAdminRole(sessionToken, {
+    name: input.name.trim(),
+    hourlyRate: input.hourlyRate,
+    departmentId: input.departmentId,
+    sortOrder,
+  })
 }
 
-export async function updateRole(id: string, input: RoleInput): Promise<void> {
-  const { error } = await supabase
-    .from('roles')
-    .update({
-      name: input.name.trim(),
-      hourly_rate: input.hourlyRate,
-      department_id: input.departmentId,
-    })
-    .eq('id', id)
-  if (error) throw error
+export async function updateRole(sessionToken: string, role: CrewRole, input: RoleInput): Promise<void> {
+  await saveAdminRole(sessionToken, {
+    id: role.id,
+    name: input.name.trim(),
+    hourlyRate: input.hourlyRate,
+    departmentId: input.departmentId,
+    sortOrder: role.sort_order,
+  })
 }
 
-export async function deleteRole(id: string): Promise<void> {
-  const { error } = await supabase.from('roles').delete().eq('id', id)
-  if (error) throw error
+export async function deleteRole(sessionToken: string, id: string): Promise<void> {
+  await deleteAdminRole(sessionToken, id)
 }
 
-export async function reorderRoles(orderedIds: string[]): Promise<void> {
-  await reorderRows('roles', orderedIds)
+export async function reorderRoles(sessionToken: string, orderedIds: string[]): Promise<void> {
+  await reorderAdminRoles(sessionToken, orderedIds)
 }
 
 // ── Schedule item types ───────────────────────────────────────────────────────

@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { BookOpen, FileDown, Globe, Loader2, Settings as SettingsIcon, Users } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { ProductionConfig } from '../components/admin/ProductionConfig'
+import { ModuleDefaultsConfig } from '../components/admin/ModuleDefaultsConfig'
 import { useAdmin } from '../context/adminState'
-import { fetchAppUsers, setUserAdmin, type AppUser } from '../lib/adminApi'
+import { fetchAppUsers, setUserAccessLevel, type AppUser } from '../lib/adminApi'
 import { useSunday } from '../context/SundayContext'
 import { fetchEventReportData } from '../lib/reportData'
 import { generateReportHtml } from '../lib/generateReportHtml'
 import { loadAllSessions, supabase } from '../lib/supabase'
 import type { Session } from '../types'
+import type { AppAccessLevel } from '../types'
 import bfcLogo from '../assets/BFC_Production_Logo_Hor reverse.png'
 
 async function getLogoBase64(): Promise<string> {
@@ -109,12 +111,13 @@ export function Settings() {
     return () => { active = false }
   }, [isAdmin, sessionToken])
 
-  const toggleAdmin = async (target: AppUser) => {
+  const updateAccessLevel = async (target: AppUser, accessLevel: AppAccessLevel) => {
+    if (target.access_level === accessLevel) return
     if (!sessionToken) return
     setTogglingUser(target.id)
     setUsersError('')
     try {
-      const updated = await setUserAdmin(sessionToken, target.id, !target.is_admin)
+      const updated = await setUserAccessLevel(sessionToken, target.id, accessLevel)
       setAppUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
     } catch (err) {
       setUsersError(err instanceof Error ? err.message : 'Failed to update user')
@@ -350,6 +353,7 @@ export function Settings() {
               <BookOpen className="w-3.5 h-3.5 text-blue-500" />
               Workbook Settings
             </p>
+            {sessionToken && <ModuleDefaultsConfig sessionToken={sessionToken} />}
             <ProductionConfig />
           </div>
         )}
@@ -363,10 +367,10 @@ export function Settings() {
             </p>
 
             <Card className="p-5">
-              <p className="text-gray-900 text-sm font-semibold mb-1">Admin Access</p>
+              <p className="text-gray-900 text-sm font-semibold mb-1">People &amp; Access</p>
               <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-                Everyone who has logged in to Sunday Ops via Planning Center. Toggle admin access to grant or revoke
-                admin-only features. You cannot remove your own admin access.
+                Users edit live operational content. Managers can organize event and workbook modules. Admins also
+                manage global configuration, financial data, and access levels. You cannot remove your own admin access.
               </p>
 
               {usersError && (
@@ -426,22 +430,24 @@ export function Settings() {
                           <p className="text-gray-600 text-xs">{lastLogin}</p>
                         </div>
 
-                        {/* Admin toggle */}
-                        <button
-                          onClick={() => void toggleAdmin(u)}
+                        {/* Access level */}
+                        <select
+                          value={u.access_level}
+                          onChange={event => void updateAccessLevel(u, event.target.value as AppAccessLevel)}
                           disabled={toggling || isSelf}
                           title={isSelf ? 'You cannot remove your own admin access' : undefined}
-                          className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
-                            disabled:opacity-50 disabled:cursor-not-allowed
-                            ${u.is_admin
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                          className={`flex-shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors
+                            disabled:cursor-not-allowed disabled:opacity-50
+                            ${u.access_level === 'admin'
+                              ? 'border-blue-600 bg-blue-600 text-white'
+                              : u.access_level === 'manager'
+                                ? 'border-violet-200 bg-violet-50 text-violet-700'
+                                : 'border-gray-200 bg-gray-100 text-gray-600'
                             }`}>
-                          {toggling
-                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                            : u.is_admin ? 'Admin' : 'Operator'
-                          }
-                        </button>
+                          <option value="user">User</option>
+                          <option value="manager">Manager</option>
+                          <option value="admin">Admin</option>
+                        </select>
                       </div>
                     )
                   })}

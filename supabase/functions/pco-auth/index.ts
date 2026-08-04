@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
         },
         { onConflict: 'pco_id' }
       )
-      .select('id, pco_id, name, email, avatar_url, is_admin')
+      .select('id, pco_id, name, email, avatar_url, access_level, is_admin')
       .single()
 
     if (upsertErr || !user) {

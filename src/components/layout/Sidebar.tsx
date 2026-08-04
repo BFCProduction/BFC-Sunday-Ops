@@ -39,7 +39,7 @@ function eventNavTitle(session: Session) {
 }
 
 export function Sidebar({ active, setActive, issueCount, allSessions, onSessionsChange }: SidebarProps) {
-  const { isAdmin } = useAdmin()
+  const { isAdmin, isManager } = useAdmin()
   const { sessionToken } = useAuth()
   const {
     activeEventId, serviceTypeSlug, serviceTypeColor, eventName,
@@ -188,7 +188,7 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
               quick switch
             </button>
           </p>
-          {isAdmin && (
+          {isManager && (
             <button
               onClick={() => setShowQuickCreate(true)}
               className="flex items-center gap-1 text-[10px] font-semibold text-gray-500 hover:text-white hover:bg-white/[0.08] px-2 py-0.5 rounded transition-all"
@@ -233,7 +233,7 @@ export function Sidebar({ active, setActive, issueCount, allSessions, onSessions
           <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-widest text-gray-700">
             {isHome ? 'Global Tools' : 'Global'}
           </p>
-          {isHome && isAdmin && (
+          {isHome && isManager && (
             <button onClick={() => setShowPicker(true)}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]">
               <List className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.8} />

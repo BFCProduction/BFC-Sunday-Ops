@@ -1,4 +1,6 @@
+// deno-lint-ignore-file no-import-prefix
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { verifyMinimumAccess } from '../_shared/app-auth.ts'
 
 const ALLOWED_ORIGINS = [
   'https://bfcproduction.github.io',
@@ -18,44 +20,6 @@ function jsonResponse(corsHeaders: Record<string, string>, status: number, paylo
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
-}
-
-// Verify a session token and confirm the user is an admin.
-// Returns the user row on success, null on failure.
-async function verifyAdminSession(
-  supabase: ReturnType<typeof createClient>,
-  token: string | null,
-): Promise<{ id: string } | null> {
-  if (!token) return null
-
-  const now = new Date().toISOString()
-
-  const { data: session } = await supabase
-    .from('user_sessions')
-    .select('user_id, expires_at')
-    .eq('token', token)
-    .gt('expires_at', now)
-    .maybeSingle()
-
-  if (!session) return null
-
-  const { data: user } = await supabase
-    .from('users')
-    .select('id, is_admin')
-    .eq('id', session.user_id)
-    .eq('is_admin', true)
-    .maybeSingle()
-
-  if (!user) return null
-
-  // Bump last_used_at without blocking the response
-  supabase
-    .from('user_sessions')
-    .update({ last_used_at: now })
-    .eq('token', token)
-    .then(() => {})
-
-  return user
 }
 
 function normalizeRecipient(payload: Record<string, unknown>) {
@@ -94,7 +58,7 @@ Deno.serve(async request => {
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
 
     const sessionToken = request.headers.get('x-session-token')
-    const adminUser = await verifyAdminSession(supabase, sessionToken)
+    const adminUser = await verifyMinimumAccess(supabase, sessionToken, 'admin')
     if (!adminUser) {
       return jsonResponse(corsHeaders, 401, { error: 'Unauthorized' })
     }

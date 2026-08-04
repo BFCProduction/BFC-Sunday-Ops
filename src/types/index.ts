@@ -149,6 +149,54 @@ export interface ChecklistItem {
 
 export type Role = 'All' | 'A1' | 'Video' | 'Graphics' | 'PTZ' | 'Lighting' | 'Stage'
 
+export type AppAccessLevel = 'user' | 'manager' | 'admin'
+
+export type ModuleKey = 'input_list' | 'production_documents' | 'crew' | 'supplies' | 'intercom'
+export type ModuleStatus = 'active' | 'archived'
+
+export interface ModuleDefinition {
+  key: ModuleKey
+  label: string
+  description: string | null
+  supports_event: boolean
+  supports_workbook: boolean
+  sort_order: number
+  is_active: boolean
+}
+
+export interface PcoFolder {
+  pco_folder_id: string
+  name: string
+  parent_pco_folder_id: string | null
+  is_active: boolean
+  sort_order: number
+  synced_at: string
+}
+
+export interface ModuleFolderDefault {
+  pco_folder_id: string
+  module_key: ModuleKey
+  title: string | null
+  sort_order: number
+}
+
+export interface ModuleInstance {
+  id: string
+  module_key: ModuleKey
+  title: string | null
+  event_id: string | null
+  workbook_id: string | null
+  location_id: string | null
+  status: ModuleStatus
+  sort_order: number
+  created_by: string | null
+  archived_by: string | null
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+  module_definitions?: ModuleDefinition
+}
+
 // ── Event checklist templates ────────────────────────────────────────────────
 
 export interface EventTemplate {

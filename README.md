@@ -12,6 +12,8 @@ The durable product direction, confirmed decisions, technical foundations, and f
 
 The current authorization and policy review, including per-finding deployment status and the staged containment order, lives in [`docs/security-inventory.md`](docs/security-inventory.md). SEC-01 is deployed and verified; the remaining findings are explicitly identified there as pending work.
 
+The confirmed Event/Workbook module ownership model, access levels, PCO-folder defaults, and phased migration rules live in [`docs/module-architecture.md`](docs/module-architecture.md).
+
 ## Current Scope
 
 - Home landing screen with global tool cards, focus event, event timeline, and public "What's New" update feed
@@ -373,14 +375,7 @@ Frontend:
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key_here
 VITE_PCO_CLIENT_ID=your_pco_oauth_app_client_id
-VITE_ADMIN_PASSWORD=choose_a_shared_admin_password
 VITE_ENABLE_MONDAY_PUSH=false
-```
-
-Admin / edge functions:
-
-```bash
-ADMIN_PASSWORD=choose_the_server_side_admin_password
 ```
 
 Server-side scripts / edge functions:
@@ -676,7 +671,7 @@ supabase functions deploy event-admin
 
 ## People & Access
 
-Admins can manage who has admin access to Sunday Ops from **Settings → People & Access** without touching Supabase directly. The section lists every user who has logged in, shows their last login date, and provides a toggle to grant or revoke admin access. Self-demotion is blocked server-side.
+Admins can manage access levels from **Settings → People & Access** without touching Supabase directly. The section lists every user who has logged in, shows their last login date, and supports three access levels: User, Manager, and Admin. Managers can manage event and workbook modules; only Admins can change access levels, folder defaults, financial data, and destructive settings. Self-demotion is blocked server-side.
 
 This is backed by the `user-admin` Supabase Edge Function:
 
@@ -686,7 +681,8 @@ supabase functions deploy user-admin
 
 ## Notes
 
-- Admin mode is a shared-password convenience layer in the frontend.
+- Sunday Ops uses Planning Center sign-in plus server-verified User, Manager, and Admin access levels.
+- The module architecture and phased rollout are documented in [`docs/module-architecture.md`](docs/module-architecture.md).
 - Retired summary-email tables remain private and are not exposed in the app surface.
 - The repo now matches the current checklist/runtime data model better than the original generated README did.
 - Scheduled analytics should stay disabled until their backing code exists.
@@ -700,7 +696,7 @@ supabase functions deploy user-admin
 **Never commit real credentials, passwords, or API keys to this repo.**
 
 - `.env.local` is gitignored and must stay that way. All real secrets live there or in Supabase project secrets — never in committed files.
-- `VITE_ADMIN_PASSWORD` and `ADMIN_PASSWORD` must always be set via environment variables. There is no hardcoded fallback.
+- Privileged Edge Functions verify the Planning Center session token and the user's server-side access level before performing protected actions.
 - The Supabase anon key (`VITE_SUPABASE_ANON_KEY`) is intentionally public — it is embedded in the built frontend and is safe to expose because all sensitive tables are protected by RLS. Do not confuse it with the service role key (`SUPABASE_SERVICE_KEY`), which must never be committed or exposed to the frontend.
 - All other secrets (Monday API token, Google service account key, Gmail delegated credentials) must be added to Supabase project secrets for edge functions and to GitHub Actions secrets for workflows — never hardcoded.
 - When in doubt, treat a value as a secret. If it's genuinely non-sensitive (a feature flag, a public URL, a display name), it's fine in committed config.

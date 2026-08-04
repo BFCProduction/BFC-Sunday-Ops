@@ -515,7 +515,7 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
   const {
     activeEventId, timezone, navigateToEvent,
   } = useSunday()
-  const { isAdmin, sessionToken } = useAdmin()
+  const { isAdmin, isManager, sessionToken } = useAdmin()
   const [issueStats, setIssueStats] = useState<Record<string, IssueStats>>({})
   const [checklistStats, setChecklistStats] = useState<Record<string, ChecklistStats>>({})
   const [evaluationCounts, setEvaluationCounts] = useState<Record<string, number>>({})
@@ -768,13 +768,13 @@ export function Home({ allSessions, onSessionsChange, setScreen }: HomeProps) {
                 onClick={() => setScreen('settings')}
               />
             )}
-            {isAdmin && (
+            {isManager && (
               <GlobalToolCard
                 title="Create Event"
                 description="Add a Sunday service, standalone event, or template-backed workflow."
                 icon={Plus}
                 accent="#16a34a"
-                meta="Admin"
+                meta="Manager"
                 onClick={() => setShowQuickCreate(true)}
               />
             )}

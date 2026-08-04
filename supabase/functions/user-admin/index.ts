@@ -1,4 +1,6 @@
+// deno-lint-ignore-file no-import-prefix
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { verifyMinimumAccess, type AppAccessLevel } from '../_shared/app-auth.ts'
 
 const ALLOWED_ORIGINS = [
   'https://bfcproduction.github.io',
@@ -21,41 +23,6 @@ function jsonResponse(corsHeaders: Record<string, string>, status: number, paylo
   })
 }
 
-async function verifyAdminSession(
-  supabase: ReturnType<typeof createClient>,
-  token: string | null,
-): Promise<{ id: string } | null> {
-  if (!token) return null
-
-  const now = new Date().toISOString()
-
-  const { data: session } = await supabase
-    .from('user_sessions')
-    .select('user_id, expires_at')
-    .eq('token', token)
-    .gt('expires_at', now)
-    .maybeSingle()
-
-  if (!session) return null
-
-  const { data: user } = await supabase
-    .from('users')
-    .select('id, is_admin')
-    .eq('id', session.user_id)
-    .eq('is_admin', true)
-    .maybeSingle()
-
-  if (!user) return null
-
-  supabase
-    .from('user_sessions')
-    .update({ last_used_at: now })
-    .eq('token', token)
-    .then(() => {})
-
-  return user
-}
-
 Deno.serve(async request => {
   const corsHeaders = getCorsHeaders(request)
 
@@ -73,7 +40,7 @@ Deno.serve(async request => {
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
 
     const sessionToken = request.headers.get('x-session-token')
-    const adminUser = await verifyAdminSession(supabase, sessionToken)
+    const adminUser = await verifyMinimumAccess(supabase, sessionToken, 'admin')
     if (!adminUser) {
       return jsonResponse(corsHeaders, 401, { error: 'Unauthorized' })
     }
@@ -82,7 +49,7 @@ Deno.serve(async request => {
     if (request.method === 'GET') {
       const { data: users, error } = await supabase
         .from('users')
-        .select('id, pco_id, name, email, avatar_url, is_admin, last_login, created_at')
+        .select('id, pco_id, name, email, avatar_url, access_level, is_admin, last_login, created_at')
         .order('last_login', { ascending: false, nullsFirst: false })
 
       if (error) throw error
@@ -90,27 +57,31 @@ Deno.serve(async request => {
       return jsonResponse(corsHeaders, 200, { users: users ?? [] })
     }
 
-    // PATCH — update is_admin for a single user
+    // PATCH — update the durable User / Manager / Admin access level.
     if (request.method === 'PATCH') {
       const body = await request.json().catch(() => ({}))
-      const userId  = typeof body?.user_id  === 'string'  ? body.user_id  : ''
-      const isAdmin = typeof body?.is_admin === 'boolean' ? body.is_admin : null
+      const userId = typeof body?.user_id === 'string' ? body.user_id : ''
+      const accessLevel = typeof body?.access_level === 'string'
+        ? body.access_level
+        : typeof body?.is_admin === 'boolean'
+          ? (body.is_admin ? 'admin' : 'user')
+          : ''
 
       if (!userId) {
         return jsonResponse(corsHeaders, 400, { error: 'user_id is required' })
       }
-      if (isAdmin === null) {
-        return jsonResponse(corsHeaders, 400, { error: 'is_admin (boolean) is required' })
+      if (!['user', 'manager', 'admin'].includes(accessLevel)) {
+        return jsonResponse(corsHeaders, 400, { error: 'access_level must be user, manager, or admin' })
       }
-      if (userId === adminUser.id && !isAdmin) {
+      if (userId === adminUser.id && accessLevel !== 'admin') {
         return jsonResponse(corsHeaders, 400, { error: 'You cannot remove your own admin access' })
       }
 
       const { data: updated, error } = await supabase
         .from('users')
-        .update({ is_admin: isAdmin })
+        .update({ access_level: accessLevel as AppAccessLevel })
         .eq('id', userId)
-        .select('id, pco_id, name, email, avatar_url, is_admin, last_login, created_at')
+        .select('id, pco_id, name, email, avatar_url, access_level, is_admin, last_login, created_at')
         .single()
 
       if (error) throw error

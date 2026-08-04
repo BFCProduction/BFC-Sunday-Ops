@@ -28,6 +28,7 @@ export interface WorkbookPacketInput {
   scheduleRows: WorkbookScheduleExportRow[]
   inputListDocuments: InputListPrintDocument[]
   supplies: WorkbookSupplyItem[]
+  includeSupplyCosts: boolean
   departments: Department[]
   intercomEvents: IntercomPrintEvent[]
   callSheetPeople: CallSheetPerson[]
@@ -291,7 +292,7 @@ function suppliesSection(input: WorkbookPacketInput) {
       ${input.supplies.length === 0 ? '<p class="empty">No supply items have been added.</p>' : `
         <table class="supplies-table">
           <thead>
-            <tr><th class="number-col">#</th><th>Item</th><th class="description-col">Description</th><th class="quantity-col numeric">Qty</th><th class="price-col numeric">Price</th><th class="department-col">Department</th><th class="link-col">Link</th><th class="price-col numeric">Total</th></tr>
+            <tr><th class="number-col">#</th><th>Item</th><th class="description-col">Description</th><th class="quantity-col numeric">Qty</th>${input.includeSupplyCosts ? '<th class="price-col numeric">Price</th>' : ''}<th class="department-col">Department</th><th class="link-col">Link</th>${input.includeSupplyCosts ? '<th class="price-col numeric">Total</th>' : ''}</tr>
           </thead>
           <tbody>
             ${input.supplies.map((item, index) => {
@@ -301,14 +302,14 @@ function suppliesSection(input: WorkbookPacketInput) {
                 <td><strong>${esc(item.item_name)}</strong></td>
                 <td>${item.description ? esc(item.description) : '<span class="muted">—</span>'}</td>
                 <td class="numeric mono">${quantity(item.quantity)}</td>
-                <td class="numeric mono">${money(item.unit_price)}</td>
+                ${input.includeSupplyCosts ? `<td class="numeric mono">${money(item.unit_price)}</td>` : ''}
                 <td>${item.department_id ? esc(departmentById.get(item.department_id) ?? 'Unknown') : '<span class="muted">—</span>'}</td>
                 <td>${link ? `<a href="${esc(link.url)}">${esc(link.label)}</a>` : '<span class="muted">—</span>'}</td>
-                <td class="numeric mono"><strong>${money(item.quantity * item.unit_price)}</strong></td>
+                ${input.includeSupplyCosts ? `<td class="numeric mono"><strong>${money(item.quantity * item.unit_price)}</strong></td>` : ''}
               </tr>`
             }).join('')}
           </tbody>
-          <tfoot><tr><td colspan="7"><strong>Estimated total</strong></td><td class="numeric mono"><strong>${money(total)}</strong></td></tr></tfoot>
+          ${input.includeSupplyCosts ? `<tfoot><tr><td colspan="7"><strong>Estimated total</strong></td><td class="numeric mono"><strong>${money(total)}</strong></td></tr></tfoot>` : ''}
         </table>`}
     </section>`
 }

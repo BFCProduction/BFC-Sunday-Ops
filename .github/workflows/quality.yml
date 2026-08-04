@@ -1,17 +1,17 @@
-name: Deploy to GitHub Pages
+name: Quality Gate
+
 on:
-  push:
-    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  deploy:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -23,14 +23,9 @@ jobs:
         with:
           deno-version: v2.x
       - run: npm ci
-      - name: Verify application, functions, tests, and production dependencies
-        run: npm run verify
+      - run: npm run verify
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_ENABLE_MONDAY_PUSH: ${{ secrets.VITE_ENABLE_MONDAY_PUSH }}
           VITE_PCO_CLIENT_ID: ${{ secrets.VITE_PCO_CLIENT_ID }}
-      - uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist

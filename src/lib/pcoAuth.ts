@@ -9,6 +9,8 @@
 // The client secret lives only in the pco-auth edge function.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { AppAccessLevel } from '../types'
+
 const PCO_AUTHORIZE_URL = 'https://api.planningcenteronline.com/oauth/authorize'
 
 // people  → name, email, avatar
@@ -26,6 +28,7 @@ export interface PCOUser {
   name:       string
   email:      string | null
   avatar_url: string | null
+  access_level: AppAccessLevel
   is_admin:   boolean
 }
 
@@ -140,6 +143,9 @@ export function getStoredSession(): StoredSession | null {
     const raw = localStorage.getItem(SESSION_KEY)
     if (!raw) return null
     const session = JSON.parse(raw) as StoredSession
+    if (!session.user.access_level) {
+      session.user.access_level = session.user.is_admin ? 'admin' : 'user'
+    }
     if (new Date(session.expires_at) <= new Date()) {
       localStorage.removeItem(SESSION_KEY)
       return null

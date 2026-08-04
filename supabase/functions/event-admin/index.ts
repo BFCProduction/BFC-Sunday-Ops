@@ -1,4 +1,6 @@
+// deno-lint-ignore-file no-import-prefix
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { verifyMinimumAccess } from '../_shared/app-auth.ts'
 
 const ALLOWED_ORIGINS = [
   'https://bfcproduction.github.io',
@@ -21,41 +23,6 @@ function jsonResponse(corsHeaders: Record<string, string>, status: number, paylo
   })
 }
 
-async function verifyAdminSession(
-  supabase: ReturnType<typeof createClient>,
-  token: string | null,
-): Promise<{ id: string } | null> {
-  if (!token) return null
-
-  const now = new Date().toISOString()
-
-  const { data: session } = await supabase
-    .from('user_sessions')
-    .select('user_id, expires_at')
-    .eq('token', token)
-    .gt('expires_at', now)
-    .maybeSingle()
-
-  if (!session) return null
-
-  const { data: user } = await supabase
-    .from('users')
-    .select('id, is_admin')
-    .eq('id', session.user_id)
-    .eq('is_admin', true)
-    .maybeSingle()
-
-  if (!user) return null
-
-  supabase
-    .from('user_sessions')
-    .update({ last_used_at: now })
-    .eq('token', token)
-    .then(() => {})
-
-  return user
-}
-
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
@@ -75,7 +42,7 @@ Deno.serve(async request => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
-    const adminUser = await verifyAdminSession(supabase, request.headers.get('x-session-token'))
+    const adminUser = await verifyMinimumAccess(supabase, request.headers.get('x-session-token'), 'admin')
     if (!adminUser) {
       return jsonResponse(corsHeaders, 401, { error: 'Unauthorized' })
     }

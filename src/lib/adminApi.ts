@@ -1,9 +1,11 @@
+import type { AppAccessLevel } from '../types'
+
 // ─────────────────────────────────────────────────────────────────────────────
 // adminApi.ts — helpers for calling protected Supabase Edge Functions
 //
 // Auth is now session-token based (PCO OAuth). The token is passed as the
 // x-session-token header. The edge function verifies it against user_sessions
-// and checks is_admin before proceeding.
+// and checks the durable access_level before proceeding.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getFunctionUrl(name: string) {
@@ -256,6 +258,7 @@ export interface AppUser {
   name:       string
   email:      string | null
   avatar_url: string | null
+  access_level: AppAccessLevel
   is_admin:   boolean
   last_login: string | null
   created_at: string
@@ -279,10 +282,10 @@ export async function fetchAppUsers(sessionToken: string): Promise<AppUser[]> {
   return (payload as { users: AppUser[] }).users ?? []
 }
 
-export async function setUserAdmin(
+export async function setUserAccessLevel(
   sessionToken: string,
   userId: string,
-  isAdmin: boolean,
+  accessLevel: AppAccessLevel,
 ): Promise<AppUser> {
   const response = await fetch(getFunctionUrl('user-admin'), {
     method: 'PATCH',
@@ -291,7 +294,7 @@ export async function setUserAdmin(
       'Content-Type':    'application/json',
       'x-session-token': sessionToken,
     },
-    body: JSON.stringify({ user_id: userId, is_admin: isAdmin }),
+    body: JSON.stringify({ user_id: userId, access_level: accessLevel }),
   })
 
   const payload = await response.json().catch(() => ({}))

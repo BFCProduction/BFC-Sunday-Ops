@@ -45,6 +45,7 @@ import {
   type IntercomConfig,
 } from '../../lib/intercom'
 import { InputListConfig } from './InputListConfig'
+import { useAdmin } from '../../context/adminState'
 
 interface NamedRow { id: string; name: string }
 
@@ -230,11 +231,13 @@ const emptyRole: RoleDraft = { name: '', hourlyRate: '0', departmentId: '' }
 function RolesManager({
   roles,
   departments,
+  sessionToken,
   reload,
   onReorder,
 }: {
   roles: CrewRole[]
   departments: Department[]
+  sessionToken: string
   reload: () => Promise<void>
   onReorder: (roles: CrewRole[]) => Promise<void>
 }) {
@@ -307,7 +310,7 @@ function RolesManager({
                             className="w-20 bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500" />
                           <span className="text-gray-400 text-xs">/hr</span>
                         </div>
-                        <button onClick={() => void run(async () => { await updateRole(role.id, toInput(editDraft)); setEditingId(null) })}
+                        <button onClick={() => void run(async () => { await updateRole(sessionToken, role, toInput(editDraft)); setEditingId(null) })}
                           disabled={busy || !editDraft.name.trim()} className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40" aria-label="Save">
                           <Check className="w-4 h-4" />
                         </button>
@@ -326,7 +329,7 @@ function RolesManager({
                           className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50" aria-label={`Edit ${role.name}`}>
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => void run(() => deleteRole(role.id))} disabled={busy}
+                        <button onClick={() => void run(() => deleteRole(sessionToken, role.id))} disabled={busy}
                           className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40" aria-label={`Delete ${role.name}`}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -356,7 +359,7 @@ function RolesManager({
             className="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm font-mono focus:outline-none focus:border-blue-500" />
           <span className="text-gray-400 text-xs">/hr</span>
         </div>
-        <button onClick={() => void run(async () => { await createRole(toInput(draft), nextSortOrder(roles)); setDraft(emptyRole) })}
+        <button onClick={() => void run(async () => { await createRole(sessionToken, toInput(draft), nextSortOrder(roles)); setDraft(emptyRole) })}
           disabled={busy || !draft.name.trim()}
           className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Add
@@ -654,6 +657,7 @@ function IntercomConfigManager({ roles }: { roles: CrewRole[] }) {
 }
 
 export function ProductionConfig() {
+  const { sessionToken } = useAdmin()
   const [activeTab, setActiveTab] = useState<'locations' | 'departments' | 'scheduleTypes' | 'roles' | 'intercom' | 'inputLists'>('locations')
   const [locations, setLocations] = useState<Location[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
@@ -665,7 +669,7 @@ export function ProductionConfig() {
   const reloadLocations = async () => setLocations(await loadLocations())
   const reloadDepartments = async () => setDepartments(await loadDepartments())
   const reloadTypes = async () => setTypes(await loadScheduleItemTypes())
-  const reloadRoles = async () => setRoles(await loadRoles())
+  const reloadRoles = async () => setRoles(await loadRoles(sessionToken))
 
   async function saveLocationOrder(rows: NamedRow[]) {
     const previous = locations
@@ -711,7 +715,8 @@ export function ProductionConfig() {
     const reordered = nextRoles.map((role, index) => ({ ...role, sort_order: index }))
     setRoles(reordered)
     try {
-      await reorderRoles(reordered.map(role => role.id))
+      if (!sessionToken) throw new Error('Admin session required')
+      await reorderRoles(sessionToken, reordered.map(role => role.id))
     } catch (err) {
       setRoles(previous)
       throw err
@@ -720,7 +725,7 @@ export function ProductionConfig() {
 
   useEffect(() => {
     let active = true
-    Promise.all([loadLocations(), loadDepartments(), loadScheduleItemTypes(), loadRoles()])
+    Promise.all([loadLocations(), loadDepartments(), loadScheduleItemTypes(), loadRoles(sessionToken)])
       .then(([loc, dep, typ, rol]) => {
         if (!active) return
         setLocations(loc); setDepartments(dep); setTypes(typ); setRoles(rol)
@@ -728,7 +733,7 @@ export function ProductionConfig() {
       .catch(err => { if (active) setLoadError(err instanceof Error ? err.message : 'Failed to load production config.') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [])
+  }, [sessionToken])
 
   if (loading) {
     return (
@@ -806,8 +811,8 @@ export function ProductionConfig() {
           onReorder={saveTypeOrder}
         />
       )}
-      {activeTab === 'roles' && (
-        <RolesManager roles={roles} departments={departments} reload={reloadRoles} onReorder={saveRoleOrder} />
+      {activeTab === 'roles' && sessionToken && (
+        <RolesManager roles={roles} departments={departments} sessionToken={sessionToken} reload={reloadRoles} onReorder={saveRoleOrder} />
       )}
       {activeTab === 'intercom' && <IntercomConfigManager roles={roles} />}
       {activeTab === 'inputLists' && <InputListConfig locations={locations} />}

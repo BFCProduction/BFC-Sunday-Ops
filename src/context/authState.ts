@@ -1,9 +1,12 @@
 import { createContext, useContext } from 'react'
 import type { PCOUser } from '../lib/pcoAuth'
+import type { AppAccessLevel } from '../types'
 
 export interface AuthContextType {
   user:         PCOUser | null
-  isAdmin:      boolean           // true when user.is_admin === true
+  accessLevel:  AppAccessLevel
+  isManager:    boolean           // manager or admin
+  isAdmin:      boolean
   isLoading:    boolean           // true while restoring session or exchanging OAuth code
   sessionToken: string | null     // passed to protected edge functions
   login:        () => void        // starts PCO OAuth flow (redirect, fast path)
@@ -13,6 +16,8 @@ export interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType>({
   user:         null,
+  accessLevel:  'user',
+  isManager:    false,
   isAdmin:      false,
   isLoading:    true,
   sessionToken: null,

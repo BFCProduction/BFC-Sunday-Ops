@@ -6,6 +6,7 @@ import {
 import { createEvent, loadAllSessions, supabase } from '../../lib/supabase'
 import { ApiError, fetchPcoPlans, type PcoPlanResult, type PcoServiceTypePlans } from '../../lib/adminApi'
 import { initiatePCOLogin } from '../../lib/pcoAuth'
+import { applyEventModuleDefaults } from '../../lib/modules'
 import type { Session } from '../../types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -336,6 +337,15 @@ export function QuickCreateModal({
         includeInAnalytics,
         workbookId:         workbookId ?? null,
       })
+      if (sessionToken) {
+        try {
+          await applyEventModuleDefaults(sessionToken, newId)
+        } catch (moduleError) {
+          // Event creation is authoritative. A Manager can safely apply folder
+          // defaults later without risking a duplicate event.
+          console.error('Unable to apply default event modules:', moduleError)
+        }
+      }
       const fresh = await loadAllSessions()
       await onCreated(newId, fresh)
       onClose()

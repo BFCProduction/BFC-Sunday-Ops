@@ -1,4 +1,6 @@
+// deno-lint-ignore-file no-import-prefix
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { verifyMinimumAccess } from '../_shared/app-auth.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // workbook-pay edge function
@@ -38,26 +40,6 @@ function jsonResponse(corsHeaders: Record<string, string>, status: number, paylo
   })
 }
 
-// deno-lint-ignore no-explicit-any
-async function verifyAdminSession(supabase: any, token: string | null): Promise<{ id: string } | null> {
-  if (!token) return null
-  const now = new Date().toISOString()
-  const { data: session } = await supabase
-    .from('user_sessions')
-    .select('user_id, expires_at')
-    .eq('token', token)
-    .gt('expires_at', now)
-    .maybeSingle()
-  if (!session) return null
-  const { data: user } = await supabase
-    .from('users')
-    .select('id, is_admin')
-    .eq('id', session.user_id)
-    .eq('is_admin', true)
-    .maybeSingle()
-  return user ?? null
-}
-
 function toMinutes(time: string | null): number | null {
   if (!time) return null
   const [hour, minute] = time.slice(0, 5).split(':').map(Number)
@@ -74,6 +56,7 @@ function minutesToStr(total: number): string {
 const round2 = (value: number) => Math.round(value * 100) / 100
 
 interface CrewRow {
+  id: string
   scheduled_date: string
   user_id: string | null
   person_name: string | null
@@ -96,7 +79,7 @@ Deno.serve(async request => {
 
     const supabase = createClient(supabaseUrl, serviceKey)
 
-    const adminUser = await verifyAdminSession(supabase, request.headers.get('x-session-token'))
+    const adminUser = await verifyMinimumAccess(supabase, request.headers.get('x-session-token'), 'admin')
     if (!adminUser) return jsonResponse(corsHeaders, 401, { error: 'Unauthorized' })
 
     const body = await request.json().catch(() => ({}))
@@ -104,13 +87,27 @@ Deno.serve(async request => {
     if (!workbookId) return jsonResponse(corsHeaders, 400, { error: 'workbook_id is required' })
 
     const [{ data: crew }, { data: roles }] = await Promise.all([
-      supabase.from('workbook_crew').select('scheduled_date, user_id, person_name, is_open, role_id, call_time, release_time, is_paid').eq('workbook_id', workbookId),
-      supabase.from('roles').select('id, hourly_rate'),
+      supabase.from('workbook_crew').select('id, scheduled_date, user_id, person_name, is_open, role_id, call_time, release_time').eq('workbook_id', workbookId),
+      supabase.from('roles').select('id'),
     ])
 
-    const rateByRole = new Map<string, number>((roles ?? []).map((r: { id: string; hourly_rate: number }) => [r.id, Number(r.hourly_rate) || 0]))
+    const crewIds = (crew ?? []).map((row: { id: string }) => row.id)
+    const roleIds = (roles ?? []).map((row: { id: string }) => row.id)
+    const [{ data: crewFinancials }, { data: roleFinancials }] = await Promise.all([
+      crewIds.length
+        ? supabase.from('workbook_crew_financials').select('crew_id, is_paid').in('crew_id', crewIds)
+        : Promise.resolve({ data: [] }),
+      roleIds.length
+        ? supabase.from('role_financials').select('role_id, hourly_rate').in('role_id', roleIds)
+        : Promise.resolve({ data: [] }),
+    ])
+    const paidByCrew = new Map<string, boolean>((crewFinancials ?? []).map((row: { crew_id: string; is_paid: boolean }) => [row.crew_id, row.is_paid]))
+    const rateByRole = new Map<string, number>((roleFinancials ?? []).map((row: { role_id: string; hourly_rate: number }) => [row.role_id, Number(row.hourly_rate) || 0]))
 
-    const crewRows = (crew ?? []) as CrewRow[]
+    const crewRows = (crew ?? []).map((row: Omit<CrewRow, 'is_paid'>) => ({
+      ...row,
+      is_paid: paidByCrew.get(row.id) ?? false,
+    })) as CrewRow[]
     const userIds = [...new Set(crewRows.filter(row => row.user_id).map(row => row.user_id as string))]
     const userNameById = new Map<string, string>()
     if (userIds.length > 0) {
