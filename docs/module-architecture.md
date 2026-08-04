@@ -57,9 +57,11 @@ Manager and Admin capability.
 
 ## Planning Center defaults
 
-Planning Center Folder IDs are the stable configuration keys. Names are display
-labels and may change without losing the defaults. The principal Sunday Ops
-folders are:
+Planning Center Folder IDs are the preferred stable configuration keys. This
+account currently exposes the principal Sunday Ops groupings as top-level PCO
+Service Types rather than Folder API resources, so their stable Service Type
+IDs provide deterministic fallback keys. Names remain display labels and may
+change without losing the defaults. The principal groupings are:
 
 - 9:00 Service
 - 11:00 Service
@@ -75,7 +77,8 @@ remain unchanged until a Manager explicitly applies the current defaults.
 metadata. Each module type keeps its structured content in domain-specific
 tables instead of a generic JSON payload.
 
-`pco_folders` stores the Planning Center hierarchy, and
+`pco_folders` stores the Planning Center hierarchy plus deterministic
+`service-type:<PCO ID>` fallbacks for the three principal top-level groupings, and
 `module_folder_defaults` maps a Folder to its default Event modules. Module
 metadata has no anonymous browser grants; authenticated reads and Manager/Admin
 writes go through the `module-admin` Edge Function.

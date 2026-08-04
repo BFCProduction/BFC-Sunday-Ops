@@ -23,6 +23,16 @@ interface PcoServiceTypeResource {
   }
 }
 
+// This Planning Center account uses these top-level Service Types as the
+// operational "folders" for Sunday Ops. PCO's Folder endpoint currently
+// returns no resources for the account, so stable Service Type IDs are used as
+// deterministic fallback grouping keys.
+const PRIMARY_SERVICE_TYPE_LABELS: Record<string, string> = {
+  'sunday-9am': '9:00 Service',
+  'sunday-11am': '11:00 Service',
+  special: 'Special Events',
+}
+
 async function fetchAll<T>(url: string, pcoToken: string): Promise<T[]> {
   const rows: T[] = []
   let nextUrl: string | null = url
@@ -105,9 +115,37 @@ export async function syncPcoFolders(
 
   const { data: localServiceTypes, error: localError } = await supabase
     .from('service_types')
-    .select('id, pco_service_type_id')
+    .select('id, name, slug, pco_service_type_id')
     .not('pco_service_type_id', 'is', null)
   if (localError) throw localError
+
+  const remoteById = new Map(serviceTypes.map(serviceType => [serviceType.id, serviceType]))
+  const fallbackGroups = (localServiceTypes ?? []).flatMap(row => {
+    const pcoServiceTypeId = String(row.pco_service_type_id)
+    const remote = remoteById.get(pcoServiceTypeId)
+    const parentId = remote?.relationships?.parent?.data?.id ?? null
+    const label = PRIMARY_SERVICE_TYPE_LABELS[String(row.slug)]
+    if (!remote || (parentId && folderIds.has(parentId)) || !label) return []
+    return [{
+      pco_folder_id: `service-type:${pcoServiceTypeId}`,
+      name: label,
+      parent_pco_folder_id: null,
+      is_active: true,
+      sort_order: folders.length + Object.keys(PRIMARY_SERVICE_TYPE_LABELS).indexOf(String(row.slug)),
+      synced_at: now,
+      updated_at: now,
+    }]
+  })
+  if (fallbackGroups.length > 0) {
+    const { error: fallbackError } = await supabase
+      .from('pco_folders')
+      .upsert(fallbackGroups, { onConflict: 'pco_folder_id' })
+    if (fallbackError) throw fallbackError
+  }
+
+  const fallbackByServiceTypeId = new Map(
+    fallbackGroups.map(group => [group.pco_folder_id.slice('service-type:'.length), group.pco_folder_id]),
+  )
 
   const localByPcoId = new Map(
     (localServiceTypes ?? []).map(row => [String(row.pco_service_type_id), String(row.id)]),
@@ -123,16 +161,19 @@ export async function syncPcoFolders(
     }
 
     const parentId = serviceType.relationships?.parent?.data?.id ?? null
+    const groupingId = parentId && folderIds.has(parentId)
+      ? parentId
+      : fallbackByServiceTypeId.get(serviceType.id) ?? null
     const { error } = await supabase
       .from('service_types')
-      .update({ pco_folder_id: parentId && folderIds.has(parentId) ? parentId : null })
+      .update({ pco_folder_id: groupingId })
       .eq('id', localId)
     if (error) throw error
-    linked += 1
+    if (groupingId) linked += 1
   }
 
   return {
-    folders: folders.length,
+    folders: folders.length + fallbackGroups.length,
     linked_service_types: linked,
     unmatched_service_type_ids: unmatched,
   }
