@@ -10,6 +10,18 @@ export const changelogUrl = 'https://github.com/bfcproduction/BFC-Sunday-Ops/blo
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    date: 'Aug 4, 2026',
+    label: 'Event & Workbook Modules',
+    title: 'Crew, Supplies, and Intercom are now live modules',
+    summary: 'Operational tools can now belong to one Event or be shared across a Workbook, with one consistent module workspace.',
+    points: [
+      'Crew, Supplies, and Intercom can be added at either the Event or Workbook level.',
+      'Workbooks collect their attached Events’ modules behind a focused owner/module switcher.',
+      'The old Send Update boundary is retired—these are live documents until the event is over.',
+      'Managers organize modules; Admin-only pay, rates, and supply prices stay protected.',
+    ],
+  },
+  {
     date: 'Jul 24, 2026',
     label: 'Sign-in & Data Entry',
     title: 'Switch accounts + save service data on Enter',
@@ -27,7 +39,7 @@ export const releaseNotes: ReleaseNote[] = [
     summary: 'A new Workbooks layer coordinates multi-event, multi-day productions above the individual event level.',
     points: [
       'Group events, rooms/locations, and schedule items (calls, rehearsals, meals, transitions, and more).',
-      'Assign crew to schedule items and publish an immutable, versioned schedule.',
+      'Assign crew to schedule items and print a coordinated production schedule.',
       'Export a printable schedule for the whole production.',
     ],
   },

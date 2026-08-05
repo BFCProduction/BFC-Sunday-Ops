@@ -6,7 +6,7 @@ import { loadLocations } from '../lib/productionConfig'
 import type { Location, Session } from '../types'
 
 export function EventModules({ event }: { event: Session | null }) {
-  const { sessionToken, isManager } = useAuth()
+  const { sessionToken, isManager, isAdmin } = useAuth()
   const [locations, setLocations] = useState<Location[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -44,6 +44,7 @@ export function EventModules({ event }: { event: Session | null }) {
           <ModuleWorkspace
             sessionToken={sessionToken}
             isManager={isManager}
+            isAdmin={isAdmin}
             locations={locations}
             event={event}
           />

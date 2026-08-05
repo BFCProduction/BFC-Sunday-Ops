@@ -9,7 +9,6 @@ import type {
   IntercomPackType,
   IntercomPackTypeKey,
   RoleIntercomDefault,
-  Session,
   WorkbookCrewMember,
   WorkbookIntercomAssignment,
   WorkbookIntercomChannel,
@@ -38,14 +37,6 @@ export interface WorkbookIntercomEventData {
 interface DefaultChannelRow {
   role_id: string
   channel_id: string
-  button_mode: IntercomButtonMode | null
-  listen_mode: IntercomListenMode | null
-  program_enabled: boolean
-}
-
-interface ChannelAssignmentRow {
-  assignment_id: string
-  event_channel_id: string
   button_mode: IntercomButtonMode | null
   listen_mode: IntercomListenMode | null
   program_enabled: boolean
@@ -160,30 +151,15 @@ function normalizedPersonKey(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-/**
- * Crew explicitly assigned to the selected event plus workbook-wide crew.
- *
- * Eventless crew rows represent the workbook's shared roster. Their scheduled
- * date controls call-sheet timing, but should not hide them from an attached
- * event's Intercom Grid (especially when events are attached after the roster
- * was created).
- */
-export function buildIntercomCrewIdentities(
+type IntercomPerson = Pick<AppUser, 'id' | 'name'>
+
+export function buildModuleIntercomCrewIdentities(
   crew: WorkbookCrewMember[],
-  event: Session,
-  users: AppUser[],
+  users: IntercomPerson[],
   roles: CrewRole[],
 ): IntercomCrewIdentity[] {
-  const relevant = crew
-    .filter(member => member.event_id === event.id || !member.event_id)
-    .sort((a, b) => {
-      const aSpecific = a.event_id === event.id ? 0 : 1
-      const bSpecific = b.event_id === event.id ? 0 : 1
-      return aSpecific - bSpecific || a.sort_order - b.sort_order
-    })
-
   const grouped = new Map<string, IntercomCrewIdentity>()
-  for (const member of relevant) {
+  for (const member of [...crew].sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))) {
     const key = member.user_id
       ? `user:${member.user_id}`
       : member.is_open
@@ -209,258 +185,4 @@ export function buildIntercomCrewIdentities(
     if (a.isOpen !== b.isOpen) return a.isOpen ? 1 : -1
     return a.name.localeCompare(b.name) || a.roleNames.join(', ').localeCompare(b.roleNames.join(', '))
   })
-}
-
-export async function loadWorkbookIntercomEvent(
-  workbookId: string,
-  eventId: string,
-): Promise<WorkbookIntercomEventData> {
-  const [channelResult, assignmentResult] = await Promise.all([
-    supabase
-      .from('workbook_intercom_channels')
-      .select('*')
-      .eq('workbook_id', workbookId)
-      .eq('event_id', eventId)
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('workbook_intercom_assignments')
-      .select('*')
-      .eq('workbook_id', workbookId)
-      .eq('event_id', eventId),
-  ])
-  if (channelResult.error) throw channelResult.error
-  if (assignmentResult.error) throw assignmentResult.error
-
-  const assignments = (assignmentResult.data ?? []) as Array<Omit<WorkbookIntercomAssignment, 'channel_states'>>
-  const assignmentIds = assignments.map(assignment => assignment.id)
-  let modeRows: ChannelAssignmentRow[] = []
-  if (assignmentIds.length > 0) {
-    const { data, error } = await supabase
-      .from('workbook_intercom_channel_assignments')
-      .select('*')
-      .in('assignment_id', assignmentIds)
-    if (error) throw error
-    modeRows = (data ?? []) as ChannelAssignmentRow[]
-  }
-
-  const statesByAssignment = new Map<string, Record<string, IntercomChannelState>>()
-  for (const row of modeRows) {
-    const states = statesByAssignment.get(row.assignment_id) ?? {}
-    states[row.event_channel_id] = {
-      talk_mode: row.button_mode,
-      listen_mode: row.listen_mode,
-      program_enabled: row.program_enabled,
-    }
-    statesByAssignment.set(row.assignment_id, states)
-  }
-
-  return {
-    channels: (channelResult.data ?? []) as WorkbookIntercomChannel[],
-    assignments: assignments.map(assignment => ({
-      ...assignment,
-      channel_states: statesByAssignment.get(assignment.id) ?? {},
-    })),
-  }
-}
-
-async function initializeEventChannels(
-  workbookId: string,
-  eventId: string,
-  masterChannels: IntercomChannel[],
-): Promise<void> {
-  const { count, error } = await supabase
-    .from('workbook_intercom_channels')
-    .select('id', { count: 'exact', head: true })
-    .eq('event_id', eventId)
-  if (error) throw error
-  if ((count ?? 0) > 0 || masterChannels.length === 0) return
-
-  const { error: insertError } = await supabase
-    .from('workbook_intercom_channels')
-    .insert(masterChannels.map((channel, index) => ({
-      workbook_id: workbookId,
-      event_id: eventId,
-      master_channel_id: channel.id,
-      name: channel.name,
-      is_program: channel.is_program,
-      sort_order: index,
-    })))
-  if (insertError) throw insertError
-}
-
-async function ensureCrewAssignments(
-  workbookId: string,
-  eventId: string,
-  identities: IntercomCrewIdentity[],
-  eventChannels: WorkbookIntercomChannel[],
-  defaults: RoleIntercomDefault[],
-): Promise<void> {
-  if (identities.length === 0) return
-  const { data, error } = await supabase
-    .from('workbook_intercom_assignments')
-    .select('crew_key')
-    .eq('event_id', eventId)
-  if (error) throw error
-  const existing = new Set(((data ?? []) as Array<{ crew_key: string }>).map(row => row.crew_key))
-  const missing = identities.filter(identity => !existing.has(identity.key))
-  if (missing.length === 0) return
-
-  const defaultByRole = new Map(defaults.map(item => [item.role_id, item]))
-  const { data: inserted, error: insertError } = await supabase
-    .from('workbook_intercom_assignments')
-    .insert(missing.map(identity => {
-      const roleDefault = identity.primaryRoleId ? defaultByRole.get(identity.primaryRoleId) : null
-      return {
-        workbook_id: workbookId,
-        event_id: eventId,
-        crew_key: identity.key,
-        role_id: identity.primaryRoleId,
-        pack_type: roleDefault?.pack_type ?? null,
-      }
-    }))
-    .select('*')
-  if (insertError) throw insertError
-
-  const eventChannelByMaster = new Map(
-    eventChannels
-      .filter(channel => channel.master_channel_id)
-      .map(channel => [channel.master_channel_id as string, channel.id]),
-  )
-  const identityByKey = new Map(missing.map(identity => [identity.key, identity]))
-  const defaultModeRows: Array<{
-    assignment_id: string
-    event_channel_id: string
-    button_mode: IntercomButtonMode | null
-    listen_mode: IntercomListenMode | null
-    program_enabled: boolean
-  }> = []
-  for (const assignment of (inserted ?? []) as Array<{ id: string; crew_key: string }>) {
-    const identity = identityByKey.get(assignment.crew_key)
-    const roleDefault = identity?.primaryRoleId ? defaultByRole.get(identity.primaryRoleId) : null
-    if (!roleDefault?.pack_type) continue
-    for (const [masterChannelId, state] of Object.entries(roleDefault.channel_states)) {
-      const eventChannelId = eventChannelByMaster.get(masterChannelId)
-      if (eventChannelId) {
-        defaultModeRows.push({
-          assignment_id: assignment.id,
-          event_channel_id: eventChannelId,
-          button_mode: state.talk_mode,
-          listen_mode: state.listen_mode,
-          program_enabled: state.program_enabled,
-        })
-      }
-    }
-  }
-  if (defaultModeRows.length > 0) {
-    const { error: modeError } = await supabase
-      .from('workbook_intercom_channel_assignments')
-      .insert(defaultModeRows)
-    if (modeError) throw modeError
-  }
-}
-
-/**
- * First visit copies the master columns and the role defaults. Existing event
- * assignments are never overwritten, so later config changes only affect new
- * event grids and newly-added crew.
- */
-export async function prepareWorkbookIntercomEvent(
-  workbookId: string,
-  eventId: string,
-  identities: IntercomCrewIdentity[],
-  config: IntercomConfig,
-): Promise<WorkbookIntercomEventData> {
-  await initializeEventChannels(workbookId, eventId, config.masterChannels)
-  const initial = await loadWorkbookIntercomEvent(workbookId, eventId)
-  await ensureCrewAssignments(workbookId, eventId, identities, initial.channels, config.roleDefaults)
-  return loadWorkbookIntercomEvent(workbookId, eventId)
-}
-
-export async function setIntercomPackType(
-  assignmentId: string,
-  packType: IntercomPackTypeKey | null,
-): Promise<void> {
-  const { error } = await supabase
-    .from('workbook_intercom_assignments')
-    .update({ pack_type: packType, updated_at: new Date().toISOString() })
-    .eq('id', assignmentId)
-  if (error) throw error
-  if (!packType) {
-    const { error: clearError } = await supabase
-      .from('workbook_intercom_channel_assignments')
-      .delete()
-      .eq('assignment_id', assignmentId)
-    if (clearError) throw clearError
-  }
-}
-
-export async function setIntercomChannelState(
-  assignmentId: string,
-  eventChannelId: string,
-  state: IntercomChannelState,
-): Promise<void> {
-  if (!state.talk_mode && !state.listen_mode && !state.program_enabled) {
-    const { error } = await supabase
-      .from('workbook_intercom_channel_assignments')
-      .delete()
-      .eq('assignment_id', assignmentId)
-      .eq('event_channel_id', eventChannelId)
-    if (error) throw error
-    return
-  }
-  const { error } = await supabase
-    .from('workbook_intercom_channel_assignments')
-    .upsert({
-      assignment_id: assignmentId,
-      event_channel_id: eventChannelId,
-      button_mode: state.talk_mode,
-      listen_mode: state.listen_mode,
-      program_enabled: state.program_enabled,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'assignment_id,event_channel_id' })
-  if (error) throw error
-}
-
-export async function addMasterChannelToEvent(
-  workbookId: string,
-  eventId: string,
-  channel: IntercomChannel,
-  sortOrder: number,
-): Promise<void> {
-  const { error } = await supabase
-    .from('workbook_intercom_channels')
-    .insert({
-      workbook_id: workbookId,
-      event_id: eventId,
-      master_channel_id: channel.id,
-      name: channel.name,
-      is_program: channel.is_program,
-      sort_order: sortOrder,
-    })
-  if (error) throw error
-}
-
-export async function addEventIntercomChannel(
-  workbookId: string,
-  eventId: string,
-  name: string,
-  sortOrder: number,
-): Promise<void> {
-  const trimmedName = name.trim()
-  const { error } = await supabase
-    .from('workbook_intercom_channels')
-    .insert({
-      workbook_id: workbookId,
-      event_id: eventId,
-      master_channel_id: null,
-      name: trimmedName,
-      is_program: trimmedName.toLowerCase() === 'program',
-      sort_order: sortOrder,
-    })
-  if (error) throw error
-}
-
-export async function deleteEventIntercomChannel(id: string): Promise<void> {
-  const { error } = await supabase.from('workbook_intercom_channels').delete().eq('id', id)
-  if (error) throw error
 }

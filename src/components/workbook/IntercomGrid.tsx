@@ -1,48 +1,41 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Check, Loader2, Plus, RadioTower, Trash2 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import {
-  addEventIntercomChannel,
-  addMasterChannelToEvent,
-  buildIntercomCrewIdentities,
-  deleteEventIntercomChannel,
-  loadIntercomConfig,
-  loadWorkbookIntercomEvent,
-  prepareWorkbookIntercomEvent,
-  setIntercomChannelState,
-  setIntercomPackType,
-  type IntercomConfig,
+  buildModuleIntercomCrewIdentities,
   type WorkbookIntercomEventData,
 } from '../../lib/intercom'
-import type { AppUser } from '../../lib/adminApi'
+import {
+  addModuleIntercomChannel,
+  deleteModuleIntercomChannel,
+  setModuleIntercomChannelState,
+  setModuleIntercomPack,
+} from '../../lib/moduleContent'
 import type {
   CrewRole,
   IntercomButtonMode,
+  IntercomChannel,
   IntercomChannelState,
   IntercomListenMode,
+  IntercomPackType,
   IntercomPackTypeKey,
-  Session,
-  Workbook,
+  ModulePerson,
   WorkbookCrewMember,
   WorkbookIntercomAssignment,
 } from '../../types'
 
 interface IntercomGridProps {
-  workbook: Workbook
-  linkedEvents: Session[]
-  users: AppUser[]
+  moduleId: string
+  contextLabel: string
+  users: ModulePerson[]
   roles: CrewRole[]
   crew: WorkbookCrewMember[]
+  initialData: WorkbookIntercomEventData
+  packTypes: IntercomPackType[]
+  masterChannels: IntercomChannel[]
   editable: boolean
-}
-
-function formatEvent(event: Session) {
-  const day = new Date(`${event.date}T12:00:00`).toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })
-  return `${day} · ${event.name}`
+  sessionToken: string
+  onChanged: () => Promise<void>
 }
 
 function emptyChannelState(): IntercomChannelState {
@@ -111,71 +104,28 @@ const GRID_FIXED_WIDTH = GRID_NUMBER_WIDTH
   + GRID_PACK_WIDTH
   + GRID_TOTAL_WIDTH
 
-export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, editable }: IntercomGridProps) {
-  const sortedEvents = useMemo(
-    () => [...linkedEvents].sort((a, b) => a.date.localeCompare(b.date) || (a.eventTime ?? '').localeCompare(b.eventTime ?? '')),
-    [linkedEvents],
-  )
-  const [selectedEventId, setSelectedEventId] = useState('')
-  const [config, setConfig] = useState<IntercomConfig | null>(null)
-  const [data, setData] = useState<WorkbookIntercomEventData>({ channels: [], assignments: [] })
-  const [loading, setLoading] = useState(true)
+export function IntercomGrid({ moduleId, contextLabel, users, roles, crew, initialData, packTypes, masterChannels, editable, sessionToken, onChanged }: IntercomGridProps) {
+  const [data, setData] = useState<WorkbookIntercomEventData>(initialData)
   const [error, setError] = useState('')
   const [savingKey, setSavingKey] = useState('')
   const [unusedMasterId, setUnusedMasterId] = useState('')
   const [eventChannelName, setEventChannelName] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
-  const selectedEvent = sortedEvents.find(event => event.id === selectedEventId) ?? null
   const identities = useMemo(
-    () => selectedEvent ? buildIntercomCrewIdentities(crew, selectedEvent, users, roles) : [],
-    [crew, roles, selectedEvent, users],
+    () => buildModuleIntercomCrewIdentities(crew, users, roles),
+    [crew, roles, users],
   )
-  const identityKey = identities.map(identity => `${identity.key}:${identity.primaryRoleId ?? ''}`).join('|')
-
-  useEffect(() => {
-    if (sortedEvents.some(event => event.id === selectedEventId)) return
-    setSelectedEventId(sortedEvents[0]?.id ?? '')
-  }, [selectedEventId, sortedEvents])
-
-  useEffect(() => {
-    let active = true
-    setLoading(true)
-    loadIntercomConfig()
-      .then(next => { if (active) setConfig(next) })
-      .catch(err => { if (active) setError(err instanceof Error ? err.message : 'Unable to load Intercom configuration.') })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [workbook.id])
-
-  const reload = useCallback(async () => {
-    if (!selectedEvent || !config) return
-    setLoading(true)
-    setError('')
-    try {
-      const next = editable
-        ? await prepareWorkbookIntercomEvent(workbook.id, selectedEvent.id, identities, config)
-        : await loadWorkbookIntercomEvent(workbook.id, selectedEvent.id)
-      setData(next)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load the Intercom Grid.')
-    } finally {
-      setLoading(false)
-    }
-    // identities captured through identityKey so new roster rows get seeded.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config, editable, identityKey, selectedEvent, workbook.id])
-
-  useEffect(() => { void reload() }, [reload])
+  useEffect(() => setData(initialData), [initialData])
 
   const assignmentByCrew = useMemo(
     () => new Map(data.assignments.map(assignment => [assignment.crew_key, assignment])),
     [data.assignments],
   )
-  const unusedMasterChannels = (config?.masterChannels ?? []).filter(master =>
+  const unusedMasterChannels = masterChannels.filter(master =>
     !data.channels.some(channel => channel.master_channel_id === master.id),
   )
-  const usage = (config?.packTypes ?? []).map(pack => ({
+  const usage = packTypes.map(pack => ({
     ...pack,
     used: data.assignments.filter(assignment => assignment.pack_type === pack.key && identities.some(identity => identity.key === assignment.crew_key)).length,
   }))
@@ -193,10 +143,10 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
         : item),
     }))
     try {
-      await setIntercomPackType(assignment.id, packType)
+      await setModuleIntercomPack(sessionToken, moduleId, assignment.id, packType)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update the pack type.')
-      await reload()
+      await onChanged()
     } finally {
       setSavingKey('')
     }
@@ -222,25 +172,25 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
       }),
     }))
     try {
-      await setIntercomChannelState(assignment.id, channelId, nextState)
+      await setModuleIntercomChannelState(sessionToken, moduleId, assignment.id, channelId, nextState)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update the channel.')
-      await reload()
+      await onChanged()
     } finally {
       setSavingKey('')
     }
   }
 
   async function addMasterColumn() {
-    if (!editable || !selectedEvent || !config || !unusedMasterId) return
-    const master = config.masterChannels.find(channel => channel.id === unusedMasterId)
+    if (!editable || !unusedMasterId) return
+    const master = masterChannels.find(channel => channel.id === unusedMasterId)
     if (!master) return
     setSavingKey('add-channel')
     setError('')
     try {
-      await addMasterChannelToEvent(workbook.id, selectedEvent.id, master, data.channels.length)
+      await addModuleIntercomChannel(sessionToken, moduleId, { masterChannelId: master.id, name: master.name })
       setUnusedMasterId('')
-      await reload()
+      await onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to add the channel.')
     } finally {
@@ -249,13 +199,13 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
   }
 
   async function addEventColumn() {
-    if (!editable || !selectedEvent || !eventChannelName.trim()) return
+    if (!editable || !eventChannelName.trim()) return
     setSavingKey('add-channel')
     setError('')
     try {
-      await addEventIntercomChannel(workbook.id, selectedEvent.id, eventChannelName, data.channels.length)
+      await addModuleIntercomChannel(sessionToken, moduleId, { masterChannelId: null, name: eventChannelName })
       setEventChannelName('')
-      await reload()
+      await onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to add the event channel.')
     } finally {
@@ -268,24 +218,14 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
     setSavingKey(`delete:${channelId}`)
     setError('')
     try {
-      await deleteEventIntercomChannel(channelId)
+      await deleteModuleIntercomChannel(sessionToken, moduleId, channelId)
       setConfirmDelete(null)
-      await reload()
+      await onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to remove the channel.')
     } finally {
       setSavingKey('')
     }
-  }
-
-  if (sortedEvents.length === 0) {
-    return (
-      <Card className="p-8 text-center">
-        <RadioTower className="mx-auto h-7 w-7 text-gray-300" />
-        <p className="mt-3 text-sm font-semibold text-gray-700">Attach an event first</p>
-        <p className="mt-1 text-xs text-gray-400">Intercom assignments are event-specific, so the grid needs at least one workbook event.</p>
-      </Card>
-    )
   }
 
   return (
@@ -301,16 +241,8 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
                 ? 'Assign packs, talk-button behavior, and independent listen behavior. Program is an on/off audio feed. Role defaults are copied once and remain editable here.'
                 : 'Review each event crew member’s intercom pack and channel assignments.'}
             </p>
+            <p className="mt-1 text-[11px] font-medium text-gray-400">{contextLabel}</p>
           </div>
-          <label className="w-full xl:w-80">
-            <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Event</span>
-            <select
-              value={selectedEventId}
-              onChange={event => setSelectedEventId(event.target.value)}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-              {sortedEvents.map(event => <option key={event.id} value={event.id}>{formatEvent(event)}</option>)}
-            </select>
-          </label>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-4">
@@ -341,13 +273,9 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
 
       <div style={{ width: `min(100%, ${gridWidth}px)` }}>
         <Card className="overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 p-12 text-sm text-gray-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> Preparing event grid…
-            </div>
-          ) : identities.length === 0 ? (
+          {identities.length === 0 ? (
             <div className="p-10 text-center text-sm text-gray-400">
-              No workbook-wide crew or crew assigned to this event yet. Add them in the Crew tab first.
+              No Crew module assignments are available yet. Add crew in this owner&apos;s Crew module first.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -427,13 +355,13 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
                               onChange={event => void changePack(assignment, (event.target.value || null) as IntercomPackTypeKey | null)}
                               className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 focus:border-blue-500 focus:outline-none">
                               <option value="">No intercom</option>
-                              {(config?.packTypes ?? []).map(pack => <option key={pack.key} value={pack.key}>{pack.label}</option>)}
+                              {packTypes.map(pack => <option key={pack.key} value={pack.key}>{pack.label}</option>)}
                             </select>
                             {savingKey === `pack:${assignment.id}` && <Loader2 className="absolute right-7 top-2 h-3 w-3 animate-spin text-blue-500" />}
                           </div> : (
                             <span className="block px-2 py-1.5 text-xs font-semibold text-gray-700">
                               {assignment.pack_type
-                                ? config?.packTypes.find(pack => pack.key === assignment.pack_type)?.label ?? assignment.pack_type
+                                ? packTypes.find(pack => pack.key === assignment.pack_type)?.label ?? assignment.pack_type
                                 : 'No intercom'}
                             </span>
                           )
@@ -553,13 +481,13 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
             </div>
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Add only to this event</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Add only to this module</p>
             <div className="mt-2 flex gap-2">
               <input
                 value={eventChannelName}
                 onChange={event => setEventChannelName(event.target.value)}
                 onKeyDown={event => { if (event.key === 'Enter' && eventChannelName.trim()) void addEventColumn() }}
-                placeholder="Event channel, e.g. Translation"
+                placeholder="Module channel, e.g. Translation"
                 className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               />
               <button
@@ -578,7 +506,7 @@ export function IntercomGrid({ workbook, linkedEvents, users, roles, crew, edita
         )}
         {!error && data.channels.length > 0 && (
           <p className="mt-3 flex items-center gap-2 text-xs text-gray-400">
-            <Check className="h-3.5 w-3.5 text-emerald-500" /> Changes save immediately. Removing a column affects only this event.
+            <Check className="h-3.5 w-3.5 text-emerald-500" /> Changes save immediately. Removing a column affects only this module.
           </p>
         )}
       </Card>}

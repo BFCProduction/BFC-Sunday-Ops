@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { InputListTab } from '../workbook/InputListTab'
+import { OperationalModuleContent } from './OperationalModuleContent'
 import { ProductionDocumentsModule } from '../../screens/ProductionDocs'
 import {
   applyEventModuleDefaults,
@@ -40,10 +41,12 @@ import type {
 interface ModuleWorkspaceProps {
   sessionToken: string
   isManager: boolean
+  isAdmin: boolean
   locations: Location[]
   event?: Session
   workbook?: Workbook
   linkedEvents?: Session[]
+  onOperationalChanged?: () => Promise<void>
 }
 
 interface OwnerGroup {
@@ -94,10 +97,12 @@ function useMobileViewport() {
 export function ModuleWorkspace({
   sessionToken,
   isManager,
+  isAdmin,
   locations,
   event,
   workbook,
   linkedEvents = [],
+  onOperationalChanged,
 }: ModuleWorkspaceProps) {
   const isMobile = useMobileViewport()
   const [data, setData] = useState<ModuleScopeResponse | null>(null)
@@ -289,12 +294,31 @@ export function ModuleWorkspace({
       )
     }
 
-    const Icon = MODULE_ICONS[module.module_key] ?? Headphones
+    if (module.module_key === 'crew' || module.module_key === 'supplies' || module.module_key === 'intercom') {
+      const ownerEvent = group.type === 'event'
+        ? event?.id === group.id ? event : linkedEvents.find(item => item.id === group.id) ?? null
+        : null
+      return (
+        <OperationalModuleContent
+          key={module.id}
+          module={module}
+          contextLabel={contextLabel}
+          sessionToken={sessionToken}
+          isAdmin={isAdmin}
+          event={ownerEvent}
+          workbook={workbook ?? null}
+          linkedEvents={group.type === 'workbook' ? linkedEvents : ownerEvent ? [ownerEvent] : []}
+          onOperationalChanged={onOperationalChanged}
+        />
+      )
+    }
+
+    const Icon: typeof TableProperties = Headphones
     return (
       <Card className="p-8 text-center">
         <Icon className="mx-auto h-9 w-9 text-gray-300" />
         <p className="mt-3 text-sm font-semibold text-gray-800">{moduleLabel(module, definitions)}</p>
-        <p className="mt-1 text-xs text-gray-500">This module's existing workflow will move into this workspace in Phase 3.</p>
+        <p className="mt-1 text-xs text-gray-500">This module type is not available in the current application build.</p>
       </Card>
     )
   }

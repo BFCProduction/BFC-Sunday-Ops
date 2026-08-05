@@ -69,9 +69,7 @@ function scheduleRows(rows: WorkbookScheduleExportRow[]) {
 }
 
 export function generateWorkbookScheduleHtml(workbook: Workbook, rows: WorkbookScheduleExportRow[]) {
-  const version = workbook.published_version > 0
-    ? `Published v${workbook.published_version}`
-    : 'Draft'
+  const version = 'Live schedule'
   const dateRange = workbook.start_date === workbook.end_date
     ? formatDate(workbook.start_date)
     : `${formatDate(workbook.start_date)} - ${formatDate(workbook.end_date)}`

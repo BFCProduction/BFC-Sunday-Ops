@@ -2,7 +2,7 @@
 
 Internal Sunday-morning ops app for the BFC production team.
 
-This project currently uses a shared-team access model whose main distinction is between operators and admins. The product roadmap expands that foundation toward Crew/Operator, Manager, Analytics Viewer, and Administrator access, including invited users who do not have Planning Center accounts.
+This project uses three access levels: User, Manager, and Admin. Users work live operational content, Managers also organize Event and Workbook modules, and Admins control access, PCO-folder defaults, financial data, and destructive settings. The longer-term roadmap still includes invited users without Planning Center accounts and a separate analytics-viewing capability.
 
 Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproduction.github.io/BFC-Sunday-Ops/)
 
@@ -45,13 +45,13 @@ The confirmed Event/Workbook module ownership model, access levels, PCO-folder d
   - **PCO-first event manager** — the Events tab is a focused list of attached workbook events plus one **Add Event** action. Workbook events are created from Planning Center plans and attached atomically; non-PCO production activities are entered as Schedule items. The plan picker hides plans before the workbook start date and sorts the remaining plans chronologically.
   - **Schedule** — a chronological Detail view plus **By Room** and **By Department** views on a shared time-axis grid (time down the left, one column per room/department, items positioned by real start/end, same-column overlaps flagged as conflicts). Day-N labels (Day 1 = the workbook's earliest event).
   - **PCO plan times** pulled into the schedule read-only and kept in sync (never stored); each can be assigned a room + departments via an overlay.
-  - **Crew roster** — visible to every workbook user with assigned people from the **Production** team, local roles, call/release times, hours, and PCO ordering. Admins can sync from Planning Center and use one **Edit crew** control for inline role/time/pay-type editing, drag ordering, manual guests, and open/TBD rows. Paid/volunteer status, per-row pay, and workbook pay totals are omitted entirely for non-admins.
+  - **Crew module** — Event or Workbook owned, visible and operationally editable by every signed-in user, with assigned people, local roles, call/release times, hours, and drag ordering. Admins can sync each Event Crew module from the linked Planning Center plan and manage paid/volunteer status; pay fields and totals are omitted entirely for non-admins.
   - **Call sheets** — printable per-person schedule (per-day call/release, role, event), with crew avatars.
   - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), calculated client-side in the admin-only Crew tab, shown per row, and totaled per person across the workbook, with a printable business-office pay report. The deployed `workbook-pay` Edge Function remains available for the future raw-rate security hardening.
-  - **Intercom Grid** — event-scoped assignments pulled from the workbook crew roster and visible to every workbook user. Non-admins receive a read-only grid; admins can assign wired/wireless/no-intercom packs, set each channel's talk behavior to **Off / Momentary / Latch / Latch-Momentary**, independently set its receive behavior to **Off / Listen / Listen on Talk**, and add or remove event channel columns. **Program** is treated as a simple audio-feed checkbox with no talk or listen mode. Workbook Settings owns global pack capacities, the reusable master channel list, and per-role starting defaults. Over-capacity pack counts are flagged.
+  - **Intercom module** — Event or Workbook owned and populated from the relevant Crew modules. Signed-in users can assign wired/wireless/no-intercom packs, set each channel's talk behavior to **Off / Momentary / Latch / Latch-Momentary**, independently set receive behavior to **Off / Listen / Listen on Talk**, and add or remove channel columns. **Program** is a simple audio-feed checkbox. Workbook Settings owns global pack capacities, the reusable master channel list, and per-role starting defaults. Over-capacity pack counts are flagged.
   - **Input List module** — a room-aware Event or Workbook document built from reusable location sections, configurable columns, and a drag-ordered connection inventory. Room infrastructure remains location-specific while inputs, outputs, devices, people, destinations, and monitor assignments belong to one module. Verified session APIs autosave cells and location-wide links; spreadsheet navigation, range editing, copy/paste/delete, linked cells, numbered drag-fill, grouped connections, and print-safe connection shading remain intact.
-  - **Supplies** — a workbook-wide shopping list for consumables, décor, and miscellaneous purchases, visible read-only to non-admins and editable by admins. Each row stores item, description, quantity, unit price, optional department, and purchase link; the tab calculates line totals and a workbook estimate.
-  - **Send Update** — snapshots the schedule, diffs it against the last sent version, and produces a copyable change summary for occasional crew.
+  - **Supplies module** — an Event- or Workbook-owned shopping list for consumables, décor, and miscellaneous purchases. Signed-in users can edit items, descriptions, quantities, departments, and purchase links. Admin-only prices and estimates remain protected and are omitted for everyone else.
+  - **Live documents** — module content remains live through the event. The former Send Update/publication workflow is retired; historical schedule snapshots remain preserved as read-only service data.
   - **Workbook print packet** — one Print / PDF control with selectable pages for the detail schedule, room Input Lists, Supplies shopping list, event Intercom Grids, and per-person call sheets. Admins also receive the business-office pay report option; it is absent from non-admin print controls and rejected by the export path for non-admins. Packets print on Letter portrait pages; Input List sections use two balanced tables side by side to preserve readable type without wasting paper.
 - GitHub Pages deployment
 
@@ -235,11 +235,11 @@ Completed (previously listed as pending):
   - `departments` — production departments used to tag schedule items and crew
   - `roles` — crew roles with an `hourly_rate` and an optional `department_id` (migration `049`). Rate/pay are admin-only, computed for verified admins (see the `workbook-pay` Edge Function). Raw-rate anon lockdown is a pending follow-up.
   - `schedule_item_types` — managed, extensible list of schedule-item types (replaces the old fixed enum)
-- `workbooks` — top-level container for multi-event / multi-day productions (name, date range, venue, status, sent version)
+- `workbooks` — top-level container for multi-event / multi-day productions (name, date range, venue, lifecycle status; legacy sent-version fields are retained only for compatibility)
 - `workbook_schedule_items` — typed schedule rows (type is a managed `schedule_item_types` key) with date, start/end time, notes, departments, tags; `location_id` references account `locations`; optionally linked to an `events` row
 - `workbook_schedule_assignments` — per-schedule-item crew assignments (real user or open/named slot, role, department)
 - `workbook_pco_time_meta` — room + department annotation for a read-only PCO plan time, keyed by (`event_id`, `pco_time_id`) (migration `046`)
-- `workbook_crew` — crew roster: person (PCO user / manual guest / open TBD), role, day (+ optional event), call/release times, paid flag (migration `047`)
+- `workbook_crew` — module-owned crew roster: person (PCO user / manual guest / open TBD), role, day, call/release times, and Event/Workbook compatibility fields (migrations `047` and `067`)
   - Migration `052` adds PCO assignment identity/source fields so linked-plan crew can sync without duplicating rows or overwriting Sunday Ops call/release/pay details.
 - **Input List room configuration + module values (migrations `053`, `062`, and `066`):**
   - `input_list_sections`, `input_list_columns`, and `input_list_rows` — ordered, location-specific document structure and connection inventory
@@ -247,24 +247,25 @@ Completed (previously listed as pending):
   - `module_input_list_values` — protected production-specific values keyed to an Event or Workbook module, room connection row, and entry column
   - `workbook_input_list_values` — emptied and access-revoked compatibility table retained during the Phase 2 verification window
   - `input_list_cell_links` — reusable location-wide target/source relationships that resolve against the active workbook (migration `062`)
-- **Intercom configuration + event grids (migration `050`):**
+- **Intercom configuration + module grids (migrations `050` and `067`):**
   - `intercom_pack_types` — account-level wired/wireless availability counts (future specific equipment can attach without replacing the pack type)
   - `intercom_channels` — reusable master channel list, including an explicit Program-feed marker
   - `role_intercom_defaults` / `role_intercom_default_channels` — per-role starting pack, talk mode, listen mode, and Program-feed settings
-  - `workbook_intercom_channels` — event-scoped channel columns, linked to a master channel or created for one event only
-  - `workbook_intercom_assignments` / `workbook_intercom_channel_assignments` — event-scoped crew packs plus independent talk/listen state or Program-feed enablement per channel (expanded by migration `058`)
-- `workbook_schedule_versions` — immutable JSON snapshots produced by "Send Update" (versioned change checkpoints)
+  - `workbook_intercom_channels` — Event- or Workbook-module channel columns, linked to a master channel or created for one module only
+  - `workbook_intercom_assignments` / `workbook_intercom_channel_assignments` — module-scoped crew packs plus independent talk/listen state or Program-feed enablement per channel (expanded by migration `058`)
+- `workbook_supplies` — Event- or Workbook-module shopping-list rows; prices remain in the Admin-only financial table
+- `workbook_schedule_versions` — preserved historical schedule snapshots; direct browser access and new publication are retired
 - `events` also carries `workbook_id`, `workbook_location_id` (now → account `locations`), and `event_end_time` columns for workbook attachment
 
 Functions:
-- `publish_workbook_schedule(workbook_id, published_by, snapshot)` — snapshots the current schedule as the next numbered version (used by "Send Update")
+- `publish_workbook_schedule(workbook_id, published_by, snapshot)` — retained only for historical/service-role compatibility; anonymous and authenticated execution is revoked
 - `save_module_input_list_values_bulk(module_instance_id, cells)` / `save_input_list_cell_links_bulk(location_id, cells)` — service-role-only bulk saves reached through the verified module content API
 
 Edge Functions (workbook):
 - `workbook-pay` — admin-only (verifies the PCO session token + `is_admin`); computes crew pay for a workbook and returns it only to verified admins. Deployed; wired in for the raw-rate lockdown (crew pay is currently computed client-side in the admin-only Crew tab).
-- `pco-workbook-crew` — admin-only; mirrors non-declined assignments from the **Production** team on every attached event's linked PCO plan into `workbook_crew` while preserving workbook-local call/release, pay, and role overrides.
+- `pco-workbook-crew` — admin-only; mirrors non-declined assignments from the **Production** team on every attached event's linked PCO plan into that Event's active Crew module while preserving local call/release, pay, role, and ordering overrides.
 - `module-admin` — verified module discovery plus Manager/Admin lifecycle controls and Admin-only PCO-folder defaults.
-- `module-content` — verified Input List and Production Document reads/writes for Event and Workbook modules; document deletion requires Manager access.
+- `module-content` — verified Input List, Production Document, Crew, Supplies, and Intercom reads/writes for Event and Workbook modules. Users edit live operational content; document deletion requires Manager access; pay/rates/prices require Admin access.
 
 Views:
 - `analytics_records` — view over `service_records` that remaps legacy service-type values, exposes event identity/time/labels, and powers Analytics screens. As of migration `043`, it filters to events with `include_in_analytics = true` plus legacy `service_records` rows that have no `event_id` (pre-events historical data).
@@ -336,6 +337,7 @@ Fresh schema setup is represented by running all migrations in order:
 - `supabase/migrations/20260804211500_064_module_foundation.sql`
 - `supabase/migrations/20260804213000_065_financial_data_boundary.sql`
 - `supabase/migrations/20260804233000_066_phase_2_module_content.sql`
+- `supabase/migrations/20260805010000_067_phase_3_operational_modules.sql`
 
 ### Evaluation Table Migration (2026-03-22)
 

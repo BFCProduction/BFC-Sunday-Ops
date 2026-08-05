@@ -18,22 +18,20 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { Check, DollarSign, GripVertical, Link2, Loader2, Pencil, RefreshCw, Trash2, UserPlus, X } from 'lucide-react'
 import { Card } from '../ui/Card'
-import { syncPcoWorkbookCrew, type AppUser } from '../../lib/adminApi'
+import { syncPcoWorkbookCrew } from '../../lib/adminApi'
 import {
-  createCrewMember,
-  updateCrewMemberDetails,
-  updateCrewMemberTime,
-  deleteCrewMember,
-  reorderWorkbookCrew,
-  type CrewMemberInput,
-} from '../../lib/workbooks'
+  addModuleCrewMember,
+  deleteModuleCrewMember,
+  reorderModuleCrew,
+  updateModuleCrewMember,
+} from '../../lib/moduleContent'
 import {
   buildWorkbookPayLines,
   workbookCrewMemberHours,
   workbookCrewMemberPay,
   workbookCrewPersonName,
 } from '../../lib/workbookCrewUtils'
-import type { CrewRole, Session, Workbook, WorkbookCrewMember } from '../../types'
+import type { CrewRole, ModulePerson, Session, WorkbookCrewMember } from '../../types'
 
 function money(value: number): string {
   return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -55,18 +53,20 @@ function formatCrewTime(value: string | null) {
 }
 
 interface CrewTabProps {
-  workbook: Workbook
+  moduleId: string
+  workbookId: string | null
   workbookDays: string[]
   linkedEvents: Session[]
-  users: AppUser[]
+  users: ModulePerson[]
   roles: CrewRole[]
   crew: WorkbookCrewMember[]
+  editable: boolean
   isAdmin: boolean
-  sessionToken: string | null
+  sessionToken: string
   onChanged: () => Promise<void>
 }
 
-function avatarFor(member: WorkbookCrewMember, users: AppUser[]) {
+function avatarFor(member: WorkbookCrewMember, users: ModulePerson[]) {
   const user = member.user_id ? users.find(u => u.id === member.user_id) : undefined
   const name = user?.name ?? member.person_name ?? 'TBD'
   const initials = name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()
@@ -80,12 +80,16 @@ function avatarFor(member: WorkbookCrewMember, users: AppUser[]) {
 }
 
 function InlineCrewTimeInput({
+  moduleId,
+  sessionToken,
   memberId,
   field,
   label,
   value,
   onSaved,
 }: {
+  moduleId: string
+  sessionToken: string
   memberId: string
   field: 'call_time' | 'release_time'
   label: string
@@ -106,7 +110,9 @@ function InlineCrewTimeInput({
     setSaving(true)
     setError('')
     try {
-      await updateCrewMemberTime(memberId, field, draft || null)
+      await updateModuleCrewMember(sessionToken, moduleId, memberId, field === 'call_time'
+        ? { callTime: draft || null }
+        : { releaseTime: draft || null })
       await onSaved()
     } catch (saveError) {
       setDraft(savedValue)
@@ -234,13 +240,13 @@ function SortableCrewRow({
 }
 
 function AddCrewModal({
-  workbookId, workbookDays, linkedEvents, users, roles, sessionToken, onSaved, onClose,
+  moduleId, workbookDays, users, roles, isAdmin, sessionToken, onSaved, onClose,
 }: {
-  workbookId: string
+  moduleId: string
   workbookDays: string[]
-  linkedEvents: Session[]
-  users: AppUser[]
+  users: ModulePerson[]
   roles: CrewRole[]
+  isAdmin: boolean
   sessionToken: string
   onSaved: () => Promise<void>
   onClose: () => void
@@ -248,7 +254,6 @@ function AddCrewModal({
   const [person, setPerson] = useState('')
   const [roleId, setRoleId] = useState('')
   const [date, setDate] = useState(workbookDays[0] ?? '')
-  const [eventId, setEventId] = useState('')
   const [callTime, setCallTime] = useState('')
   const [releaseTime, setReleaseTime] = useState('')
   const [isPaid, setIsPaid] = useState(false)
@@ -259,20 +264,14 @@ function AddCrewModal({
     setRoleId(nextRoleId)
   }
 
-  const eventsForDay = linkedEvents.filter(event => event.date === date)
-
   async function submit(formEvent: FormEvent) {
     formEvent.preventDefault()
     if (!date) { setError('Pick a day.'); return }
     const trimmed = person.trim()
     const isOpen = trimmed === '' || trimmed.toLowerCase() === 'tbd'
-    const matchedUser = users.find(user => user.name.toLowerCase() === trimmed.toLowerCase())
-    const input: CrewMemberInput = {
-      workbookId,
-      eventId: eventId || null,
+    const input = {
       scheduledDate: date,
-      userId: isOpen ? null : (matchedUser?.id ?? null),
-      personName: isOpen ? null : (matchedUser ? null : trimmed),
+      personName: isOpen ? null : trimmed,
       isOpen,
       roleId: roleId || null,
       callTime: callTime || null,
@@ -282,7 +281,7 @@ function AddCrewModal({
     setSaving(true)
     setError('')
     try {
-      await createCrewMember(input, sessionToken)
+      await addModuleCrewMember(sessionToken, moduleId, input)
       await onSaved()
       onClose()
     } catch (err) {
@@ -317,15 +316,8 @@ function AddCrewModal({
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Day</label>
-              <select className={FIELD} value={date} onChange={e => { setDate(e.target.value); setEventId('') }}>
+              <select className={FIELD} value={date} onChange={e => setDate(e.target.value)}>
                 {workbookDays.map(day => <option key={day} value={day}>{formatDay(day)}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Event (optional)</label>
-              <select className={FIELD} value={eventId} onChange={e => setEventId(e.target.value)}>
-                <option value="">Whole day / production</option>
-                {eventsForDay.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
               </select>
             </div>
             <div>
@@ -337,10 +329,10 @@ function AddCrewModal({
               <input type="time" className={FIELD} value={releaseTime} onChange={e => setReleaseTime(e.target.value)} />
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          {isAdmin && <label className="flex items-center gap-2 text-sm text-gray-700">
             <input type="checkbox" checked={isPaid} onChange={e => setIsPaid(e.target.checked)} />
             Paid (vs volunteer)
-          </label>
+          </label>}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
@@ -354,14 +346,14 @@ function AddCrewModal({
   )
 }
 
-export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, crew, isAdmin, sessionToken, onChanged }: CrewTabProps) {
+export function CrewTab({ moduleId, workbookId, workbookDays, linkedEvents, users, roles, crew, editable, isAdmin, sessionToken, onChanged }: CrewTabProps) {
   const [showModal, setShowModal] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
   const [syncError, setSyncError] = useState('')
-  const editMode = isAdmin && isEditing
+  const editMode = editable && isEditing
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -387,11 +379,11 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
   }
 
   const syncFromPco = useCallback(async () => {
-    if (!isAdmin || !sessionToken || linkedEvents.length === 0) return
+    if (!isAdmin || !workbookId || linkedEvents.length === 0) return
     setSyncing(true)
     setSyncError('')
     try {
-      const result = await syncPcoWorkbookCrew(sessionToken, workbook.id)
+      const result = await syncPcoWorkbookCrew(sessionToken, workbookId)
       await onChanged()
       setSyncMessage(`PCO crew up to date · ${result.assignments} assignment${result.assignments === 1 ? '' : 's'}`)
       if (result.errors.length > 0) {
@@ -402,7 +394,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
     } finally {
       setSyncing(false)
     }
-  }, [isAdmin, linkedEvents.length, onChanged, sessionToken, workbook.id])
+  }, [isAdmin, linkedEvents.length, onChanged, sessionToken, workbookId])
 
   const linkedEventIdsKey = linkedEvents.map(event => event.id).join(',')
   useEffect(() => {
@@ -446,7 +438,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
   })()
 
   async function remove(id: string) {
-    await deleteCrewMember(id)
+    await deleteModuleCrewMember(sessionToken, moduleId, id)
     setConfirmDelete(null)
     await onChanged()
   }
@@ -462,7 +454,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
     setSyncError('')
     try {
       const reordered = arrayMove(members, oldIndex, newIndex)
-      await reorderWorkbookCrew(reordered.map(member => member.id))
+      await reorderModuleCrew(sessionToken, moduleId, reordered.map(member => member.id))
       await onChanged()
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'Unable to save the crew order.')
@@ -477,8 +469,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
             <p className="text-sm font-bold text-gray-900">Crew</p>
             <p className="mt-0.5 text-xs text-gray-500">
               {isAdmin
-                ? 'Assigned crew sync automatically from each linked Planning Center plan. Call / release times, pay status, local role adjustments, and drag ordering stay in Sunday Ops.'
-                : 'Review the assigned crew, local roles, and call / release times for each linked event.'}
+                ? 'Planning Center assignments can sync into Event Crew modules. Call / release times, pay status, local role adjustments, and drag ordering stay in Sunday Ops.'
+                : 'View or edit assigned crew, local roles, and call / release times for this live module.'}
             </p>
             {editMode && <p className="mt-1 text-xs font-medium text-blue-600">Edit mode · changes save automatically</p>}
             {(syncMessage || syncError) && (
@@ -488,8 +480,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
               </div>
             )}
           </div>
-          {isAdmin && <div className="flex flex-shrink-0 items-center gap-2">
-            <button
+          {editable && <div className="flex flex-shrink-0 items-center gap-2">
+            {isAdmin && workbookId && <button
               type="button"
               onClick={() => void syncFromPco()}
               disabled={editMode || syncing || linkedEvents.length === 0 || !sessionToken}
@@ -498,7 +490,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
             >
               {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               {syncing ? 'Syncing…' : 'Sync PCO'}
-            </button>
+            </button>}
             {editMode && (
               <button
                 onClick={() => setShowModal(true)}
@@ -552,11 +544,12 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                       </>
                     ) : (
                       <>
-                        <col style={{ width: '34%' }} />
-                        <col style={{ width: '26%' }} />
+                        <col style={{ width: editMode ? '30%' : '34%' }} />
+                        <col style={{ width: editMode ? '24%' : '26%' }} />
                         <col style={{ width: '15%' }} />
                         <col style={{ width: '15%' }} />
                         <col style={{ width: '10%' }} />
+                        {editMode && <col style={{ width: '6%' }} />}
                       </>
                     )}
                   </colgroup>
@@ -600,7 +593,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                           label={`Role for ${workbookCrewPersonName(member, users)}`}
                           options={roleOptions}
                           onSave={async value => {
-                            await updateCrewMemberDetails(member.id, { roleId: value || null }, sessionToken)
+                            await updateModuleCrewMember(sessionToken, moduleId, member.id, { roleId: value || null })
                             await onChanged()
                           }}
                         />
@@ -616,6 +609,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       {editMode ? (
                         <InlineCrewTimeInput
+                          moduleId={moduleId}
+                          sessionToken={sessionToken}
                           memberId={member.id}
                           field="call_time"
                           label="Call"
@@ -627,6 +622,8 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       {editMode ? (
                         <InlineCrewTimeInput
+                          moduleId={moduleId}
+                          sessionToken={sessionToken}
                           memberId={member.id}
                           field="release_time"
                           label="Release"
@@ -642,7 +639,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
                           label={`Pay type for ${workbookCrewPersonName(member, users)}`}
                           options={payTypeOptions}
                           onSave={async value => {
-                            await updateCrewMemberDetails(member.id, { isPaid: value === 'paid' }, sessionToken)
+                            await updateModuleCrewMember(sessionToken, moduleId, member.id, { isPaid: value === 'paid' })
                             await onChanged()
                           }}
                         />
@@ -685,7 +682,7 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
       {isAdmin && payLines.length > 0 && (
         <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center gap-2 bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">
-            <DollarSign className="h-4 w-4" /> Total pay — all crew across the workbook
+            <DollarSign className="h-4 w-4" /> Total pay — this Crew module
             <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase">admin only</span>
           </div>
           {unpricedPaidAssignments > 0 && (
@@ -723,13 +720,13 @@ export function CrewTab({ workbook, workbookDays, linkedEvents, users, roles, cr
         </Card>
       )}
 
-      {isAdmin && sessionToken && showModal && editMode && (
+      {showModal && editMode && (
         <AddCrewModal
-          workbookId={workbook.id}
+          moduleId={moduleId}
           workbookDays={workbookDays}
-          linkedEvents={linkedEvents}
           users={users}
           roles={roles}
+          isAdmin={isAdmin}
           sessionToken={sessionToken}
           onSaved={onChanged}
           onClose={() => setShowModal(false)}

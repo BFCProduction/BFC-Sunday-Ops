@@ -1,6 +1,6 @@
 # Sunday Ops Module Architecture
 
-Last updated: August 4, 2026
+Last updated: August 4, 2026 (Phase 3)
 
 ## Confirmed product model
 
@@ -83,6 +83,14 @@ paths require a verified Sunday Ops session. Existing Workbook Input List cells
 and Event Production Documents are assigned to canonical modules by a
 forward-only migration; Event content is not copied into Workbook storage.
 
+Phase 3 makes `module_instance_id` the canonical owner for Crew, Supplies, and
+Intercom content. Existing Event-specific Crew/Intercom rows keep their Event
+meaning; whole-production Crew and existing Supplies keep their Workbook
+meaning. The compatibility `workbook_id` / `event_id` fields remain for PCO and
+older integrations, but verified reads and writes now travel through
+`module-content`. Operational rows are no longer anonymously queryable. Crew
+paid status, role rates, and supply prices remain Admin-only financial data.
+
 `pco_folders` stores the Planning Center hierarchy plus deterministic
 `service-type:<PCO ID>` fallbacks for the three principal top-level groupings, and
 `module_folder_defaults` maps a Folder to its default Event modules. Module
@@ -95,8 +103,8 @@ writes go through the `module-admin` Edge Function.
    financial-data containment.
 2. Convert Production Documents and Input List to module ownership and add the
    Workbook Event switcher. **Implemented and deployed in Phase 2.**
-3. Convert Crew, Supplies, and Intercom, then remove the old publication UI and
-   superseded compatibility paths after production verification.
+3. Convert Crew, Supplies, and Intercom, remove the old publication UI, and
+   retire superseded browser compatibility paths. **Implemented in Phase 3.**
 
 All migrations are forward-only and preserve existing operational records.
 
@@ -107,3 +115,14 @@ to 45 Event modules and moved all 356 existing Workbook Input List cells into
 one Workbook module. Post-deploy probes confirmed that authenticated Event and
 Workbook module reads succeed, while anonymous reads of both content paths and
 requests without a Sunday Ops session are rejected.
+
+**Phase 3 deployment status:** Migration `067_phase_3_operational_modules`
+assigns existing Crew, Supplies, Intercom channels, assignments, and channel
+states to canonical modules without copying or deleting operational records.
+The Workbook workspace now exposes Schedule, Events, and Modules as its only
+top-level tabs; Crew, Supplies, and Intercom use the same components and
+verified API at either Event or Workbook scope. Send Update/publication is
+retired in favor of live documents, while any historical snapshots remain
+preserved and inaccessible to anonymous browser clients. New-event defaults
+are seeded conservatively for 9:00 Service, 11:00 Service, and Special Events
+without overwriting choices already saved in Settings.

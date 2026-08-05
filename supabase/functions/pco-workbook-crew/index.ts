@@ -258,6 +258,22 @@ Deno.serve(async request => {
     })
   }
 
+  const { data: crewModules, error: crewModuleError } = await supabase
+    .from('module_instances')
+    .select('id, event_id')
+    .eq('module_key', 'crew')
+    .eq('status', 'active')
+    .in('event_id', eventIds)
+    .order('sort_order')
+    .order('created_at')
+  if (crewModuleError) return json(cors, 500, { error: crewModuleError.message })
+  const crewModuleByEvent = new Map<string, string>()
+  for (const module of crewModules ?? []) {
+    if (module.event_id && !crewModuleByEvent.has(module.event_id)) {
+      crewModuleByEvent.set(module.event_id, module.id)
+    }
+  }
+
   const [
     { data: allServiceTypes },
     { data: users },
@@ -303,6 +319,15 @@ Deno.serve(async request => {
       ? event.service_types[0]
       : event.service_types
     if (!event.pco_plan_id || !serviceType?.pco_service_type_id) continue
+    const crewModuleId = crewModuleByEvent.get(event.id)
+    if (!crewModuleId) {
+      errors.push({
+        event_id: event.id,
+        event_name: event.name,
+        error: 'No active Event Crew module. Restore or add the Crew module before syncing.',
+      })
+      continue
+    }
 
     const candidateServiceTypeIds = [
       serviceType.pco_service_type_id,
@@ -355,6 +380,7 @@ Deno.serve(async request => {
       }
 
       const importedFields = {
+        module_instance_id: crewModuleId,
         workbook_id: workbookId,
         event_id: event.id,
         scheduled_date: event.event_date,

@@ -344,7 +344,8 @@ export interface WorkbookScheduleItem {
 
 export interface WorkbookCrewMember {
   id: string
-  workbook_id: string
+  module_instance_id: string
+  workbook_id: string | null
   event_id: string | null
   scheduled_date: string
   user_id: string | null
@@ -371,7 +372,8 @@ export interface WorkbookCrewMember {
 
 export interface WorkbookSupplyItem {
   id: string
-  workbook_id: string
+  module_instance_id: string
+  workbook_id: string | null
   department_id: string | null
   item_name: string
   description: string | null
@@ -492,8 +494,9 @@ export interface RoleIntercomDefault {
 
 export interface WorkbookIntercomChannel {
   id: string
-  workbook_id: string
-  event_id: string
+  module_instance_id: string
+  workbook_id: string | null
+  event_id: string | null
   master_channel_id: string | null
   name: string
   is_program: boolean
@@ -503,14 +506,21 @@ export interface WorkbookIntercomChannel {
 
 export interface WorkbookIntercomAssignment {
   id: string
-  workbook_id: string
-  event_id: string
+  module_instance_id: string
+  workbook_id: string | null
+  event_id: string | null
   crew_key: string
   role_id: string | null
   pack_type: IntercomPackTypeKey | null
   channel_states: Record<string, IntercomChannelState>
   created_at: string
   updated_at: string
+}
+
+export interface ModulePerson {
+  id: string
+  name: string
+  avatar_url: string | null
 }
 
 export interface WorkbookScheduleVersion {

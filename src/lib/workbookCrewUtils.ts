@@ -3,6 +3,8 @@ import type { CrewRole, Session, WorkbookCrewMember } from '../types'
 import type { CallSheetPerson } from './generateCallSheetHtml'
 import type { PayLine } from './generatePayReportHtml'
 
+type CrewPerson = Pick<AppUser, 'id' | 'name'>
+
 function toMinutes(time: string | null): number | null {
   if (!time) return null
   const [hour, minute] = time.slice(0, 5).split(':').map(Number)
@@ -10,7 +12,7 @@ function toMinutes(time: string | null): number | null {
   return hour * 60 + minute
 }
 
-export function workbookCrewPersonName(member: WorkbookCrewMember, users: AppUser[]): string {
+export function workbookCrewPersonName(member: WorkbookCrewMember, users: CrewPerson[]): string {
   if (member.is_open) return 'TBD'
   if (member.user_id) return users.find(user => user.id === member.user_id)?.name ?? member.person_name ?? 'Unknown'
   return member.person_name ?? 'Unknown'
@@ -32,7 +34,7 @@ export function workbookCrewMemberPay(member: WorkbookCrewMember, roles: CrewRol
 
 export function buildWorkbookPayLines(
   crew: WorkbookCrewMember[],
-  users: AppUser[],
+  users: CrewPerson[],
   roles: CrewRole[],
 ): { lines: PayLine[]; totalHours: number; totalPay: number } {
   const map = new Map<string, PayLine>()
@@ -55,7 +57,7 @@ export function buildWorkbookPayLines(
 export function buildWorkbookCallSheetPeople(
   crew: WorkbookCrewMember[],
   linkedEvents: Session[],
-  users: AppUser[],
+  users: CrewPerson[],
   roles: CrewRole[],
 ): CallSheetPerson[] {
   const byPerson = new Map<string, CallSheetPerson>()

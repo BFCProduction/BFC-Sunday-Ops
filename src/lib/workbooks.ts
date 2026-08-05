@@ -1,14 +1,9 @@
 import { supabase } from './supabase'
-import { deleteAdminSupply, saveAdminSupply, setAdminCrewPaid } from './financialAdmin'
 import type {
-  Location,
-  Session,
   Workbook,
-  WorkbookCrewMember,
   WorkbookScheduleAssignment,
   WorkbookScheduleItem,
   WorkbookScheduleItemType,
-  WorkbookSupplyItem,
 } from '../types'
 
 export interface CreateWorkbookInput {
@@ -40,13 +35,6 @@ export interface ScheduleItemInput {
   departments: string[]
   tags: string[]
   assignments: ScheduleAssignmentInput[]
-}
-
-export interface WorkbookPublicationSnapshot {
-  workbook: Workbook
-  locations: Location[]
-  events: Session[]
-  scheduleItems: WorkbookScheduleItem[]
 }
 
 export async function loadWorkbooks(): Promise<Workbook[]> {
@@ -181,185 +169,6 @@ export async function loadPcoTimeMeta(eventIds: string[]): Promise<Record<string
   return map
 }
 
-// ── Workbook crew roster ──────────────────────────────────────────────────────
-
-export interface CrewMemberInput {
-  workbookId: string
-  eventId: string | null
-  scheduledDate: string
-  userId: string | null
-  personName: string | null
-  isOpen: boolean
-  roleId: string | null
-  callTime: string | null
-  releaseTime: string | null
-  isPaid: boolean
-}
-
-export async function loadWorkbookCrew(workbookId: string): Promise<WorkbookCrewMember[]> {
-  const { data, error } = await supabase
-    .from('workbook_crew')
-    .select('id, workbook_id, event_id, scheduled_date, user_id, person_name, is_open, role_id, call_time, release_time, sort_order, sort_order_overridden, source, pco_plan_person_id, pco_person_id, pco_role_name, pco_status, pco_photo_url, pco_synced_at, created_at, updated_at')
-    .eq('workbook_id', workbookId)
-    .order('scheduled_date', { ascending: true })
-    .order('sort_order', { ascending: true })
-    .order('call_time', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: true })
-  if (error) throw error
-  return (data ?? []).map(member => ({ ...member, is_paid: false })) as WorkbookCrewMember[]
-}
-
-export async function reorderWorkbookCrew(orderedIds: string[]): Promise<void> {
-  const results = await Promise.all(orderedIds.map((id, sortOrder) =>
-    supabase
-      .from('workbook_crew')
-      .update({
-        sort_order: sortOrder,
-        sort_order_overridden: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id),
-  ))
-  const failed = results.find(result => result.error)
-  if (failed?.error) throw failed.error
-}
-
-function crewPayload(input: CrewMemberInput) {
-  return {
-    workbook_id: input.workbookId,
-    event_id: input.eventId,
-    scheduled_date: input.scheduledDate,
-    user_id: input.userId,
-    person_name: input.personName,
-    is_open: input.isOpen,
-    role_id: input.roleId,
-    call_time: input.callTime,
-    release_time: input.releaseTime,
-    updated_at: new Date().toISOString(),
-  }
-}
-
-export async function createCrewMember(input: CrewMemberInput, sessionToken?: string | null): Promise<void> {
-  let orderQuery = supabase
-    .from('workbook_crew')
-    .select('sort_order')
-    .eq('workbook_id', input.workbookId)
-    .eq('scheduled_date', input.scheduledDate)
-
-  orderQuery = input.eventId
-    ? orderQuery.eq('event_id', input.eventId)
-    : orderQuery.is('event_id', null)
-
-  const { data: lastRows, error: orderError } = await orderQuery
-    .order('sort_order', { ascending: false })
-    .limit(1)
-  if (orderError) throw orderError
-
-  const sortOrder = Number(lastRows?.[0]?.sort_order ?? -1) + 1
-  const { data: created, error } = await supabase
-    .from('workbook_crew')
-    .insert({
-      ...crewPayload(input),
-      sort_order: sortOrder,
-      sort_order_overridden: true,
-    })
-    .select('id')
-    .single()
-  if (error) throw error
-  if (sessionToken && input.isPaid) await setAdminCrewPaid(sessionToken, created.id, true)
-}
-
-export async function updateCrewMember(id: string, input: CrewMemberInput, sessionToken?: string | null): Promise<void> {
-  const { error } = await supabase.from('workbook_crew').update(crewPayload(input)).eq('id', id)
-  if (error) throw error
-  if (sessionToken) await setAdminCrewPaid(sessionToken, id, input.isPaid)
-}
-
-export async function updateCrewMemberTime(
-  id: string,
-  field: 'call_time' | 'release_time',
-  value: string | null,
-): Promise<void> {
-  const { error } = await supabase
-    .from('workbook_crew')
-    .update({
-      [field]: value,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-  if (error) throw error
-}
-
-export async function updateCrewMemberDetails(
-  id: string,
-  updates: { roleId?: string | null; isPaid?: boolean },
-  sessionToken?: string | null,
-): Promise<void> {
-  const payload: { role_id?: string | null; updated_at: string } = {
-    updated_at: new Date().toISOString(),
-  }
-  if (updates.roleId !== undefined) payload.role_id = updates.roleId
-
-  const { error } = await supabase.from('workbook_crew').update(payload).eq('id', id)
-  if (error) throw error
-  if (updates.isPaid !== undefined) {
-    if (!sessionToken) throw new Error('Admin session required to change paid status')
-    await setAdminCrewPaid(sessionToken, id, updates.isPaid)
-  }
-}
-
-export async function deleteCrewMember(id: string): Promise<void> {
-  const { error } = await supabase.from('workbook_crew').delete().eq('id', id)
-  if (error) throw error
-}
-
-// ── Workbook supplies ─────────────────────────────────────────────────────────
-
-export interface SupplyItemInput {
-  workbookId: string
-  departmentId: string | null
-  itemName: string
-  description: string | null
-  quantity: number
-  unitPrice: number
-  purchaseUrl: string | null
-}
-
-export async function loadWorkbookSupplies(workbookId: string): Promise<WorkbookSupplyItem[]> {
-  const { data, error } = await supabase
-    .from('workbook_supplies')
-    .select('id, workbook_id, department_id, item_name, description, quantity, purchase_url, sort_order, created_at, updated_at')
-    .eq('workbook_id', workbookId)
-    .order('sort_order', { ascending: true })
-    .order('created_at', { ascending: true })
-  if (error) throw error
-  return (data ?? []).map(item => ({ ...item, unit_price: 0 })) as WorkbookSupplyItem[]
-}
-
-function supplyPayload(input: SupplyItemInput) {
-  return {
-    workbookId: input.workbookId,
-    departmentId: input.departmentId,
-    itemName: input.itemName.trim(),
-    description: input.description?.trim() || null,
-    quantity: Math.max(0, Math.round(input.quantity)),
-    unitPrice: Math.max(0, input.unitPrice),
-    purchaseUrl: input.purchaseUrl,
-  }
-}
-
-export async function createSupplyItem(sessionToken: string, input: SupplyItemInput): Promise<void> {
-  await saveAdminSupply(sessionToken, supplyPayload(input))
-}
-
-export async function updateSupplyItem(sessionToken: string, id: string, input: SupplyItemInput): Promise<void> {
-  await saveAdminSupply(sessionToken, { id, ...supplyPayload(input) })
-}
-
-export async function deleteSupplyItem(sessionToken: string, id: string): Promise<void> {
-  await deleteAdminSupply(sessionToken, id)
-}
-
 export async function upsertPcoTimeMeta(input: {
   workbookId: string
   eventId: string
@@ -399,39 +208,4 @@ export async function updateWorkbookEventLocation(
     })
     .eq('id', eventId)
   if (error) throw error
-}
-
-export interface WorkbookVersionRow {
-  version_number: number
-  published_at: string
-  snapshot: unknown
-}
-
-/** The most recently published/sent version, or null if none yet. */
-export async function loadLatestWorkbookVersion(workbookId: string): Promise<WorkbookVersionRow | null> {
-  const { data, error } = await supabase
-    .from('workbook_schedule_versions')
-    .select('version_number, published_at, snapshot')
-    .eq('workbook_id', workbookId)
-    .order('version_number', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (error) throw error
-  return (data as WorkbookVersionRow | null) ?? null
-}
-
-export async function publishWorkbookSchedule(
-  workbook: Workbook,
-  snapshot: WorkbookPublicationSnapshot,
-  userId: string | null,
-): Promise<Workbook> {
-  const { data, error } = await supabase
-    .rpc('publish_workbook_schedule', {
-      p_workbook_id: workbook.id,
-      p_published_by: userId,
-      p_snapshot: snapshot,
-    })
-    .single()
-  if (error) throw error
-  return data as Workbook
 }

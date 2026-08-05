@@ -1,15 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { ExternalLink, Loader2, PackageOpen, Pencil, Plus, ShoppingCart, Trash2, X } from 'lucide-react'
 import { Card } from '../ui/Card'
-import { createSupplyItem, deleteSupplyItem, updateSupplyItem } from '../../lib/workbooks'
-import type { Department, Workbook, WorkbookSupplyItem } from '../../types'
+import { deleteModuleSupply, saveModuleSupply } from '../../lib/moduleContent'
+import type { Department, WorkbookSupplyItem } from '../../types'
 
 interface SuppliesTabProps {
-  workbook: Workbook
+  moduleId: string
   departments: Department[]
   supplies: WorkbookSupplyItem[]
   editable: boolean
-  sessionToken: string | null
+  isAdmin: boolean
+  sessionToken: string
   onChanged: () => Promise<void>
 }
 
@@ -39,16 +40,18 @@ function linkLabel(value: string) {
 }
 
 function SupplyEditor({
-  workbook,
+  moduleId,
   departments,
   existing,
+  isAdmin,
   sessionToken,
   onSaved,
   onClose,
 }: {
-  workbook: Workbook
+  moduleId: string
   departments: Department[]
   existing: WorkbookSupplyItem | null
+  isAdmin: boolean
   sessionToken: string
   onSaved: () => Promise<void>
   onClose: () => void
@@ -83,7 +86,7 @@ function SupplyEditor({
     setError('')
     try {
       const input = {
-        workbookId: workbook.id,
+        supplyId: existing?.id ?? null,
         departmentId: departmentId || null,
         itemName,
         description: description || null,
@@ -91,8 +94,7 @@ function SupplyEditor({
         unitPrice: parsedPrice,
         purchaseUrl: normalizedUrl(purchaseUrl),
       }
-      if (existing) await updateSupplyItem(sessionToken, existing.id, input)
-      else await createSupplyItem(sessionToken, input)
+      await saveModuleSupply(sessionToken, moduleId, input)
       await onSaved()
       onClose()
     } catch (err) {
@@ -149,7 +151,7 @@ function SupplyEditor({
             />
           </label>
 
-          <label>
+          {isAdmin && <label>
             <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Price each</span>
             <div className="relative">
               <span className="pointer-events-none absolute left-3 top-2 text-sm text-gray-400">$</span>
@@ -163,7 +165,7 @@ function SupplyEditor({
                 className="w-full rounded-lg border border-gray-200 py-2 pl-7 pr-3 text-sm focus:border-blue-500 focus:outline-none"
               />
             </div>
-          </label>
+          </label>}
 
           <label>
             <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Department</span>
@@ -205,20 +207,19 @@ function SupplyEditor({
   )
 }
 
-export function SuppliesTab({ workbook, departments, supplies, editable, sessionToken, onChanged }: SuppliesTabProps) {
+export function SuppliesTab({ moduleId, departments, supplies, editable, isAdmin, sessionToken, onChanged }: SuppliesTabProps) {
   const [showEditor, setShowEditor] = useState(false)
   const [editing, setEditing] = useState<WorkbookSupplyItem | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [error, setError] = useState('')
   const departmentById = new Map(departments.map(department => [department.id, department.name]))
-  const estimatedTotal = supplies.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
+  const estimatedTotal = isAdmin ? supplies.reduce((sum, item) => sum + item.quantity * item.unit_price, 0) : 0
 
   async function remove(id: string) {
     if (!editable) return
     setError('')
     try {
-      if (!sessionToken) throw new Error('Admin session required')
-      await deleteSupplyItem(sessionToken, id)
+      await deleteModuleSupply(sessionToken, moduleId, id)
       setConfirmDelete(null)
       await onChanged()
     } catch (err) {
@@ -234,13 +235,13 @@ export function SuppliesTab({ workbook, departments, supplies, editable, session
             <p className="flex items-center gap-2 text-sm font-bold text-gray-900">
               <ShoppingCart className="h-4 w-4 text-blue-600" /> Supplies
             </p>
-            <p className="mt-1 text-xs text-gray-500">A workbook-wide shopping list for consumables, décor, and anything else the event needs.</p>
+            <p className="mt-1 text-xs text-gray-500">A live module shopping list for consumables, décor, and anything else this production needs.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600">
               {supplies.length} item{supplies.length === 1 ? '' : 's'}
             </span>
-            {editable && (
+            {isAdmin && (
               <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
                 Estimated total {money(estimatedTotal)}
               </span>
@@ -267,16 +268,16 @@ export function SuppliesTab({ workbook, departments, supplies, editable, session
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className={`w-full table-fixed text-sm ${editable ? 'min-w-[1100px]' : 'min-w-[820px]'}`}>
+            <table className={`w-full table-fixed text-sm ${editable ? 'min-w-[980px]' : 'min-w-[820px]'}`}>
               <colgroup>
                 <col className="w-12" />
                 <col className="w-64" />
                 <col />
                 <col className="w-24" />
-                {editable && <col className="w-28" />}
+                {isAdmin && <col className="w-28" />}
                 <col className="w-36" />
                 <col className="w-36" />
-                {editable && <col className="w-28" />}
+                {isAdmin && <col className="w-28" />}
                 {editable && <col className="w-24" />}
               </colgroup>
               <thead>
@@ -285,10 +286,10 @@ export function SuppliesTab({ workbook, departments, supplies, editable, session
                   <th className="px-3 py-3">Item</th>
                   <th className="px-3 py-3">Description</th>
                   <th className="px-3 py-3 text-right">Qty</th>
-                  {editable && <th className="px-3 py-3 text-right">Price</th>}
+                  {isAdmin && <th className="px-3 py-3 text-right">Price</th>}
                   <th className="px-3 py-3">Department</th>
                   <th className="px-3 py-3">Link</th>
-                  {editable && <th className="px-3 py-3 text-right">Total</th>}
+                  {isAdmin && <th className="px-3 py-3 text-right">Total</th>}
                   {editable && <th className="px-3 py-3 text-right">Actions</th>}
                 </tr>
               </thead>
@@ -299,7 +300,7 @@ export function SuppliesTab({ workbook, departments, supplies, editable, session
                     <td className="px-3 py-3 font-semibold text-gray-900">{item.item_name}</td>
                     <td className="px-3 py-3 text-xs leading-relaxed text-gray-600">{item.description || <span className="text-gray-300">—</span>}</td>
                     <td className="px-3 py-3 text-right text-gray-700">{quantityLabel(item.quantity)}</td>
-                    {editable && <td className="px-3 py-3 text-right text-gray-700">{money(item.unit_price)}</td>}
+                    {isAdmin && <td className="px-3 py-3 text-right text-gray-700">{money(item.unit_price)}</td>}
                     <td className="px-3 py-3 text-xs text-gray-600">
                       {item.department_id ? departmentById.get(item.department_id) ?? 'Unknown' : <span className="text-gray-300">—</span>}
                     </td>
@@ -315,7 +316,7 @@ export function SuppliesTab({ workbook, departments, supplies, editable, session
                         </a>
                       ) : <span className="text-gray-300">—</span>}
                     </td>
-                    {editable && <td className="px-3 py-3 text-right font-semibold text-gray-900">{money(item.quantity * item.unit_price)}</td>}
+                    {isAdmin && <td className="px-3 py-3 text-right font-semibold text-gray-900">{money(item.quantity * item.unit_price)}</td>}
                     {editable && <td className="px-3 py-3">
                       <div className="flex justify-end gap-1">
                         <button
@@ -339,11 +340,11 @@ export function SuppliesTab({ workbook, departments, supplies, editable, session
                   </tr>
                 ))}
               </tbody>
-              {editable && <tfoot>
+              {isAdmin && <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold text-gray-900">
                   <td className="px-3 py-3" colSpan={7}>Estimated total</td>
                   <td className="px-3 py-3 text-right">{money(estimatedTotal)}</td>
-                  <td />
+                  {editable && <td />}
                 </tr>
               </tfoot>}
             </table>
@@ -353,9 +354,10 @@ export function SuppliesTab({ workbook, departments, supplies, editable, session
 
       {editable && sessionToken && showEditor && (
         <SupplyEditor
-          workbook={workbook}
+          moduleId={moduleId}
           departments={departments}
           existing={editing}
+          isAdmin={isAdmin}
           sessionToken={sessionToken}
           onSaved={onChanged}
           onClose={() => { setShowEditor(false); setEditing(null) }}

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Blocks, BookOpen, CalendarDays, CalendarPlus,
-  Check, Columns3, Copy, Filter, History, LayoutGrid,
-  Link2, List, MapPin, Pencil, Plus, Printer, RadioTower, Save,
-  Send, ShoppingCart, Trash2, Users, X,
+  Columns3, Filter, LayoutGrid,
+  Link2, List, MapPin, Pencil, Plus, Printer, Save,
+  Trash2, Users, X,
 } from 'lucide-react'
 import { useAdmin } from '../context/adminState'
 import { useSunday } from '../context/SundayContext'
@@ -16,10 +16,7 @@ import {
 } from '../lib/generateWorkbookPacketHtml'
 import { buildWorkbookCallSheetPeople, buildWorkbookPayLines } from '../lib/workbookCrewUtils'
 import {
-  buildIntercomCrewIdentities,
-  loadIntercomConfig,
-  loadWorkbookIntercomEvent,
-  prepareWorkbookIntercomEvent,
+  buildModuleIntercomCrewIdentities,
 } from '../lib/intercom'
 import { loadAllSessions, supabase } from '../lib/supabase'
 import {
@@ -27,13 +24,9 @@ import {
   createWorkbook,
   deleteScheduleItem,
   detachEventFromWorkbook,
-  loadLatestWorkbookVersion,
   loadPcoTimeMeta,
-  loadWorkbookCrew,
   loadWorkbookScheduleItems,
-  loadWorkbookSupplies,
   loadWorkbooks,
-  publishWorkbookSchedule,
   updateScheduleItem,
   updateWorkbookEventLocation,
   upsertPcoTimeMeta,
@@ -51,16 +44,12 @@ import {
 import { Card } from '../components/ui/Card'
 import { SectionLabel } from '../components/ui/SectionLabel'
 import { ScheduleTimeGrid, type TimeGridColumn, type TimeGridItem } from '../components/workbook/ScheduleTimeGrid'
-import { CrewTab } from '../components/workbook/CrewTab'
-import { IntercomGrid } from '../components/workbook/IntercomGrid'
-import { SuppliesTab } from '../components/workbook/SuppliesTab'
 import { WorkbookPrintModal } from '../components/workbook/WorkbookPrintModal'
 import { ModuleWorkspace } from '../components/modules/ModuleWorkspace'
 import { QuickCreateModal } from '../components/layout/QuickCreateModal'
-import { workbookScheduleDiff, type DiffScheduleItem, type DiffEvent } from '../lib/workbookDiff'
 import { loadModuleInputListDocuments } from '../lib/inputLists'
 import { fetchWorkbookModules } from '../lib/modules'
-import { fetchWorkbookFinancialData } from '../lib/financialAdmin'
+import { loadWorkbookOperationalModuleData } from '../lib/moduleContent'
 import type {
   CrewRole,
   Department,
@@ -107,13 +96,6 @@ function dayLabel(date: string, anchor: string | null) {
   if (!anchor) return null
   return daysBetween(anchor, date) + 1
 }
-function addDays(date: string, n: number) {
-  const [year, month, day] = date.split('-').map(Number)
-  const base = new Date(Date.UTC(year, month - 1, day))
-  base.setUTCDate(base.getUTCDate() + n)
-  return base.toISOString().slice(0, 10)
-}
-
 function formatDate(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', {
     weekday: 'short',
@@ -641,166 +623,6 @@ function PcoTimeMetaModal({
   )
 }
 
-function toDiffItem(item: {
-  id: string; title: string; scheduled_date: string
-  start_time: string | null; end_time: string | null
-  location_id: string | null; departments?: string[] | null
-}): DiffScheduleItem {
-  return {
-    id: item.id,
-    title: item.title,
-    scheduled_date: item.scheduled_date,
-    start_time: item.start_time,
-    end_time: item.end_time,
-    location_id: item.location_id,
-    departments: item.departments ?? [],
-  }
-}
-
-function toDiffEvent(event: { id: string; name: string; eventTime: string | null; eventEndTime: string | null }): DiffEvent {
-  return { id: event.id, name: event.name, eventTime: event.eventTime, eventEndTime: event.eventEndTime }
-}
-
-function SendUpdateModal({
-  workbook,
-  items,
-  events,
-  locations,
-  locationName,
-  userId,
-  onClose,
-  onSent,
-}: {
-  workbook: Workbook
-  items: WorkbookScheduleItem[]
-  events: Session[]
-  locations: Location[]
-  locationName: (id: string | null) => string
-  userId: string | null
-  onClose: () => void
-  onSent: (updated: Workbook) => void
-}) {
-  const [loading, setLoading] = useState(true)
-  const [prevVersion, setPrevVersion] = useState<number | null>(null)
-  const [diffLines, setDiffLines] = useState<string[]>([])
-  const [sending, setSending] = useState(false)
-  const [sentVersion, setSentVersion] = useState<number | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let active = true
-    loadLatestWorkbookVersion(workbook.id)
-      .then(latest => {
-        if (!active) return
-        const currItems = items.map(toDiffItem)
-        const currEvents = events.map(toDiffEvent)
-        if (!latest) {
-          setPrevVersion(null)
-          setDiffLines([])
-        } else {
-          const snap = (latest.snapshot ?? {}) as { scheduleItems?: DiffScheduleItem[]; events?: DiffEvent[] }
-          const prevItems = (snap.scheduleItems ?? []).map(toDiffItem)
-          const prevEvents = (snap.events ?? []).map(toDiffEvent)
-          setPrevVersion(latest.version_number)
-          setDiffLines(workbookScheduleDiff(prevItems, currItems, prevEvents, currEvents, locationName))
-        }
-        setLoading(false)
-      })
-      .catch(err => { if (active) { setError(err instanceof Error ? err.message : 'Unable to load version history.'); setLoading(false) } })
-    return () => { active = false }
-    // items/events/locationName captured at open time.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workbook.id])
-
-  const nextVersion = (prevVersion ?? 0) + 1
-
-  function summaryText() {
-    const header = `${workbook.name} — schedule update (v${nextVersion})`
-    if (diffLines.length === 0) return `${header}\n\nNo changes since v${prevVersion ?? 0}.`
-    return `${header}\n\n${diffLines.map(line => `• ${line}`).join('\n')}`
-  }
-
-  async function send() {
-    setSending(true)
-    setError('')
-    try {
-      const updated = await publishWorkbookSchedule(workbook, { workbook, locations, events, scheduleItems: items }, userId)
-      setSentVersion(updated.published_version)
-      onSent(updated)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to send update.')
-      setSending(false)
-    }
-  }
-
-  async function copySummary() {
-    try {
-      await navigator.clipboard.writeText(summaryText())
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch { /* clipboard may be unavailable */ }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4">
-          <div>
-            <h2 className="text-base font-bold text-gray-900">{sentVersion !== null ? `Update sent — v${sentVersion}` : 'Send update'}</h2>
-            <p className="mt-0.5 text-xs text-gray-500">
-              {sentVersion !== null
-                ? 'Copy the summary below to share with crew who don’t live in the workbook.'
-                : prevVersion === null
-                  ? 'This is the first snapshot. It becomes v1 and the baseline for future updates.'
-                  : `Changes since v${prevVersion}. The team already sees the live schedule; this is for occasional crew.`}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X className="h-4 w-4" /></button>
-        </div>
-
-        <div className="max-h-80 overflow-y-auto p-5">
-          {loading ? (
-            <div className="flex h-24 items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>
-          ) : diffLines.length === 0 ? (
-            <p className="rounded-lg bg-gray-50 px-3 py-3 text-sm text-gray-500">
-              {prevVersion === null ? 'No prior version — sending will create the v1 baseline.' : `No changes since v${prevVersion}.`}
-            </p>
-          ) : (
-            <ul className="space-y-1.5">
-              {diffLines.map((line, index) => (
-                <li key={index} className="flex gap-2 text-sm text-gray-700">
-                  <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-blue-400" />
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
-          {sentVersion !== null ? (
-            <>
-              <button type="button" onClick={() => void copySummary()} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                {copied ? <><Check className="h-4 w-4 text-emerald-600" /> Copied</> : <><Copy className="h-4 w-4" /> Copy summary</>}
-              </button>
-              <button type="button" onClick={onClose} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Done</button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
-              <button type="button" onClick={() => void send()} disabled={sending || loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                <Send className="h-4 w-4" /> {sending ? 'Sending...' : `Send update (v${nextVersion})`}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function ScheduleRow({
   row,
   locationName,
@@ -929,7 +751,7 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [pcoMeta, setPcoMeta] = useState<Record<string, PcoTimeMeta>>({})
   const [assigningPcoRow, setAssigningPcoRow] = useState<DisplayRow | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
-  const [tab, setTab] = useState<'schedule' | 'events' | 'modules' | 'crew' | 'intercom' | 'supplies'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'events' | 'modules'>('schedule')
   const [view, setView] = useState<'detail' | 'rooms' | 'departments' | 'mine'>(isAdmin ? 'detail' : 'mine')
   const [loading, setLoading] = useState(true)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
@@ -943,7 +765,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
   const [eventFilter, setEventFilter] = useState('all')
   const [departmentFilter, setDepartmentFilter] = useState('all')
   const [personFilter, setPersonFilter] = useState('all')
-  const [showSendUpdate, setShowSendUpdate] = useState(false)
   const [showPrintPacket, setShowPrintPacket] = useState(false)
 
   const activeWorkbook = workbooks.find(workbook => workbook.id === activeWorkbookId) ?? null
@@ -1032,48 +853,21 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     if (!activeWorkbookId) return
     setWorkspaceLoading(true)
     try {
-      const [freshItems, safeCrew, safeSupplies, financial] = await Promise.all([
+      const [freshItems, operational] = await Promise.all([
         loadWorkbookScheduleItems(activeWorkbookId),
-        loadWorkbookCrew(activeWorkbookId),
-        loadWorkbookSupplies(activeWorkbookId),
-        isAdmin && sessionToken
-          ? fetchWorkbookFinancialData(sessionToken, activeWorkbookId)
-          : Promise.resolve(null),
+        sessionToken
+          ? loadWorkbookOperationalModuleData(sessionToken, activeWorkbookId)
+          : Promise.resolve({ crew: [], supplies: [], intercom: [] }),
       ])
-      const paidByCrew = new Map((financial?.crew_financials ?? []).map(row => [row.crew_id, row.is_paid]))
-      const freshCrew = safeCrew.map(member => ({ ...member, is_paid: paidByCrew.get(member.id) ?? false }))
-      const freshSupplies = financial?.supplies ?? safeSupplies
       setItems(freshItems)
-      setCrew(freshCrew)
-      setSupplies(freshSupplies)
+      setCrew(operational.crew)
+      setSupplies(operational.supplies)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load workbook schedule.')
     } finally {
       setWorkspaceLoading(false)
     }
-  }, [activeWorkbookId, isAdmin, sessionToken])
-
-  const reloadCrew = useCallback(async () => {
-    if (!activeWorkbookId) return
-    const safeCrew = await loadWorkbookCrew(activeWorkbookId)
-    if (!isAdmin || !sessionToken) {
-      setCrew(safeCrew)
-      return
-    }
-    const financial = await fetchWorkbookFinancialData(sessionToken, activeWorkbookId)
-    const paidByCrew = new Map(financial.crew_financials.map(row => [row.crew_id, row.is_paid]))
-    setCrew(safeCrew.map(member => ({ ...member, is_paid: paidByCrew.get(member.id) ?? false })))
-  }, [activeWorkbookId, isAdmin, sessionToken])
-
-  const reloadSupplies = useCallback(async () => {
-    if (!activeWorkbookId) return
-    if (isAdmin && sessionToken) {
-      const financial = await fetchWorkbookFinancialData(sessionToken, activeWorkbookId)
-      setSupplies(financial.supplies)
-      return
-    }
-    setSupplies(await loadWorkbookSupplies(activeWorkbookId))
-  }, [activeWorkbookId, isAdmin, sessionToken])
+  }, [activeWorkbookId, sessionToken])
 
   useEffect(() => {
     if (!activeWorkbookId) {
@@ -1094,17 +888,9 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         { event: '*', schema: 'public', table: 'workbook_schedule_assignments' },
         () => { void refreshWorkspace() },
       )
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'workbook_crew', filter: `workbook_id=eq.${activeWorkbookId}` },
-        () => { void reloadCrew() },
-      )
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'workbook_supplies', filter: `workbook_id=eq.${activeWorkbookId}` },
-        () => { void reloadSupplies() },
-      )
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
-  }, [activeWorkbookId, refreshWorkspace, reloadCrew, reloadSupplies])
+  }, [activeWorkbookId, refreshWorkspace])
 
   const locationMap = useMemo(
     () => Object.fromEntries(locations.map(location => [location.id, location.name])),
@@ -1258,19 +1044,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     [rows],
   )
 
-  const workbookDays = useMemo(() => {
-    if (!activeWorkbook) return []
-    const out: string[] = []
-    let cursor = activeWorkbook.start_date
-    let guard = 0
-    while (cursor <= activeWorkbook.end_date && guard < 400) {
-      out.push(cursor)
-      cursor = addDays(cursor, 1)
-      guard++
-    }
-    return out
-  }, [activeWorkbook])
-
   const filteredRows = rows.filter(row => {
     const item = row.item
     const selectedPerson = view === 'mine' ? (user?.name ?? '') : personFilter
@@ -1383,23 +1156,35 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
       }
 
       let intercomEvents: IntercomPrintEvent[] = []
-      if (permittedSections.includes('intercom')) {
-        const config = await loadIntercomConfig()
-        const sorted = [...linkedEvents].sort((a, b) => a.date.localeCompare(b.date) || (a.eventTime ?? '').localeCompare(b.eventTime ?? ''))
-        intercomEvents = await Promise.all(sorted.map(async event => {
-          const identities = buildIntercomCrewIdentities(crew, event, users, crewRoles)
-          const eventData = isAdmin
-            ? await prepareWorkbookIntercomEvent(activeWorkbook.id, event.id, identities, config)
-            : await loadWorkbookIntercomEvent(activeWorkbook.id, event.id)
-          const assignmentByCrew = new Map(eventData.assignments.map(assignment => [assignment.crew_key, assignment]))
+      if (permittedSections.includes('intercom') && sessionToken) {
+        const operational = await loadWorkbookOperationalModuleData(sessionToken, activeWorkbook.id)
+        const eventById = new Map(linkedEvents.map(event => [event.id, event]))
+        const sorted = [...operational.intercom].sort((a, b) => {
+          const aEvent = a.module.event_id ? eventById.get(a.module.event_id) : null
+          const bEvent = b.module.event_id ? eventById.get(b.module.event_id) : null
+          return (aEvent?.date ?? activeWorkbook.start_date).localeCompare(bEvent?.date ?? activeWorkbook.start_date)
+            || (aEvent?.eventTime ?? '').localeCompare(bEvent?.eventTime ?? '')
+            || a.module.id.localeCompare(b.module.id)
+        })
+        intercomEvents = sorted.map(entry => {
+          const ownerEvent = entry.module.event_id ? eventById.get(entry.module.event_id) : null
+          const identities = buildModuleIntercomCrewIdentities(
+            entry.content.crew,
+            entry.content.people,
+            entry.content.roles,
+          )
+          const assignmentByCrew = new Map(
+            entry.content.intercom_assignments.map(assignment => [assignment.crew_key, assignment]),
+          )
+          const packTypes = entry.content.intercom_config.pack_types
           return {
-            eventName: event.name,
-            eventDate: event.date,
-            channels: eventData.channels,
+            eventName: ownerEvent?.name ?? 'Workbook Shared',
+            eventDate: ownerEvent?.date ?? activeWorkbook.start_date,
+            channels: entry.content.intercom_channels,
             rows: identities.map(identity => {
               const assignment = assignmentByCrew.get(identity.key)
               const packLabel = assignment?.pack_type
-                ? config.packTypes.find(pack => pack.key === assignment.pack_type)?.label ?? assignment.pack_type
+                ? packTypes.find(pack => pack.key === assignment.pack_type)?.label ?? assignment.pack_type
                 : null
               return {
                 name: identity.name,
@@ -1408,13 +1193,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                 channelStates: assignment?.channel_states ?? {},
               }
             }),
-            packUsage: config.packTypes.map(pack => ({
+            packUsage: packTypes.map(pack => ({
               label: pack.label,
               used: identities.filter(identity => assignmentByCrew.get(identity.key)?.pack_type === pack.key).length,
               available: pack.available_count,
             })),
           }
-        }))
+        })
       }
 
       const html = generateWorkbookPacketHtml({
@@ -1460,7 +1245,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
     setActiveWorkbookId('')
     setShowEditor(false)
     setEditingItem(null)
-    setShowSendUpdate(false)
     setShowPrintPacket(false)
     setShowCreateEvent(false)
   }
@@ -1520,14 +1304,10 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {workbooks.map(workbook => {
                 const eventCount = allSessions.filter(session => session.workbookId === workbook.id).length
-                const statusLabel = workbook.status === 'published'
-                  ? `Sent v${workbook.published_version}`
-                  : workbook.status
-                const statusClass = workbook.status === 'published'
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : workbook.status === 'archived'
-                    ? 'bg-gray-100 text-gray-500'
-                    : 'bg-amber-50 text-amber-700'
+                const statusLabel = workbook.status === 'archived' ? 'Archived' : 'Live'
+                const statusClass = workbook.status === 'archived'
+                  ? 'bg-gray-100 text-gray-500'
+                  : 'bg-emerald-50 text-emerald-700'
 
                 return (
                   <button
@@ -1588,22 +1368,13 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{usedLocationIds.size} room{usedLocationIds.size === 1 ? '' : 's'}</span>
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{items.length} schedule item{items.length === 1 ? '' : 's'}</span>
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{supplies.length} suppl{supplies.length === 1 ? 'y' : 'ies'}</span>
-                    {activeWorkbook.published_version > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                        <History className="h-3 w-3" /> Last sent v{activeWorkbook.published_version}
-                      </span>
-                    )}
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Live document</span>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => setShowPrintPacket(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                     <Printer className="h-4 w-4" /> Print / PDF
                   </button>
-                  {isAdmin && (
-                    <button onClick={() => setShowSendUpdate(true)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-                      <Send className="h-4 w-4" /> Send Update
-                    </button>
-                  )}
                 </div>
               </div>
               <div className="flex gap-1 overflow-x-auto px-5 pt-3">
@@ -1616,15 +1387,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
                     <Icon className="h-4 w-4" /> {label}
                   </button>
                 ))}
-                <button onClick={() => setTab('crew')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'crew' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
-                  <Users className="h-4 w-4" /> Crew
-                </button>
-                <button onClick={() => setTab('intercom')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'intercom' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
-                  <RadioTower className="h-4 w-4" /> Intercom
-                </button>
-                <button onClick={() => setTab('supplies')} className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2 text-sm font-semibold ${tab === 'supplies' ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:text-gray-700'}`}>
-                  <ShoppingCart className="h-4 w-4" /> Supplies
-                </button>
               </div>
             </Card>
 
@@ -1839,49 +1601,15 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
               </div>
             )}
 
-            {tab === 'crew' && (
-              <CrewTab
-                workbook={activeWorkbook}
-                workbookDays={workbookDays}
-                linkedEvents={linkedEvents}
-                users={users}
-                roles={crewRoles}
-                crew={crew}
-                isAdmin={isAdmin}
-                sessionToken={sessionToken}
-                onChanged={reloadCrew}
-              />
-            )}
-
-            {tab === 'intercom' && (
-              <IntercomGrid
-                workbook={activeWorkbook}
-                linkedEvents={linkedEvents}
-                users={users}
-                roles={crewRoles}
-                crew={crew}
-                editable={isAdmin}
-              />
-            )}
-
             {tab === 'modules' && sessionToken && (
               <ModuleWorkspace
                 sessionToken={sessionToken}
                 isManager={isManager}
+                isAdmin={isAdmin}
                 locations={locations}
                 workbook={activeWorkbook}
                 linkedEvents={linkedEvents}
-              />
-            )}
-
-            {tab === 'supplies' && (
-              <SuppliesTab
-                workbook={activeWorkbook}
-                departments={departmentOptions}
-                supplies={supplies}
-                editable={isAdmin}
-                sessionToken={sessionToken}
-                onChanged={reloadSupplies}
+                onOperationalChanged={refreshWorkspace}
               />
             )}
           </section>
@@ -1937,18 +1665,6 @@ export function Workbooks({ allSessions, onSessionsChange, setScreen }: Props) {
         />
       )}
 
-      {showSendUpdate && activeWorkbook && (
-        <SendUpdateModal
-          workbook={activeWorkbook}
-          items={items}
-          events={linkedEvents}
-          locations={locations}
-          locationName={id => (id ? locationMap[id] ?? 'a room' : 'no room')}
-          userId={user?.id ?? null}
-          onClose={() => setShowSendUpdate(false)}
-          onSent={updated => setWorkbooks(current => current.map(workbook => workbook.id === updated.id ? updated : workbook))}
-        />
-      )}
     </div>
   )
 }
