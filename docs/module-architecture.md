@@ -100,13 +100,22 @@ writes go through the `module-admin` Edge Function.
 ## Migration order
 
 1. Establish access levels, protected module metadata, PCO folder defaults, and
-   financial-data containment.
+   financial-data containment. **Implemented and deployed in Phase 1.**
 2. Convert Production Documents and Input List to module ownership and add the
    Workbook Event switcher. **Implemented and deployed in Phase 2.**
 3. Convert Crew, Supplies, and Intercom, remove the old publication UI, and
    retire superseded browser compatibility paths. **Implemented in Phase 3.**
 
 All migrations are forward-only and preserve existing operational records.
+
+**Phase 1 deployment status:** Migrations `063_user_access_levels`,
+`064_module_foundation`, and `065_financial_data_boundary`, plus the shared
+`app-auth` verifier and `module-admin` / `financial-admin` functions, were
+deployed on August 4, 2026. Production now uses User/Manager/Admin authorization,
+stable PCO grouping keys, recoverable module lifecycle, and service-role-only
+financial tables. Anonymous metadata/financial probes were denied, authenticated
+Admin reads succeeded, non-Admin responses omitted protected values, and the
+unused shared-password `admin-session` function was retired.
 
 **Phase 2 deployment status:** Migration `066_phase_2_module_content` and the
 `module-admin` / `module-content` Edge Functions were deployed on August 4,
@@ -126,3 +135,12 @@ retired in favor of live documents, while any historical snapshots remain
 preserved and inaccessible to anonymous browser clients. New-event defaults
 are seeded conservatively for 9:00 Service, 11:00 Service, and Special Events
 without overwriting choices already saved in Settings.
+
+The production reconciliation preserved 26 Crew rows, 4 Supplies rows, 36
+Intercom channels, 109 Intercom assignments, and 42 channel states, with zero
+content rows missing a canonical module owner. Production contains 6 active
+Crew modules, 2 active Supplies modules, and 6 active Intercom modules. Existing
+content is present in 5 Crew, 2 Supplies, and 6 Intercom modules; one empty
+active Crew module is valid configuration. The complete commit, deployment,
+security-probe, and live smoke-test record is in
+[`module-system-deployment.md`](module-system-deployment.md).

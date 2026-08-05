@@ -1,6 +1,6 @@
 # Sunday Ops Security Inventory
 
-**Status:** Inventory complete; SEC-01, SEC-02, and SEC-09 containment verified in production
+**Status:** Inventory complete; SEC-01, SEC-02, SEC-09, module content, and legacy publication containment verified in production
 
 **Reviewed:** August 4, 2026
 
@@ -83,6 +83,31 @@ Limits:
 - No write or delete was attempted, so deployed write exposure is derived from versioned grants/policies and caller code rather than a destructive live test.
 - Storage bucket creation and policies are dashboard-managed rather than fully versioned. Migration `011` drops a globally named delete policy, while migration `034` only documents Storage policies in comments. The exact deployed delete policy set cannot be reconstructed from the repository alone.
 - This is an authorization inventory, not a penetration test, dependency audit, or secret-rotation exercise.
+
+### August 4 module-release verification
+
+Migrations `063`–`067` and the `module-admin`, `module-content`,
+`financial-admin`, and `pco-workbook-crew` boundaries were verified after the
+original inventory:
+
+- direct anonymous reads of Production Documents, module Input List values,
+  Crew, Supplies, all Intercom content tables, and historical schedule versions
+  returned `401`;
+- `module-content` without `x-session-token` returned `401`;
+- anonymous execution of the retired `publish_workbook_schedule` RPC returned
+  `401`;
+- authenticated Admin reads returned the complete operational and financial
+  shapes;
+- authenticated non-Admin reads returned operational content while omitting
+  role rates, crew paid status, supply prices, and totals;
+- exact migration reconciliation preserved 143 Production Documents, 356 Input
+  List cells, 26 Crew rows, 4 Supplies rows, 36 Intercom channels, 109 Intercom
+  assignments, and 42 channel states, with zero missing module owners; and
+- the complete lint/check/test/build/audit gate plus authenticated desktop and
+  mobile live-app smoke tests passed.
+
+See [`module-system-deployment.md`](module-system-deployment.md) for the full
+production record.
 
 ---
 
@@ -244,7 +269,7 @@ No database or Storage dataset reviewed here qualifies as an intentional interne
 | `event-admin` | Unexpired admin session | Service-role event/storage deletes | Correctly protected |
 | `user-admin` | Unexpired admin session | Service-role user reads/updates | Correctly protected |
 | `summary-email-admin` | Unexpired admin session | Service-role email configuration | Correctly protected |
-| `workbook-pay` | Unexpired admin session | Service-role financial reads | Correct boundary, but browser still reads raw inputs |
+| `workbook-pay` | Unexpired Admin session | Service-role financial reads | Correct protected boundary; raw browser financial access revoked by migration `065` |
 | `module-admin` | Unexpired Sunday Ops session; Manager required for module lifecycle; Admin required for defaults | Service-role module metadata writes and PCO folder sync | Phase 2 protected boundary deployed |
 | `module-content` | Unexpired Sunday Ops session; Manager required for document deletion; Admin required for financial values | Service-role Input List, Production Document, Crew, Supplies, and Intercom reads/writes | Phase 3 protected boundary deployed |
 | `push-monday-issue` | Unexpired Sunday Ops session | Monday credential + service-role issue update | Protected replacement deployed and authenticated sync/retry verified |
@@ -275,11 +300,12 @@ This release is the prerequisite for I1 automatic Monday.com mirroring.
 
 Protect one domain at a time, with rollback migrations and page-level smoke tests:
 
-1. production configuration and workbook publish;
-2. workbook crew/supplies/intercom/Input List management;
-3. checklist and event-template management;
-4. issue and document destructive operations;
-5. event insert/update and application configuration.
+1. production configuration and Input List structure/reorder management; **pending**
+2. workbook publication; **retired and public execution revoked**
+3. module lifecycle plus Crew/Supplies/Intercom/Input List/Production Document content; **deployed and verified**
+4. checklist and event-template management; **pending**
+5. issue and non-module document destructive operations; **pending**
+6. event insert/update and application configuration. **pending**
 
 ### Release D — Restricted reads
 
@@ -312,4 +338,9 @@ Do not revoke broad policies across all domains in one release. The current clie
 
 ## Immediate next release
 
-Migrations `059`, `060`, and `061`, the protected `push-monday-issue` function, the Monday `Sunday Ops Issue ID` column/secret, and the automatic-mirroring frontend are deployed. The unauthorized probe returned `401` without a record mutation, and the authenticated production sync/retry test reconciled to exactly one Monday item. SEC-02's financial-data boundary is the next containment implementation.
+External-credential containment, the financial boundary, User/Manager/Admin
+authorization, module metadata, all five initial module-content paths, and
+legacy publication retirement are deployed. The next contained release should
+protect account-level Production Config plus Input List structure/reorder
+management. After that, continue Release C domain by domain before restricted
+analytics/evaluation reads and the longer-term signed-identity migration.

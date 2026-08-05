@@ -1,13 +1,52 @@
 # Changelog
 
-## 2026-08-04 — Input List linked cells and drag fill
+## 2026-08-04 — Event and Workbook module system (Phases 1–3)
 
+### Product model and navigation
+
+- Reframed Input List, Production Documents, Crew, Supplies, and Intercom as live modules owned by exactly one Event or one Workbook. Workbooks discover attached Event modules without copying them, and Workbook modules do not appear inside Events.
+- Added Event and Workbook module workspaces. Desktop uses owner/module tabs; mobile uses nested accordions so the operator controls which Event and module is open.
+- Simplified the Workbook to Schedule, Events, and Modules top-level tabs. Removed standalone Crew, Intercom, Supplies, and Send Update tabs after moving their content into Modules.
+- Retired the publication/Send Update workflow because operational documents stay live through the event. Existing schedule snapshots remain preserved as protected historical service data.
+- Kept normal module removal recoverable: Managers and Admins archive/restore content rather than deleting it. Archived modules are not silently recreated by folder defaults.
+
+### Access, defaults, and security
+
+- Added server-enforced User, Manager, and Admin access levels in migration `063_user_access_levels`. Users edit live content; Managers also add, rename, reorder, archive, restore, and apply defaults; Admins control access, PCO defaults, PCO Crew sync, financial data, and destructive settings.
+- Added the module catalog, exact Event/Workbook ownership constraint, lifecycle metadata, PCO grouping records, and default-module rules in migration `064_module_foundation`.
+- Added configurable defaults for the principal PCO groupings. New 9:00 and 11:00 Events default to Input List, Production Documents, Crew, and Intercom; Special Events default to Production Documents and Crew. Existing Events change only when a Manager applies the current defaults.
+- Added the shared `app-auth` authorization helper and protected `module-admin`, `module-content`, and `financial-admin` boundaries. Removed the unused shared-password `admin-session` function from source and production.
+- Moved authoritative role rates, crew paid status, and supply prices into service-role-only tables in migration `065_financial_data_boundary`. Public compatibility fields are constrained to zero/false, and non-Admin module responses omit all financial values.
+
+### Content migration
+
+- Migration `066_phase_2_module_content` assigned all 143 existing Production Documents to 45 Event modules and moved all 356 Workbook Input List cells into one Workbook module. Drive sync and Input List saves now use canonical module ownership through verified APIs.
+- Migration `067_phase_3_operational_modules` made `module_instance_id` canonical for Crew, Supplies, and Intercom while retaining compatibility owner fields for existing integrations.
+- The Phase 3 migration preserved 26 Crew rows, 4 Supplies rows, 36 Intercom channels, 109 Intercom assignments, and 42 channel states, with zero rows missing a module owner. Production finished with 6 active Crew, 2 Supplies, and 6 Intercom modules.
+- Reused the existing Crew, Supplies, and Intercom components at either Event or Workbook scope. PCO Crew synchronization remains Admin-only and now writes to the active Event Crew module.
+- Updated the Workbook packet to collect Workbook and attached-Event modules while keeping financial pages unavailable to non-Admins.
+
+### Verification and deployment
+
+- Revoked anonymous access to all migrated module-content tables, cell-link mutations, and historical schedule versions. Requests without a Sunday Ops session and public execution of the retired publish RPC returned `401` in production probes.
+- Authenticated Admin reads returned complete module data. Authenticated non-Admin reads returned operational data with role rates, paid status, supply prices, and totals redacted.
+- Passed `npm run verify`: frontend ESLint, Deno lint/check for all functions, 8 tests, the Vite production build, and a production dependency audit with 0 vulnerabilities.
+- Passed authenticated desktop and mobile smoke tests against the Ministry Forum workbook, including Workbook/Event module switching, Input List and Supplies values, Crew/pay protection, Intercom pack/channel states, print selection, and mobile accordions.
+- Deployed migration `067`, `module-content`, `pco-workbook-crew`, and frontend commit `b2cbe57`. [GitHub Pages run 30966617876](https://github.com/bfcproduction/BFC-Sunday-Ops/actions/runs/30966617876) completed successfully.
+- Added the complete production handoff and reconciliation record in `docs/module-system-deployment.md`.
+
+## 2026-08-04 — Input List spreadsheet editing and compact layout
+
+- Pressing Enter in an editable cell now saves and moves to the next editable box below; Tab retains normal browser behavior and moves to the next box to the right.
 - Added location-wide input-list cell links. Typing `=` in a workbook-entry cell opens a searchable source picker and clearly confirms that the rule applies to every workbook using that location.
 - Linked cells resolve against the active workbook, update immediately when their source changes, retain stable row/column references across renames and reordering, and render as resolved values in workbook print packets.
 - Added circular-reference validation and atomic bulk link/value functions in migration `062_input_list_cell_links`.
 - Added a spreadsheet-style fill handle. Numbered values such as `Choir 1` continue as `Choir 2`, `Choir 3`, and so on, while non-numbered values copy unchanged and leading zeroes are preserved.
 - Dragging a location-linked cell continues numbered source references, allowing `Wireless IEM 1 → Wireless 1` to fill through the remaining IEM rows. Location-wide link fills require confirmation.
 - Multi-cell fills and link changes expose an Undo action and save atomically so partial ranges are not left behind.
+- Added spreadsheet-style rectangular selection by clicking and dragging across cells. Selected ranges can be copied as tab/newline-delimited data, pasted from Sunday Ops or a spreadsheet, cleared with Delete/Backspace, and undone as one operation.
+- Reduced vertical and horizontal padding, tightened headers and inputs, and preserved readable row grouping so the working grid no longer carries excessive whitespace.
+- Added per-column minimum and maximum widths. Tables still adapt to the available viewport, but they stop growing once room columns reach 160 px and entry columns reach 210 px; narrow windows retain horizontal scrolling instead of crushing content.
 
 ## 2026-07-31 — Secure automatic Monday.com issue mirroring
 

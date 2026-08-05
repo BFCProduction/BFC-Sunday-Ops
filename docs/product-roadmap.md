@@ -2,7 +2,7 @@
 
 **Status:** Active product direction
 
-**Last updated:** July 31, 2026
+**Last updated:** August 4, 2026
 
 **Audience:** Product owner, maintainers, and future Codex sessions
 
@@ -100,14 +100,16 @@ These are requirements unless the product owner explicitly revisits them.
 
 ### Events and Workbooks
 
-- Events attached to workbooks should be allowed to function differently from standard events.
-- The exact differences are not decided and require a dedicated product-design session.
-- Different behavior should initially share a common event core; do not create two unrelated event systems without evidence that this is required.
+- Events and Workbooks share one module model. A module belongs to exactly one Event or one Workbook; Workbooks discover attached Event modules without copying them.
+- Event modules describe one service. Workbook modules describe shared production needs. Workbook modules do not appear inside Events, and Events do not inherit Workbook modules.
+- Desktop uses owner/module tabs and mobile uses accordions so a Workbook can aggregate several Event modules without showing all documents at once.
+- Input List, Production Documents, Crew, Supplies, and Intercom are live at either scope. Location-specific Input List structure and links remain reusable configuration.
+- Publication is retired. Modules remain live through the event; historical schedule snapshots are retained only as protected service data.
 
 ### People and permissions
 
-- Add understandable access presets for Crew/Operator, Manager, Analytics Viewer, and Administrator.
-- Financial Access should be a separate permission, not an automatic consequence of a broad role name.
+- User, Manager, and Admin access levels are live. Users edit module content; Managers organize Events/Workbooks and module lifecycle; Admins control access, folder defaults, PCO sync, financial data, and destructive settings.
+- Analytics Viewer and independent Financial Access remain future roles/capabilities. In the current deployed model, financial access is Admin-only.
 - Sunday Ops must support invited users who are not in Planning Center, beginning with analytics-only access.
 - Permissions must be enforced by the backend, not only by hiding buttons or pages.
 
@@ -129,13 +131,13 @@ This is a concise orientation, not a substitute for inspecting the current code.
 ### Product surface
 
 - Home: global tools, event focus, event timeline, updates, and event creation.
-- Event Overview: checklist progress, event schedule, PCO Run of Show, high-priority issue alert, and Quick Actions.
-- Production Docs: event-scoped PDFs and Drive/Sheets documents.
+- Event Overview: checklist progress, event schedule, PCO Run of Show, and high-priority issue alert.
+- Event Modules: Input List, Production Documents, Crew, Supplies, and Intercom owned by the selected Event.
 - Checklist: event-native operational checklist with realtime completion; currently a successful feature.
 - Issue Log: event-scoped issues, photos, severity, resolution, and automatic Monday.com mirroring when enabled.
 - Event Data: attendance, runtime, loudness, weather, and history.
 - Evaluation: anonymous event submissions and admin-only response review.
-- Workbooks: multi-event scheduling, crew, intercom, input lists, supplies, updates, and print packets.
+- Workbooks: Schedule, Events, aggregated Event/Workbook Modules, and unified print packets.
 - Analytics: admin-only dashboard and data explorer.
 - Settings: app, reporting, workbook configuration, and People & Access.
 
@@ -147,12 +149,12 @@ This is a concise orientation, not a substitute for inspecting the current code.
 - Supabase holds application data, storage, realtime subscriptions, migrations, and Edge Functions.
 - GitHub Actions runs frontend deployment and several operational import workflows.
 - Operational scripts import or relay weather, RESI, YouTube, ProPresenter, documents, and historical data.
-- The package currently has build and lint commands but no product test suite.
+- `npm run verify` runs frontend lint, Deno function lint/check, focused Deno tests, the production build, and a production dependency audit. Broader browser-level regression coverage remains future work.
 
 ### Structural pressure already visible
 
-- The app recognizes only `is_admin` rather than a real permission model.
-- The browser performs many Supabase reads and writes directly.
+- User/Manager/Admin is server-authoritative; `is_admin` remains only as a synchronized compatibility field. Analytics Viewer, independent Financial Access, and invited non-PCO identity remain future work.
+- The browser still performs many Supabase reads and writes directly outside the completed module, financial, event-delete, user-admin, and Monday.com boundaries.
 - Several database policies grant broad anonymous access, so some restrictions shown in the interface are not true security boundaries.
 - The custom Planning Center session is stored by the browser but is not the same identity understood by Supabase Row Level Security.
 - Workbooks and some other screens coordinate many responsibilities from large files.
@@ -167,14 +169,15 @@ This is a concise orientation, not a substitute for inspecting the current code.
 |---|---|
 | App shell and screen navigation | `src/App.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/layout/MobileTabs.tsx` |
 | Current Event Overview and Run of Show | `src/screens/Dashboard.tsx` |
-| Production Docs | `src/screens/ProductionDocs.tsx`, `supabase/migrations/034_production_docs.sql`, `scripts/sync-production-docs.js` |
+| Event/Workbook modules | `src/components/modules/ModuleWorkspace.tsx`, `src/screens/EventModules.tsx`, `src/lib/modules.ts`, `supabase/functions/module-admin/index.ts` |
+| Production Docs | `src/screens/ProductionDocs.tsx`, `supabase/functions/module-content/index.ts`, `scripts/sync-production-docs.js` |
 | Event Issue Log | `src/screens/IssueLog.tsx`, `supabase/functions/push-monday-issue/index.ts`, issue migrations |
 | Evaluation | `src/screens/Evaluation.tsx`, evaluation tables in Supabase migrations |
-| Workbooks | `src/screens/Workbooks.tsx`, `src/components/workbook/*`, `src/lib/workbooks.ts`, workbook migrations |
-| Input Lists | `src/components/workbook/InputListTab.tsx`, `src/lib/inputLists.ts`, migration `053_workbook_input_lists.sql` |
+| Workbooks | `src/screens/Workbooks.tsx`, `src/components/workbook/*`, `src/lib/workbooks.ts`, workbook and module migrations |
+| Input Lists | `src/components/workbook/InputListTab.tsx`, `src/lib/inputLists.ts`, `src/lib/moduleContent.ts`, migrations `053`, `062`, and `066` |
 | Analytics | `src/screens/Analytics/*`, `src/lib/serviceRecords.ts`, analytics/service-record migrations |
 | Authentication and users | `src/context/AuthContext.tsx`, `src/lib/pcoAuth.ts`, `supabase/functions/pco-auth/index.ts`, `supabase/functions/user-admin/index.ts`, migration `015_pco_auth.sql` |
-| Permissions and financial data | `src/screens/Settings.tsx`, workbook crew/pay code, `supabase/functions/workbook-pay/index.ts`, database policies |
+| Permissions and financial data | `src/screens/Settings.tsx`, `src/lib/financialAdmin.ts`, `supabase/functions/_shared/app-auth.ts`, `financial-admin`, `workbook-pay`, migrations `063` and `065` |
 | Reports and legacy compatibility | `src/lib/reportData.ts`, `src/lib/generateReportHtml.ts`, `scripts/send-sunday-summary.js`, event-native migrations |
 | Operational automation | `docs/operational-script-inventory.md`, `.github/workflows/*`, `scripts/*` |
 
@@ -188,26 +191,28 @@ This model gives future features a place to belong without prematurely deciding 
 
 | Preset | Primary job | Default shape |
 |---|---|---|
-| Crew/Operator | Work an event | Event workspace, documents, checklist, issues, evaluation, appropriate workbook information |
-| Manager | Coordinate operations | Crew capabilities plus event/workbook management and global issue management |
-| Analytics Viewer | Review outcomes | Analytics only; does not require a Planning Center account |
-| Administrator | Configure the system | People, permissions, templates, configuration, integrations, and sensitive administration |
+| User *(deployed)* | Work an event | Event workspace, live module content, checklist, issues, evaluation, and appropriate workbook information |
+| Manager *(deployed)* | Coordinate operations | User capabilities plus Event/Workbook organization and module lifecycle |
+| Analytics Viewer *(future)* | Review outcomes | Analytics only; does not require a Planning Center account |
+| Admin *(deployed)* | Configure the system | People, permissions, defaults, PCO sync, financial data, configuration, integrations, and sensitive administration |
 
-`Financial Access` is an independent yes/no permission. Presets should be convenient starting points, while backend permissions remain the actual authority.
+Independent `Financial Access` remains the target future capability; financial
+data is Admin-only in the current deployed model. Presets should be convenient
+starting points, while backend permissions remain the actual authority.
 
 ### Operational containers
 
 | Container | Working definition | Status |
 |---|---|---|
 | Standard Event | A normal standalone service or production with the standard event workspace | Existing; behavior can be refined |
-| Workbook Event | An event attached to a workbook and allowed to inherit context or expose workbook-specific behavior | Confirmed concept; differences require discovery |
-| Workbook | A planning and coordination container for related events, days, people, locations, schedules, and shared production information | Existing; boundaries need clarification |
+| Workbook Event | An ordinary Event attached to one Workbook; it keeps its Event modules while the Workbook discovers them for aggregation | Deployed; no separate Event type or inheritance layer |
+| Workbook | A planning and coordination container for related events, days, people, locations, schedules, shared modules, and aggregate views | Existing; module boundary complete |
 | Library/Template | Reusable configuration or starting information that is not owned by one event | Partly existing; formal ownership model needed |
 
 Every new module must explicitly answer:
 
 1. Is its source of truth an event, a workbook, a reusable library, or an external integration?
-2. If it inherits information, what can the child override?
+2. Does it reference reusable configuration, and how do later configuration changes affect existing documents?
 3. What happens when an event is attached to or detached from a workbook?
 4. Who can view, edit, approve, and export it?
 5. Which historical state must be preserved?
@@ -293,13 +298,17 @@ Produce a table for every domain containing:
 
 ## Workstream F2 — Identity, permissions, and security
 
-**Status:** Foundation / Security inventory complete; staged containment ready
+**Status:** Foundation in progress; external credentials, financial data, module metadata, and five module-content domains contained
 
 **Why it matters:** Analytics-only accounts, Manager access, financial privacy, global issue management, and trustworthy administration all depend on it.
 
 ### Target access model
 
-Implement Crew/Operator, Manager, Analytics Viewer, and Administrator presets backed by granular permissions. Treat Financial Access separately.
+The deployed baseline is User, Manager, and Admin. User works operational
+content, Manager adds Event/Workbook organization and module lifecycle, and
+Admin adds access management, PCO defaults/sync, financial data, and destructive
+settings. Analytics Viewer, invited non-PCO identity, and independent Financial
+Access remain the next expansion of this model.
 
 Candidate permissions to validate during design:
 
@@ -345,7 +354,8 @@ The recommended destination is the first model, with the second used only as a c
 - A read-only live check with the shipped public client confirmed nonzero visibility for raw role-rate, workbook paid-status, supply-price, evaluation, analytics, and production-document data. Protected user and report-recipient controls rejected the same client.
 - Confirmed that the custom Planning Center session is validated by protected Edge Functions but is not an identity Supabase RLS can recognize for direct browser requests.
 - No production records, policies, functions, or Storage objects were changed during the inventory.
-- **July 31, 2026 release complete:** migrations `059`, `060`, and `061`, the protected `push-monday-issue` function, the Monday `Sunday Ops Issue ID` column/secret, and the automatic-mirroring frontend are deployed. The authenticated sync/retry smoke test reconciled to exactly one Monday item. Move raw financial fields behind a server-enforced permission boundary next, before broader policy tightening.
+- **July 31, 2026 release complete:** migrations `059`, `060`, and `061`, the protected `push-monday-issue` function, the Monday `Sunday Ops Issue ID` column/secret, and the automatic-mirroring frontend are deployed. The authenticated sync/retry smoke test reconciled to exactly one Monday item. Financial containment was the next release and was completed on August 4.
+- **August 4, 2026 releases complete:** migrations `063`–`067` deployed User/Manager/Admin authorization, the module foundation, protected financial tables, and verified APIs for Input List, Production Documents, Crew, Supplies, and Intercom. Anonymous table/function probes were denied, Admin and non-Admin response shapes were verified, and the production data reconciliation found zero missing module owners. See [`module-system-deployment.md`](module-system-deployment.md).
 
 ### Rollout safety
 
@@ -625,21 +635,19 @@ These are candidates, not approved features. The first design session should exa
 
 ## Workstream W1 — Workbook Event model
 
-**Status:** Discovery
+**Status:** Complete — deployed August 4, 2026
 
-**Goal:** Let workbook-attached events behave appropriately for larger productions without making standard events unnecessarily complex.
+**Goal:** Let workbook-attached events participate in larger productions without creating a second Event system or copying operational data.
 
-### Questions the design session must answer
+### Implemented decisions
 
-- What should a Workbook Event inherit from its workbook?
-- Which workbook modules should appear inside the event workspace?
-- Does the workbook control event location, schedule context, crew, documents, Input List, Intercom, or only some of them?
-- Which inherited values may be overridden for one event?
-- What happens to inherited information when an event is detached?
-- Can one event belong to more than one workbook?
-- Should Workbook Events appear differently on Home and in event navigation?
-- What is the relationship between a PCO plan, a Sunday Ops event, and a workbook?
-- Which operations should remain workbook-only?
+- A module is owned by exactly one Event or one Workbook.
+- A Workbook discovers modules from its attached Events at read time. There is no inheritance, copy, or override layer.
+- Workbook modules do not appear in an Event, and attaching an Event does not mutate its modules.
+- The existing `events` core and `events.workbook_id` relationship remain authoritative; no parallel Workbook Event type was created.
+- A detached Event retains its Event-owned modules. Workbook-owned modules remain with the Workbook.
+- Schedule coordination remains Workbook-owned; PCO remains authoritative for linked plan identity/times; Event and Workbook modules remain Sunday Ops-owned live documents.
+- Workbook aggregation uses owner/module tabs on desktop and accordions on mobile.
 
 ### Implementation guardrail
 
@@ -647,40 +655,33 @@ Use the existing `events` core and workbook relationship unless discovery proves
 
 ### Acceptance criteria for the design phase
 
-- Standard Event and Workbook Event behavior is documented side by side.
-- Attach, inherit, override, detach, archive, and historical behavior are specified.
-- Every current workbook module is classified as workbook-owned, event-owned, reusable configuration, or a combined view.
-- The product owner approves the model before schema changes begin.
+- [x] Standard Event and Workbook Event behavior is documented.
+- [x] Attach, detach, archive, and historical behavior is specified without an inheritance/override system.
+- [x] Input List, Production Documents, Crew, Supplies, and Intercom can be explicitly Event- or Workbook-owned.
+- [x] The product owner approved the model before the Phase 1–3 migrations.
 
 ---
 
 ## Workstream W2 — Input List ownership pilot
 
-**Status:** Discovery after W1
+**Status:** Complete — deployed August 4, 2026
 
 **Why it matters:** Input Lists are the clearest current example of information that may need both workbook context and event-level use.
 
-### Model to evaluate, not assume
+### Implemented model
 
-- Reusable room or system configuration provides a starting structure.
-- A workbook may provide shared production values or a template.
-- An event owns the final event-specific working document.
-- A workbook may aggregate or print the Input Lists of its attached events.
-
-### Questions
-
-- Is one room Input List shared by several events or independently versioned per event?
-- Which changes should flow from a workbook/template into an existing event?
-- How are intentional event overrides protected?
-- What appears in Production Docs versus an editable Input List module?
-- What is printed in an event packet versus workbook packet?
+- Reusable location sections, columns, connection rows, room values, and cell-link rules provide the location-specific structure.
+- An Event or Workbook module owns the production-specific cell values.
+- A Workbook discovers and prints the Event Input Lists of attached Events and can also own a shared Workbook Input List.
+- One module instance is the source of truth for every editable value; no value is copied between scopes.
 
 ### Acceptance criteria
 
-- One source of truth is clear for every Input List value.
-- Workbook and event users do not unknowingly edit different copies.
-- Existing printed workbook packets remain possible.
-- The model can be reused for future modules without forcing every module to behave identically.
+- [x] One source of truth is clear for every Input List value.
+- [x] Workbook and Event users edit the same canonical module rather than copies.
+- [x] Workbook packets can include Workbook and attached-Event Input Lists.
+- [x] The ownership/lifecycle model is reused by four other modules while each keeps domain-specific storage.
+- [x] Existing 356 Workbook Input List cells were migrated without loss.
 
 ---
 
@@ -759,7 +760,7 @@ This is not a standalone rewrite phase. Improve ownership along the path of prod
 
 - Move domain-specific database access out of large screens into clear data/service modules.
 - Split `Workbooks.tsx` by feature responsibility while preserving the visible workbook workspace.
-- Keep schedule, crew, intercom, input list, supplies, publishing, and export logic independently testable.
+- Keep schedule, crew, intercom, input list, supplies, live-module, and export logic independently testable.
 - Introduce durable routes and deep links when global Issues, analytics-only entry, and workbook/event navigation require them.
 - Split large feature bundles as routes become available.
 - Consolidate repeated loading, error, empty, and permission states.
@@ -809,22 +810,24 @@ This sequence expresses dependencies, not calendar estimates.
 - Sync status, retry, and duplicate prevention
 - Observe which follow-up work still requires Monday.com
 
-Current handoff: SEC-02 financial-data containment is the next trust release. After the permission skeleton is agreed, I2 Global Issues is the next issue-management product slice; I1 should be reopened only for a regression or newly approved scope.
+Current handoff: SEC-02 and the five initial module-content boundaries are complete. The next containment slice is account-level Production Config and Input List structure/reorder management; I2 Global Issues remains the next issue-management product slice. I1 should be reopened only for a regression or newly approved scope.
 
 ### Release 4 — Direct users and permission enforcement
 
 - Email invitation/sign-in
-- Crew, Manager, Analytics Viewer, and Administrator presets
+- User/Manager/Admin authorization **(deployed August 4, 2026)**
+- Analytics Viewer and invited non-PCO identity
 - Separate Financial Access permission
 - Row-level/backend enforcement across the highest-value domains
 - Analytics-only application entry
 
 ### Release 5 — Workbook Event model
 
-- Complete the Workbook Event discovery and specification
-- Implement the smallest shared-core distinction
-- Pilot Input List ownership/inheritance
-- Reclassify other modules only after the pilot is understood
+- **Complete and production-verified August 4, 2026.**
+- Implemented exact Event-or-Workbook module ownership on the existing Event core.
+- Migrated Input List and Production Documents first, then Crew, Supplies, and Intercom.
+- Added Workbook aggregation without copying or inheriting Event content.
+- Retired publication in favor of live documents and protected historical snapshots.
 
 ### Release 6 — Analytics completion
 
@@ -857,8 +860,7 @@ Use this table to start a focused session without reopening the entire audit.
 | Data Truth Audit | F1 | Migrations, `reportData.ts`, service records, operational scripts | Read-only reconciliation report and canonical-source map |
 | Permissions architecture | F2 | Auth context, PCO auth, users table/functions, RLS policies | Approved identity design, permission matrix, staged migration plan |
 | Quality and deployment | F3 | `package.json`, workflows, Supabase functions/migrations | Test baseline, staging plan, reproducible deployment guide |
-| Workbook Event design | W1 | Workbooks, event schema/context, PCO link behavior | Side-by-side behavioral specification and data-ownership map |
-| Input List pilot | W2 | Input List tab/lib/schema, Production Docs, print packet | Approved ownership/inheritance design before migration |
+| Module-system regression or extension | W1, W2, module architecture, deployment record | `ModuleWorkspace`, module APIs, migrations `063`–`067` | Preserve exact ownership, role, data-migration, and negative-security-test invariants |
 | Analytics completion | A1 | Analytics screens/view, service records, audit results | Audience questions, metric dictionary, prioritized implementation plan |
 | Evaluation/app notifications | E1 | Evaluation screen/schema, team workflow | Participation strategy and notification feasibility brief |
 
@@ -871,8 +873,6 @@ These are not omissions. They require product discovery or operational evidence.
 - What exact Run of Show layout best serves the crew?
 - Should Sunday Ops ever edit or write Run of Show changes back to PCO?
 - Which status, ownership, discussion, and notification features are required before Monday.com can be retired?
-- What exactly distinguishes a Workbook Event from a Standard Event?
-- Which Input List information belongs to a room, workbook, event, or reusable template?
 - Which analytics questions matter to each audience?
 - How should evaluation completion and anonymity coexist?
 - Does the value of push notifications justify a maintained native app?
@@ -919,4 +919,12 @@ Sunday Ops has reached the intended next level when:
 - The authenticated smoke test correctly preserved a Sunday Ops issue when server-side photo lookup initially failed. Production logs identified the missing `issue_photos` privilege before any Monday request was made.
 - Added and deployed migration `061_issue_photos_permissions`, retried the same issue, and verified exactly one Monday item with one update and the correct issue UUID. The database finished in `synced` state with no error, and the retained smoke-test issue was resolved.
 - Updated the README, changelog, roadmap, and security inventory to record the deployed state, verification evidence, rollback order, and next work.
+
+### August 4, 2026 — Event and Workbook module system complete
+
+- Approved and deployed the exact-one-owner module model: Input List, Production Documents, Crew, Supplies, and Intercom may belong to one Event or one Workbook; Workbooks discover attached Event modules without copying them.
+- Added User/Manager/Admin authorization, Admin-configured PCO defaults, recoverable archive/restore lifecycle, and verified module/financial APIs through migrations `063`–`067`.
+- Migrated all existing content with zero missing module owners and preserved the exact source counts. Retired Send Update/publication while retaining historical snapshots behind service-role access.
+- Verified anonymous denial, Admin/non-Admin response shaping, the complete automated quality gate, and authenticated desktop/mobile production workflows. The detailed evidence is in [`module-system-deployment.md`](module-system-deployment.md).
+- **Next containment slice:** protect account-level Production Config and Input List structure/reorder management, then continue the remaining administrative-write and restricted-read releases.
 - **Next session:** begin SEC-02 financial-data containment. Do not restart I1 unless investigating a regression or implementing newly approved scope.

@@ -1,6 +1,6 @@
 # BFC Sunday Ops
 
-Internal Sunday-morning ops app for the BFC production team.
+Internal event-production operations app for the BFC production team.
 
 This project uses three access levels: User, Manager, and Admin. Users work live operational content, Managers also organize Event and Workbook modules, and Admins control access, PCO-folder defaults, financial data, and destructive settings. The longer-term roadmap still includes invited users without Planning Center accounts and a separate analytics-viewing capability.
 
@@ -10,9 +10,11 @@ Live app: [https://bfcproduction.github.io/BFC-Sunday-Ops/](https://bfcproductio
 
 The durable product direction, confirmed decisions, technical foundations, and future-session handoff guide live in [`docs/product-roadmap.md`](docs/product-roadmap.md).
 
-The current authorization and policy review, including per-finding deployment status and the staged containment order, lives in [`docs/security-inventory.md`](docs/security-inventory.md). SEC-01, SEC-02, and SEC-09 are deployed and verified; the remaining findings are explicitly identified there as pending work.
+The current authorization and policy review, including per-finding deployment status and the staged containment order, lives in [`docs/security-inventory.md`](docs/security-inventory.md). SEC-01, SEC-02, and SEC-09 are deployed and verified; SEC-03 and SEC-05 have verified module/publication containment with their remaining domains explicitly tracked.
 
 The confirmed Event/Workbook module ownership model, access levels, PCO-folder defaults, and phased migration rules live in [`docs/module-architecture.md`](docs/module-architecture.md).
+
+The exact Phase 1–3 implementation, production data reconciliation, security probes, and live desktop/mobile verification are recorded in [`docs/module-system-deployment.md`](docs/module-system-deployment.md).
 
 ## Current Scope
 
@@ -31,7 +33,7 @@ The confirmed Event/Workbook module ownership model, access levels, PCO-folder d
 - **Manual event creation** — all events are created in Sunday Ops via the "New Event" modal; multiple events of the same type can exist on the same date (Easter, extra traditional services, etc.)
 - **Event-native standalone event creation** — new standalone events no longer create `special_events` bridge rows; template seeding writes checklist rows directly against `events.id`
 - **Admin-only event deletion** — admins can delete events from the desktop session picker via a hover-reveal trash icon with a two-step confirmation; deletes are routed through the protected `event-admin` Supabase Edge Function and public `events` table deletes are blocked by migration `037`
-- **People & Access** — Settings section lets admins view all users who have logged into Sunday Ops (with last login dates) and toggle admin status, backed by the `user-admin` Edge Function
+- **People & Access** — Settings section lets Admins view everyone who has logged into Sunday Ops (with last login dates) and assign User, Manager, or Admin access, backed by the `user-admin` Edge Function
 - **PCO plan linking** — events can optionally link to a Planning Center plan via an in-app picker; multiple Sunday Ops events can link to the same PCO plan
 - **PCO schedule integration** — the dashboard "Today's Schedule" pulls event-specific plan times from the linked Planning Center plan when available
 - **PCO Run of Show** — the dashboard pulls the ordered plan items from the linked PCO plan and displays them as a scrollable Run of Show card with computed start times, type icons, song keys, durations, and item descriptions
@@ -39,7 +41,7 @@ The confirmed Event/Workbook module ownership model, access levels, PCO-folder d
 - **Mobile floating pill nav** — bottom navigation on mobile is a dark floating pill (80% width, centered) with white active state and a blue dot indicator
 - **Event and Workbook Modules** — live operational documents owned by exactly one Event or Workbook. Desktop uses owner/module tabs; mobile uses accordions. Managers can add, rename, reorder, archive, restore, and apply PCO-folder defaults without deleting module contents.
 - **Production Documents module** — Event- or Workbook-owned stage plots, input lists, run sheets, and other files; Google Drive auto-sync via a service account + filename convention; signed PDF uploads or Drive/Sheets links for signed-in users; Manager-only deletion; document-type tabs open the active document directly, with a compact selector when a type contains multiple files.
-- **Workbooks** — a scheduling layer above events for multi-event / multi-day productions (conferences, assemblies). Reachable from the sidebar, mobile nav, and Home; writes are admin-gated. Includes:
+- **Workbooks** — a scheduling layer above events for multi-event / multi-day productions (conferences, assemblies). Reachable from the sidebar, mobile nav, and Home. Schedule/configuration writes remain gated while every signed-in user can edit live module content and Managers/Admins organize modules. Includes:
   - **Workbook library + focused workspace** — Workbooks opens to a dedicated library for choosing or creating a production. Opening a workbook uses the full content width, with an **All Workbooks** control to return to the library instead of a permanent workbook-switching rail.
   - **Workbook Settings** in Settings (admin-only): a tabbed configuration area for Locations, Departments, Roles (+ hourly rate), schedule-item Types, Intercom, and room Input Lists. Ordered lists use drag-and-drop and workbook selectors respect the saved order.
   - **PCO-first event manager** — the Events tab is a focused list of attached workbook events plus one **Add Event** action. Workbook events are created from Planning Center plans and attached atomically; non-PCO production activities are entered as Schedule items. The plan picker hides plans before the workbook start date and sorts the remaining plans chronologically.
@@ -47,13 +49,37 @@ The confirmed Event/Workbook module ownership model, access levels, PCO-folder d
   - **PCO plan times** pulled into the schedule read-only and kept in sync (never stored); each can be assigned a room + departments via an overlay.
   - **Crew module** — Event or Workbook owned, visible and operationally editable by every signed-in user, with assigned people, local roles, call/release times, hours, and drag ordering. Admins can sync each Event Crew module from the linked Planning Center plan and manage paid/volunteer status; pay fields and totals are omitted entirely for non-admins.
   - **Call sheets** — printable per-person schedule (per-day call/release, role, event), with crew avatars.
-  - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), calculated client-side in the admin-only Crew tab, shown per row, and totaled per person across the workbook, with a printable business-office pay report. The deployed `workbook-pay` Edge Function remains available for the future raw-rate security hardening.
+  - **Crew pay** (admin only) — per-event pay (each crew row's call→release × the role's hourly rate), calculated after protected Admin APIs return the authoritative rate and paid-status fields, shown per row, and totaled per person across the workbook, with a printable business-office pay report. Raw financial tables are service-role-only; public compatibility fields are constrained to zero/false.
   - **Intercom module** — Event or Workbook owned and populated from the relevant Crew modules. Signed-in users can assign wired/wireless/no-intercom packs, set each channel's talk behavior to **Off / Momentary / Latch / Latch-Momentary**, independently set receive behavior to **Off / Listen / Listen on Talk**, and add or remove channel columns. **Program** is a simple audio-feed checkbox. Workbook Settings owns global pack capacities, the reusable master channel list, and per-role starting defaults. Over-capacity pack counts are flagged.
   - **Input List module** — a room-aware Event or Workbook document built from reusable location sections, configurable columns, and a drag-ordered connection inventory. Room infrastructure remains location-specific while inputs, outputs, devices, people, destinations, and monitor assignments belong to one module. Verified session APIs autosave cells and location-wide links; spreadsheet navigation, range editing, copy/paste/delete, linked cells, numbered drag-fill, grouped connections, and print-safe connection shading remain intact.
   - **Supplies module** — an Event- or Workbook-owned shopping list for consumables, décor, and miscellaneous purchases. Signed-in users can edit items, descriptions, quantities, departments, and purchase links. Admin-only prices and estimates remain protected and are omitted for everyone else.
   - **Live documents** — module content remains live through the event. The former Send Update/publication workflow is retired; historical schedule snapshots remain preserved as read-only service data.
   - **Workbook print packet** — one Print / PDF control with selectable pages for the detail schedule, room Input Lists, Supplies shopping list, event Intercom Grids, and per-person call sheets. Admins also receive the business-office pay report option; it is absent from non-admin print controls and rejected by the export path for non-admins. Packets print on Letter portrait pages; Input List sections use two balanced tables side by side to preserve readable type without wasting paper.
 - GitHub Pages deployment
+
+## Event & Workbook Module Rollout (August 4, 2026)
+
+The first module-system rollout is complete and live:
+
+| Phase | Delivered |
+|---|---|
+| 1 — Foundation | User/Manager/Admin access, exact Event-or-Workbook ownership, module lifecycle, PCO-grouping defaults, shared server authorization, and protected financial data |
+| 2 — Core documents | Event/Workbook workspaces, Workbook aggregation, Production Documents and Input List migration, verified content APIs, and compact spreadsheet-style Input List editing |
+| 3 — Operations | Crew, Supplies, and Intercom at either scope; Workbook Schedule/Events/Modules navigation; live-document model; publication retirement; protected module tables and print aggregation |
+
+Production migration preserved all existing content: 143 Production Documents,
+356 Input List cells, 26 Crew rows, 4 Supplies rows, 36 Intercom channels, 109
+Intercom assignments, and 42 channel states. No migrated content row was left
+without a module owner. The starter defaults for new 9:00 and 11:00 Events are
+Input List, Production Documents, Crew, and Intercom; Special Events default to
+Production Documents and Crew. Existing Events are only changed when a Manager
+explicitly applies current defaults.
+
+The live release is commit `b2cbe57`, migrations `063`–`067`, and the verified
+`module-admin`, `module-content`, `financial-admin`, and `pco-workbook-crew`
+boundaries. See the [production record](docs/module-system-deployment.md) for
+the exact verification matrix and the [architecture decision record](docs/module-architecture.md)
+for rules future modules must follow.
 
 ## What Is Live vs Pending
 
@@ -233,7 +259,7 @@ Completed (previously listed as pending):
 - **Workbook Settings / Production Config — account-level reference data managed in Settings (migration `045`):**
   - `locations` — rooms/venues, referenced by workbooks and events (replaces the per-workbook `workbook_locations`, which was dropped)
   - `departments` — production departments used to tag schedule items and crew
-  - `roles` — crew roles with an `hourly_rate` and an optional `department_id` (migration `049`). Rate/pay are admin-only, computed for verified admins (see the `workbook-pay` Edge Function). Raw-rate anon lockdown is a pending follow-up.
+  - `roles` — crew roles plus optional `department_id` (migration `049`). The legacy `hourly_rate` compatibility field is fixed at zero; authoritative rates live in service-role-only `role_financials` and are available only through verified Admin APIs (migration `065`).
   - `schedule_item_types` — managed, extensible list of schedule-item types (replaces the old fixed enum)
 - `workbooks` — top-level container for multi-event / multi-day productions (name, date range, venue, lifecycle status; legacy sent-version fields are retained only for compatibility)
 - `workbook_schedule_items` — typed schedule rows (type is a managed `schedule_item_types` key) with date, start/end time, notes, departments, tags; `location_id` references account `locations`; optionally linked to an `events` row
@@ -262,7 +288,7 @@ Functions:
 - `save_module_input_list_values_bulk(module_instance_id, cells)` / `save_input_list_cell_links_bulk(location_id, cells)` — service-role-only bulk saves reached through the verified module content API
 
 Edge Functions (workbook):
-- `workbook-pay` — admin-only (verifies the PCO session token + `is_admin`); computes crew pay for a workbook and returns it only to verified admins. Deployed; wired in for the raw-rate lockdown (crew pay is currently computed client-side in the admin-only Crew tab).
+- `workbook-pay` — Admin-only; verifies the Sunday Ops session through the shared authorization helper and computes workbook pay from protected financial tables.
 - `pco-workbook-crew` — admin-only; mirrors non-declined assignments from the **Production** team on every attached event's linked PCO plan into that Event's active Crew module while preserving local call/release, pay, role, and ordering overrides.
 - `module-admin` — verified module discovery plus Manager/Admin lifecycle controls and Admin-only PCO-folder defaults.
 - `module-content` — verified Input List, Production Document, Crew, Supplies, and Intercom reads/writes for Event and Workbook modules. Users edit live operational content; document deletion requires Manager access; pay/rates/prices require Admin access.
@@ -707,6 +733,6 @@ supabase functions deploy user-admin
 
 - `.env.local` is gitignored and must stay that way. All real secrets live there or in Supabase project secrets — never in committed files.
 - Privileged Edge Functions verify the Planning Center session token and the user's server-side access level before performing protected actions.
-- The Supabase anon key (`VITE_SUPABASE_ANON_KEY`) is intentionally public — it is embedded in the built frontend and is safe to expose because all sensitive tables are protected by RLS. Do not confuse it with the service role key (`SUPABASE_SERVICE_KEY`), which must never be committed or exposed to the frontend.
+- The Supabase anon key (`VITE_SUPABASE_ANON_KEY`) is intentionally public because it is embedded in the built frontend. It is not an authorization boundary: protected domains must still revoke direct browser access or enforce appropriate policies/functions. Do not confuse it with the service role key (`SUPABASE_SERVICE_KEY`), which must never be committed or exposed to the frontend.
 - All other secrets (Monday API token, Google service account key, Gmail delegated credentials) must be added to Supabase project secrets for edge functions and to GitHub Actions secrets for workflows — never hardcoded.
 - When in doubt, treat a value as a secret. If it's genuinely non-sensitive (a feature flag, a public URL, a display name), it's fine in committed config.
